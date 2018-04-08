@@ -1,0 +1,11 @@
+[package]
+description = "trustnote rust implmentation"
+name = "trustnote"
+version = "0.1.0"
+authors = ["Xudong Huang <huangxu008@hotmail.com>"]
+license = "MIT"
+
+[dependencies]
+log = "0.4"
+may = { git = "https://github.com/Xudong-Huang/may.git" }
+tungstenite = "0.5"
