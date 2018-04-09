@@ -1,10 +1,18 @@
-use may::coroutine::JoinHandle;
+use std::net::ToSocketAddrs;
+
 use may::net::TcpListener;
+use may::coroutine::JoinHandle;
 use tungstenite::server::accept;
 
-pub(crate) fn run_websocket_server() -> JoinHandle<()>  {
-    let handler = go!(move || {
-        let listener = TcpListener::bind(("0.0.0.0", 8080)).unwrap();
+pub fn run_websocket_server<T: ToSocketAddrs>(address: T) -> JoinHandle<()> {
+    let address = address
+        .to_socket_addrs()
+        .expect("invalid address")
+        .next()
+        .expect("can't resolve address");
+
+    go!(move || {
+        let listener = TcpListener::bind(address).unwrap();
         for stream in listener.incoming() {
             go!(move || -> () {
                 let mut websocket = accept(stream.unwrap()).unwrap();
@@ -19,10 +27,5 @@ pub(crate) fn run_websocket_server() -> JoinHandle<()>  {
                 }
             });
         }
-    });
-
-    handler
-
-    // println!("Websocket server running on ws://0.0.0.0:8080");
-    // handler.join().unwrap();
+    })
 }
