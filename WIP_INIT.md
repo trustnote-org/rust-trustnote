@@ -1,4 +1,4 @@
-Turstnote rust init project
+Trustnote rust init project
 ## Goal
 * to pass simple test cases for DAG based block chain
 * to supply a basic dev framework for future rust development 
@@ -27,7 +27,7 @@ all the following components are implemented by RUST.
 * receive a unit
 * stable a unit (commits unit)
 
-# Scenario
+## Scenario
 the node act as a HUB, receive unit from headless wallet, validate and save it, and then broadcast to a normal JS version Hub and verify it works.
 
 How to see that it works? By using the Trustnote explorer to verify if the unit is successfully saved on the main chain. 

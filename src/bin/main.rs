@@ -3,6 +3,14 @@ extern crate trustnote;
 use trustnote::*;
 
 fn main() {
+    let db = db::Database::new().unwrap();
+
+    let names = db.test().expect("failed to query database");
+
+    for name in names {
+        println!("name = {}", name);
+    }
+
     let _server = network::run_websocket_server(("0.0.0.0", config::WS_PORT));
     println!(
         "Websocket server running on ws://0.0.0.0:{}",
