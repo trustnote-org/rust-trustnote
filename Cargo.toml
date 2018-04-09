@@ -7,5 +7,7 @@ license = "MIT"
 
 [dependencies]
 log = "0.4"
-may = { git = "https://github.com/Xudong-Huang/may.git" }
+# may = { git = "https://github.com/Xudong-Huang/may.git" }
+may = "0.3"
+url = "1.7"
 tungstenite = "0.5"
