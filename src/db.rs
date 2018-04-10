@@ -1,6 +1,6 @@
-use rusqlite::Result;
 use rusqlite::Connection;
 use rusqlite::OpenFlags;
+use rusqlite::Result;
 
 pub struct Database {
     db: Connection,
@@ -9,7 +9,10 @@ pub struct Database {
 impl Database {
     pub fn new() -> Result<Self> {
         Ok(Database {
-            db: Connection::open_with_flags("db/initial.trustnote.sqlite", OpenFlags::SQLITE_OPEN_READ_WRITE)?,
+            db: Connection::open_with_flags(
+                "db/initial.trustnote.sqlite",
+                OpenFlags::SQLITE_OPEN_READ_WRITE,
+            )?,
         })
     }
 

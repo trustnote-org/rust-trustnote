@@ -3,11 +3,11 @@ use std::net::ToSocketAddrs;
 
 use may::coroutine::JoinHandle;
 use may::net::{TcpListener, TcpStream};
-use url::Url;
-use tungstenite::handshake::client::Request;
 use tungstenite::client::client;
+use tungstenite::handshake::client::Request;
 use tungstenite::server::accept;
 use tungstenite::{Message, WebSocket};
+use url::Url;
 
 pub fn run_websocket_server<T: ToSocketAddrs>(address: T) -> JoinHandle<()> {
     let address = address
