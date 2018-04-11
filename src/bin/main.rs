@@ -73,7 +73,7 @@ fn test_json() {
 }
 
 fn test_db() {
-    let db = db::Database::new().unwrap();
+    let db = db::DB_POOL.get_connection();
 
     let names = db.get_my_witnesses().expect("failed to query database");
 

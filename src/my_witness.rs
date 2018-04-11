@@ -9,7 +9,7 @@ pub struct MyWitness {
 impl MyWitness {
     pub fn new() -> Result<Self> {
         // read from database
-        let db = db::Database::new()?;
+        let db = db::DB_POOL.get_connection();
         let witnesses = db.get_my_witnesses()?;
 
         // if the data base is empty we should wait until
