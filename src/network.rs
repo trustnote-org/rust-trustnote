@@ -18,16 +18,23 @@ pub fn run_websocket_server<T: ToSocketAddrs>(address: T) -> JoinHandle<()> {
 
     go!(move || {
         let listener = TcpListener::bind(address).unwrap();
-        for stream in listener.incoming() {
+        // for stream in listener.incoming() {
+        while let Ok((stream, _)) = listener.accept() {
             go!(move || -> () {
-                let mut websocket = accept(stream.unwrap()).unwrap();
+                let mut websocket = accept(stream).expect("ws failed to accept");
 
                 loop {
-                    let msg = websocket.read_message().unwrap();
+                    let msg = match websocket.read_message() {
+                        Ok(msg) => msg,
+                        Err(e) => {
+                            error!("{}", e.to_string());
+                            break;
+                        }
+                    };
 
                     // Just echo back everything that the client sent to us
                     if msg.is_binary() || msg.is_text() {
-                        websocket.write_message(msg).unwrap();
+                        websocket.write_message(msg).expect("ws failed to write");
                     }
                 }
             });

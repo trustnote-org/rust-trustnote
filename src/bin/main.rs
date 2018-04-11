@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate log;
+// #[macro_use]
+// extern crate failure;
 #[macro_use]
 extern crate serde_json;
 extern crate trustnote;
@@ -8,7 +10,7 @@ extern crate fern;
 
 use trustnote::*;
 
-fn test_json() {
+fn test_json() -> Result<()> {
     let data = r#"
 {
     "version": "1.0",
@@ -63,7 +65,7 @@ fn test_json() {
     "payload_commission": 197
 }"#;
 
-    let u: spec::Unit = serde_json::from_str(data).unwrap();
+    let u: spec::Unit = serde_json::from_str(data)?;
     // println!("unit = {:?}", u);
     assert_eq!(u.authors[0].definition[0], json!("sig"));
     assert_eq!(
@@ -74,32 +76,39 @@ fn test_json() {
     //     u.authors[0].definition[1]["pubkey"].as_str().unwrap(),
     //     "A0gKwkLedQgzm32JtEo6KmuRcyZa3beikS3xfrwdXAMU"
     // );
+    Ok(())
 }
 
-fn test_db() {
+fn test_db() -> Result<()> {
     let db = db::DB_POOL.get_connection();
 
-    let names = db.get_my_witnesses().expect("failed to query database");
+    let names = db.get_my_witnesses()?;
 
     for name in names {
         println!("name = {}", name);
     }
+
+    Ok(())
 }
 
-fn test_ws() {
+fn test_ws() -> Result<()> {
     let _server = network::run_websocket_server(("0.0.0.0", config::WS_PORT));
     println!(
         "Websocket server running on ws://0.0.0.0:{}",
         config::WS_PORT
     );
 
-    let mut client = network::WsClient::new(("127.0.0.1", config::WS_PORT)).unwrap();
-    client.send_message("hello world".into()).unwrap();
-    loop {
-        let msg = client.recv_message().unwrap();
-        println!("recv {}", msg);
-    }
-    // server.join().unwrap();
+    let mut client = network::WsClient::new(("127.0.0.1", config::WS_PORT))?;
+    client.send_message("hello world".into())?;
+    let msg = client.recv_message()?;
+    println!("recv {}", msg);
+    // server.join().map_err(|_| format_err!("failed to join the server"))
+    Ok(())
+}
+
+fn show_config() -> Result<()> {
+    println!("debug = {}", config::CONFIG.read()?.get::<bool>("debug")?);
+    Ok(())
 }
 
 fn log_init() {
@@ -130,8 +139,12 @@ fn log_init() {
 }
 
 fn main() {
+    // use std::io::{self, Read};
     log_init();
-    test_json();
-    test_db();
-    test_ws();
+    show_config().unwrap();
+    test_json().unwrap();
+    test_db().unwrap();
+    test_ws().unwrap();
+    info!("bye from main!\n\n");
+    // io::stdin().read(&mut [0]).ok();
 }
