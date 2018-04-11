@@ -75,7 +75,7 @@ fn test_json() {
 fn test_db() {
     let db = db::Database::new().unwrap();
 
-    let names = db.test().expect("failed to query database");
+    let names = db.get_my_witnesses().expect("failed to query database");
 
     for name in names {
         println!("name = {}", name);

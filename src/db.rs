@@ -10,22 +10,25 @@ impl Database {
     pub fn new() -> Result<Self> {
         Ok(Database {
             db: Connection::open_with_flags(
-                "db/initial.trustnote.sqlite",
+                "db/trustnote.sqlite",
                 OpenFlags::SQLITE_OPEN_READ_WRITE,
             )?,
         })
     }
 
-    pub fn test(&self) -> Result<Vec<String>> {
-        let mut stmt = self.db.prepare("SELECT unit FROM units")?;
+    pub fn get_my_witnesses(&self) -> Result<Vec<String>> {
+        let mut stmt = self.db.prepare("SELECT address FROM my_witnesses")?;
         let rows = stmt.query_map(&[], |row| row.get(0))?;
-        // let rows = stmt.query_map_named(&[(":id", &"one")], |row| row.get(0))?;
 
         let mut names = Vec::new();
         for name_result in rows {
             names.push(name_result?);
         }
-
         Ok(names)
+    }
+
+    // TODO:
+    pub fn insert_witnesses(&self) {
+        unimplemented!();
     }
 }
