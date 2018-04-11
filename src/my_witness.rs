@@ -1,6 +1,7 @@
 use config;
 use db;
-use rusqlite::Result;
+
+use error::Result;
 
 pub struct MyWitness {
     witnesses: Vec<String>,

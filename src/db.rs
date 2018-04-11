@@ -1,13 +1,12 @@
 use std::ops::Deref;
 
-use rusqlite::Connection;
-use rusqlite::OpenFlags;
-use rusqlite::Result;
-
 use num_cpus;
+use rusqlite::{Connection, OpenFlags};
 
 use may;
 use may::sync::mpmc::{self, Receiver, Sender};
+
+use error::Result;
 
 lazy_static! {
     pub static ref DB_POOL: DatabasePool = DatabasePool::new();
@@ -80,7 +79,7 @@ impl Database {
     }
 
     // TODO:
-    pub fn insert_witnesses(&self) {
+    pub fn insert_witnesses(&self) -> Result<()> {
         unimplemented!();
     }
 }
