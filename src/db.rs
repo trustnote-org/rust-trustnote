@@ -24,16 +24,23 @@ impl DatabasePool {
         may::coroutine::scope(|s| {
             for _ in 0..(num_cpus::get() * 4) {
                 go!(s, || {
-                    let conn = Connection::open_with_flags(
+                    let conn = match Connection::open_with_flags(
                         "db/trustnote.sqlite",
                         OpenFlags::SQLITE_OPEN_READ_WRITE,
-                    ).unwrap();
+                    ) {
+                        Ok(conn) => conn,
+                        Err(e) => {
+                            error!("{}", e.to_string());
+                            ::std::process::abort();
+                        }
+                    };
 
                     db_tx.send(conn).unwrap();
                 });
             }
         });
 
+        info!("open database connections done");
         DatabasePool { db_rx, db_tx }
     }
 

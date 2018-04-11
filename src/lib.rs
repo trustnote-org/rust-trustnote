@@ -1,4 +1,6 @@
 #[macro_use]
+extern crate log;
+#[macro_use]
 extern crate may;
 extern crate num_cpus;
 extern crate rusqlite;

@@ -1,6 +1,10 @@
 #[macro_use]
+extern crate log;
+#[macro_use]
 extern crate serde_json;
 extern crate trustnote;
+
+extern crate fern;
 
 use trustnote::*;
 
@@ -98,7 +102,35 @@ fn test_ws() {
     // server.join().unwrap();
 }
 
+fn log_init() {
+    // Configure logger at runtime
+    fern::Dispatch::new()
+    // Perform allocation-free log formatting
+    // .format(|out, message, record| {
+    //     out.finish(format_args!(
+    //         "{}[{}][{}] {}",
+    //         chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S]"),
+    //         record.target(),
+    //         record.level(),
+    //         message
+    //     ))
+    // })
+    // Add blanket level filter -
+    .level(log::LevelFilter::Debug)
+    // - and per-module overrides
+    // .level_for("hyper", log::LevelFilter::Info)
+    // Output to stdout, files, and other Dispatch configurations
+    .chain(std::io::stdout())
+    // .chain(fern::log_file("output.log")?)
+    // Apply globally
+    .apply().unwrap();
+
+    // and log using log crate macros!
+    info!("log init done!");
+}
+
 fn main() {
+    log_init();
     test_json();
     test_db();
     test_ws();
