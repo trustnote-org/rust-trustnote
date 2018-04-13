@@ -8,12 +8,15 @@ extern crate serde;
 extern crate serde_json;
 extern crate tungstenite;
 extern crate url;
+
 #[macro_use]
 extern crate failure;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
+extern crate base64;
+extern crate secp256k1;
 
 pub mod config;
 pub mod db;
@@ -23,5 +26,6 @@ pub mod network;
 pub mod spec;
 
 mod obj_ser;
+pub mod signature;
 
 pub use error::{Result, TrustnoteError};
