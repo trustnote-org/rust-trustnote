@@ -75,7 +75,7 @@ impl Drop for Database {
 
 impl Database {
     pub fn get_my_witnesses(&self) -> Result<Vec<String>> {
-        let mut stmt = self.prepare("SELECT address FROM my_witnesses")?;
+        let mut stmt = self.prepare_cached("SELECT address FROM my_witnesses")?;
         let rows = stmt.query_map(&[], |row| row.get(0))?;
 
         let mut names = Vec::new();

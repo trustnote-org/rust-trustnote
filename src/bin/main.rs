@@ -4,9 +4,9 @@ extern crate log;
 // extern crate failure;
 #[macro_use]
 extern crate serde_json;
-extern crate trustnote;
 extern crate base64;
 extern crate fern;
+extern crate trustnote;
 
 use trustnote::*;
 
@@ -106,18 +106,23 @@ fn test_ws() -> Result<()> {
     Ok(())
 }
 
-fn test_signature()-> Result<()> {
+fn test_signature() -> Result<()> {
     let hash = "KLop9582tzXZJbytWjiWLcnpEdvJI7mUymbnUPXweOM=";
     let priv_key = "jQGnkLnZlX2DjBUd8JKgHgw23zSdRL/Azx3foi/WqvE=";
-    let sig = "YCdh5Q6jOiKQy2R9mQwKJ6tBnq31VFZX2dkb7Ypr+/5z6jj4GLEFT9RtryC4+mSILtKKLeN9YnBmYI4Xa+4tDw==";
+    let sig =
+        "YCdh5Q6jOiKQy2R9mQwKJ6tBnq31VFZX2dkb7Ypr+/5z6jj4GLEFT9RtryC4+mSILtKKLeN9YnBmYI4Xa+4tDw==";
 
-    assert_eq!(signature::sign(&base64::decode(hash).unwrap()[..], &base64::decode(priv_key).unwrap()[..]), sig);
+    assert_eq!(
+        signature::sign(&base64::decode(hash)?, &base64::decode(priv_key)?)?,
+        sig
+    );
 
     let hash = "uPQs4TwLtDGRAdH8sbIJ1ZyWpEmwHWRAhXpamODZ7Kk=";
-    let sig = "up+2Fjhnu4OjJeesBPCgoZE+6ReqQDdnqcjhbq2iaulHjlwKYLcwRrD3udSWdHS57ceQeZ+LVPWYBMWBloAgpA==";
     let pub_key = "A0qTjB3ZjHf2yT1EIvLrkVAWY8MPSueNcB4GTlKGo/o6";
+    let sig =
+        "up+2Fjhnu4OjJeesBPCgoZE+6ReqQDdnqcjhbq2iaulHjlwKYLcwRrD3udSWdHS57ceQeZ+LVPWYBMWBloAgpA==";
 
-    assert_eq!(signature::verify(&base64::decode(hash).unwrap()[..], sig, pub_key), Ok(()));
+    assert_eq!(signature::verify(&base64::decode(hash)?, sig, pub_key)?, ());
 
     Ok(())
 }
