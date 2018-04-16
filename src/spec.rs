@@ -1,4 +1,22 @@
+//! TODO: how to sort struct fields with serde?
+//! within this mod all the struct fields should be "sorted" statically to generate the correct
+//! object hash, this is annoying but we have no way to find out how to do that with serde
+
+// use std::collections::{BTreeMap, HashMap};
+// use serde::{Serialize, Serializer};
 use serde_json::Value;
+
+// this is used to sort a HashMap struct
+// #[allow(dead_code)]
+// fn ordered_map<S>(value: &HashMap<String, String>, serializer: S) -> Result<S::Ok, S::Error>
+// where
+//     S: Serializer,
+// {
+//     let ordered: BTreeMap<_, _> = value.iter().collect();
+//     ordered.serialize(serializer)
+// }
+// #[serde(serialize_with = "ordered_map")]
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Authentifiers {
@@ -14,17 +32,17 @@ pub struct Authors {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Inputs {
-    pub unit: String,
     pub message_index: u64,
     pub output_index: u64,
+    pub unit: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Messages {
     pub app: String,
-    pub payload_location: String,
-    pub payload_hash: String,
     pub payload: Payload,
+    pub payload_hash: String,
+    pub payload_location: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,20 +53,27 @@ pub struct Outputs {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Payload {
-    pub outputs: Vec<Outputs>,
     pub inputs: Vec<Inputs>,
+    pub outputs: Vec<Outputs>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Ball {
+    // TODO: need a real definition
+    pub unit: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Unit {
-    pub version: String,
     pub alt: String,
-    pub messages: Vec<Messages>,
     pub authors: Vec<Authors>,
-    pub parent_units: Vec<String>,
+    pub ball: Option<Ball>,
+    pub headers_commission: u64,
     pub last_ball: String,
     pub last_ball_unit: String,
-    pub witness_list_unit: String,
-    pub headers_commission: u64,
+    pub messages: Vec<Messages>,
+    pub parent_units: Vec<String>,
     pub payload_commission: u64,
+    pub version: String,
+    pub witness_list_unit: String,
 }

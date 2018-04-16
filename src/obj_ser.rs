@@ -45,6 +45,8 @@ pub struct Serializer {
 // Rust types the serializer is able to produce as output.
 //
 // This basic serializer supports only `to_string`.
+// TODO: disable dead code
+#[allow(dead_code)]
 pub fn to_string<T>(value: &T) -> Result<String>
 where
     T: Serialize,

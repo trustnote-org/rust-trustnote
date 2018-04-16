@@ -1,6 +1,5 @@
 use config;
 use db;
-
 use error::Result;
 
 pub struct MyWitness {
