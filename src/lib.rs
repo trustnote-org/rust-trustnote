@@ -17,6 +17,7 @@ extern crate lazy_static;
 extern crate serde_derive;
 extern crate base64;
 extern crate secp256k1;
+extern crate sha2;
 
 pub mod config;
 pub mod db;
@@ -26,6 +27,7 @@ pub mod network;
 pub mod spec;
 
 mod obj_ser;
+pub mod object_hash;
 pub mod signature;
 
 pub use error::{Result, TrustnoteError};
