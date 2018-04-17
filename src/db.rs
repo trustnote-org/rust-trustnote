@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use num_cpus;
 use rusqlite::{Connection, OpenFlags};
@@ -63,6 +63,13 @@ impl Deref for Database {
     #[inline]
     fn deref(&self) -> &Connection {
         self.db.as_ref().unwrap()
+    }
+}
+
+impl DerefMut for Database {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Connection {
+        self.db.as_mut().unwrap()
     }
 }
 

@@ -29,5 +29,6 @@ pub mod spec;
 mod obj_ser;
 pub mod object_hash;
 pub mod signature;
+pub mod writer;
 
 pub use error::{Result, TrustnoteError};
