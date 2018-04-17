@@ -15,7 +15,10 @@ extern crate failure;
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
+extern crate base32;
 extern crate base64;
+extern crate bit_vec;
+extern crate ripemd160;
 extern crate secp256k1;
 extern crate sha2;
 
