@@ -3,7 +3,7 @@ use obj_ser::to_string;
 use serde::ser::Serialize;
 use sha2::{Digest, Sha256};
 
-pub fn to_base64_hash<T>(object: &T) -> Result<String>
+pub fn get_base64_hash<T>(object: &T) -> Result<String>
 where
     T: Serialize,
 {
@@ -18,7 +18,7 @@ where
     Ok(base64::encode(&hasher.result()))
 }
 
-pub fn to_chash<T>(_object: &T) -> Result<String>
+pub fn get_chash<T>(_object: &T) -> Result<String>
 where
     T: Serialize,
 {
@@ -56,5 +56,5 @@ fn test_payload() {
     let expected = "5CYeTTa4VQxgF4b1Tn33NBlKilJadddwBMLvtp1HIus=";
 
     //println!("{:?}", to_base64_hash(&payload));
-    assert_eq!(to_base64_hash(&payload).unwrap(), expected);
+    assert_eq!(get_base64_hash(&payload).unwrap(), expected);
 }

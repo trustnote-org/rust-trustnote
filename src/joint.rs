@@ -1,7 +1,10 @@
 use db;
+use definition;
 use error::Result;
 use may::sync::Mutex;
+use object_hash::get_chash;
 use rusqlite::Transaction;
+use serde_json;
 use spec::*;
 
 lazy_static! {
@@ -102,8 +105,49 @@ impl Joint {
         Ok(())
     }
 
-    fn save_authors(&self, _tx: &Transaction) -> Result<()> {
-        unimplemented!()
+    // return a vec of author address
+    fn save_authors(&self, tx: &Transaction) -> Result<Vec<&String>> {
+        let unit_hash = self.get_unit_hash();
+        let mut author_addresses = vec![];
+        for author in &self.unit.authors {
+            author_addresses.push(&author.address);
+            let definition = &author.definition;
+            let definition_chash = get_chash(definition)?;
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR IGNORE INTO definitions \
+                 (definition_chash, definition, has_references) \
+                 VALUES (?, ?, ?)",
+            )?;
+            let definition_json = serde_json::to_string(definition)?;
+            let has_references = definition::has_references(definition)? as u8;
+            stmt.insert(&[&definition_chash, &definition_json, &has_references])?;
+
+            // TODO: we ingore unit.content_hash here
+            if definition_chash == author.address {
+                let mut stmt = tx.prepare_cached(
+                    "INSERT OR IGNORE INTO addresses (address) \
+                     VALUES (?)",
+                )?;
+                stmt.insert(&[&author.address])?;
+            }
+
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO unit_authors \
+                 (unit, address, definition_chash) \
+                 VALUES(?, ?, ?)",
+            )?;
+            stmt.insert(&[unit_hash, &author.address, &definition_chash])?;
+
+            for (path, authentifier) in &author.authentifiers {
+                let mut stmt = tx.prepare_cached(
+                    "INSERT INTO authentifiers \
+                     (unit, address, path, authentifier) \
+                     VALUES(?, ?, ?, ?)",
+                )?;
+                stmt.insert(&[unit_hash, &author.address, path, authentifier])?;
+            }
+        }
+        Ok(author_addresses)
     }
 
     fn save_messages(&self, _tx: &Transaction) -> Result<()> {
