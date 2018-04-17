@@ -17,7 +17,6 @@ use serde_json::Value;
 // }
 // #[serde(serialize_with = "ordered_map")]
 
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Authentifiers {
     pub r: String,
@@ -67,13 +66,20 @@ pub struct Ball {
 pub struct Unit {
     pub alt: String,
     pub authors: Vec<Authors>,
-    pub ball: Option<Ball>,
+    pub content_hash: Option<String>, // this may not exist
     pub headers_commission: u64,
     pub last_ball: String,
     pub last_ball_unit: String,
     pub messages: Vec<Messages>,
     pub parent_units: Vec<String>,
     pub payload_commission: u64,
+    pub unit: Option<String>, // this may not exist
     pub version: String,
     pub witness_list_unit: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Joint {
+    pub ball: Option<Ball>,
+    pub unit: Unit,
 }

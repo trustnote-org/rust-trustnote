@@ -166,7 +166,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     // An absent optional is represented as the JSON `null`.
     fn serialize_none(self) -> Result<()> {
-        self.serialize_unit()
+        // self.serialize_unit()
+        self.output.push("none".to_string());
+        Ok(())
     }
 
     // A present optional is represented as just the contained value. Note that
@@ -459,8 +461,16 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
+        // filter out none
+        let mut serializer = Serializer { output: Vec::new() };
+        value.serialize(&mut serializer)?;
+        if serializer.output == ["none"] {
+            return Ok(());
+        }
+
         self.output.push(key.to_string());
-        value.serialize(&mut **self)
+        self.output.append(&mut serializer.output);
+        Ok(())
     }
 
     fn end(self) -> Result<()> {
@@ -495,12 +505,14 @@ fn test_struct() {
     struct Test {
         int: u32,
         flag: bool,
+        none: Option<u32>, // if its none, not affect hash
         seq: Vec<&'static str>,
     }
 
     let test = Test {
         int: 1,
         flag: false,
+        none: None,
         seq: vec!["a", "b"],
     };
     let expected =
