@@ -26,9 +26,10 @@ pub mod my_witness;
 pub mod network;
 pub mod spec;
 
+mod definition;
+pub mod joint;
 mod obj_ser;
 pub mod object_hash;
 pub mod signature;
-pub mod writer;
 
 pub use error::{Result, TrustnoteError};

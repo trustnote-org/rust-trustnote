@@ -18,6 +18,13 @@ where
     Ok(base64::encode(&hasher.result()))
 }
 
+pub fn to_chash<T>(_object: &T) -> Result<String>
+where
+    T: Serialize,
+{
+    unimplemented!()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #[test]
