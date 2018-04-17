@@ -28,9 +28,12 @@ impl Joint {
         let unit = &self.unit;
         let unit_hash = self.get_unit_hash();
 
-        let mut stmt = tx.prepare_cached("INSERT INTO units \
-            (unit, version, alt, witness_list_unit, last_ball_unit, headers_commission, payload_commission, sequence, content_hash) \
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")?;
+        let mut stmt = tx.prepare_cached(
+            "INSERT INTO units \
+             (unit, version, alt, witness_list_unit, last_ball_unit, \
+             headers_commission, payload_commission, sequence, content_hash) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )?;
 
         stmt.insert(&[
             unit_hash,
@@ -86,9 +89,12 @@ impl Joint {
         if unit.is_genesis_unit() {
             #[cold]
             {
-                let mut stmt = tx.prepare("UPDATE units SET \
-                                          is_on_main_chain=1, main_chain_index=0, is_stable=1, level=0, witnessed_level=0 \
-                                          WHERE unit=?")?;
+                let mut stmt = tx.prepare(
+                    "UPDATE units SET \
+                     is_on_main_chain=1, main_chain_index=0, \
+                     is_stable=1, level=0, witnessed_level=0 \
+                     WHERE unit=?",
+                )?;
                 stmt.execute(&[unit_hash])?;
             }
         } else {
@@ -150,7 +156,61 @@ impl Joint {
         Ok(author_addresses)
     }
 
-    fn save_messages(&self, _tx: &Transaction) -> Result<()> {
+    fn save_messages(&self, tx: &Transaction) -> Result<()> {
+        let unit_hash = self.get_unit_hash();
+        for (i, message) in self.unit.messages.iter().enumerate() {
+            let text_payload = match message.app.as_str() {
+                "text" => unimplemented!(),
+                "data" | "profile" | "attestation" | "definition_template" => {
+                    let payload = serde_json::to_string(&message.payload)?;
+                    Some(payload)
+                }
+                _ => None,
+            };
+
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO messages \
+                 (unit, message_index, app, payload_hash, payload_location, \
+                 payload, payload_uri, payload_uri_hash) \
+                 VALUES(?,?,?,?,?,?,?,?)",
+            )?;
+            stmt.insert(&[
+                unit_hash,
+                &(i as u32),
+                &message.app,
+                &message.payload_hash,
+                &message.payload_location,
+                &text_payload,
+                &message.payload_uri,
+                &message.payload_uri_hash,
+            ])?;
+
+            if message.payload_location.as_str() == "inline" {
+                match message.app.as_str() {
+                    "payment" => {}
+                    _ => unimplemented!(),
+                }
+            }
+
+            // TODO: add spend_proofs
+        }
+        Ok(())
+    }
+
+    pub fn save_header_earnings(&self, _tx: &Transaction) -> Result<()> {
+        // TODO:
+        unimplemented!()
+    }
+
+    pub fn update_best_parent(&self, _tx: &Transaction) -> Result<()> {
+        unimplemented!()
+    }
+
+    pub fn update_level(&self, _tx: &Transaction) -> Result<()> {
+        unimplemented!()
+    }
+
+    pub fn update_witness_level(&self, _tx: &Transaction) -> Result<()> {
         unimplemented!()
     }
 
@@ -169,10 +229,19 @@ impl Joint {
         self.save_unit(&tx, &sequence)?;
         self.save_ball(&tx)?;
         self.save_parents(&tx)?;
-        self.save_authors(&tx)?;
+        let _author_addresses = self.save_authors(&tx)?;
         self.save_messages(&tx)?;
+        // TODO: add save earning header commission
+        // self.save_header_earnings(&tx)?;
+        self.update_best_parent(&tx)?;
+        self.update_level(&tx)?;
+        self.update_witness_level(&tx)?;
+        // TODO: add update mainchain()
+        // main_chain::update_main_chain()?;
 
         tx.commit()?;
+
+        // TODO: add sqlite optimization
         Ok(())
     }
 }
@@ -183,6 +252,7 @@ fn test_write() {
         alt: String::from("1"),
         authors: Vec::new(),
         content_hash: None,
+        earned_headers_commission_recipients: None,
         headers_commission: 0,
         last_ball: String::from("oiIA6Y+87fk6/QyrbOlwqsQ/LLr82Rcuzcr1G/GoHlA="),
         last_ball_unit: String::from("vxrlKyY517Z+BGMNG35ExiQsYv3ncp/KU414SqXKXTk="),

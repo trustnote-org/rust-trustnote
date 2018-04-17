@@ -20,11 +20,14 @@ pub struct Inputs {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Messages {
+pub struct Message {
     pub app: String,
     pub payload: Payload,
     pub payload_hash: String,
     pub payload_location: String,
+    pub payload_uri: Option<String>,
+    pub payload_uri_hash: Option<String>,
+    pub spend_proofs: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -40,6 +43,12 @@ pub struct Payload {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct HeaderCommissionShare {
+    address: String,
+    earned_headers_commission_share: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Ball {
     // TODO: need a real definition
     pub unit: String,
@@ -50,10 +59,11 @@ pub struct Unit {
     pub alt: String,
     pub authors: Vec<Authors>,
     pub content_hash: Option<String>, // this may not exist
-    pub headers_commission: u32,      // default 0
+    pub earned_headers_commission_recipients: Option<Vec<HeaderCommissionShare>>,
+    pub headers_commission: u32, // default 0
     pub last_ball: String,
     pub last_ball_unit: String,
-    pub messages: Vec<Messages>,
+    pub messages: Vec<Message>,
     pub parent_units: Vec<String>,
     pub payload_commission: u32, // default 0
     pub unit: Option<String>,    // this may not exist
