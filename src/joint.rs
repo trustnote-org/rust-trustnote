@@ -202,12 +202,52 @@ impl Joint {
         unimplemented!()
     }
 
-    pub fn update_best_parent(&self, _tx: &Transaction) -> Result<()> {
-        unimplemented!()
+    pub fn update_best_parent(&self, tx: &Transaction) -> Result<()> {
+        let unit = &self.unit;
+        let parents_set = unit.parent_units
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // TODO: witness list is fiex
+        let sql = format!(
+            "SELECT unit \
+             FROM units AS parent_units \
+             WHERE unit IN({}) AND (witness_list_unit=?) \
+             ORDER BY \
+             witnessed_level DESC, \
+             level-witnessed_level ASC, \
+             unit ASC \
+             LIMIT 1",
+            parents_set
+        );
+
+        let best_parent_unit: String =
+            tx.query_row(&sql, &[&unit.witness_list_unit], |row| row.get(0))?;
+
+        let mut stmt = tx.prepare_cached("UPDATE units SET best_parent_unit=? WHERE unit=?")?;
+        stmt.execute(&[&best_parent_unit, self.get_unit_hash()])?;
+        Ok(())
     }
 
-    pub fn update_level(&self, _tx: &Transaction) -> Result<()> {
-        unimplemented!()
+    pub fn update_level(&self, tx: &Transaction) -> Result<()> {
+        let parents_set = self.unit
+            .parent_units
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // TODO: witness list is fiex
+        let sql = format!(
+            "SELECT MAX(level) AS max_level FROM units WHERE unit IN({})",
+            parents_set
+        );
+
+        let unit_level = tx.query_row(&sql, &[], |row| row.get::<_, u32>(0) + 1)?;
+
+        let mut stmt = tx.prepare_cached("UPDATE units SET level=? WHERE unit=?")?;
+        stmt.execute(&[&unit_level, self.get_unit_hash()])?;
+        Ok(())
     }
 
     pub fn update_witness_level(&self, _tx: &Transaction) -> Result<()> {
@@ -239,6 +279,7 @@ impl Joint {
         // TODO: add update mainchain()
         // main_chain::update_main_chain()?;
 
+        // TODO: add precommit hook
         tx.commit()?;
 
         // TODO: add sqlite optimization
