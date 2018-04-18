@@ -54,6 +54,7 @@ pub struct Ball {
     pub unit: String,
 }
 
+// TODO: use specific struct for address and hash
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Unit {
     pub alt: String,
@@ -66,8 +67,18 @@ pub struct Unit {
     pub messages: Vec<Message>,
     pub parent_units: Vec<String>,
     pub payload_commission: u32, // default 0
-    pub unit: Option<String>,    // this may not exist
+    pub unit: Option<String>,    // this may not exist TODO: remove the option
     pub version: String,
+    pub witnesses: Option<Vec<String>>,
+    pub witness_list_unit: String,
+}
+
+#[derive(Debug)]
+/// internally used struct
+pub struct StaticUnitProperty {
+    pub level: u32,
+    pub witnessed_level: u32,
+    pub best_parent_unit: String,
     pub witness_list_unit: String,
 }
 

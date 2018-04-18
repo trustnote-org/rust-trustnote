@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use db;
 use definition;
 use error::Result;
@@ -197,12 +199,13 @@ impl Joint {
         Ok(())
     }
 
-    pub fn save_header_earnings(&self, _tx: &Transaction) -> Result<()> {
+    #[allow(dead_code)]
+    fn save_header_earnings(&self, _tx: &Transaction) -> Result<()> {
         // TODO:
         unimplemented!()
     }
 
-    pub fn update_best_parent(&self, tx: &Transaction) -> Result<()> {
+    fn update_best_parent(&self, tx: &Transaction) -> Result<String> {
         let unit = &self.unit;
         let parents_set = unit.parent_units
             .iter()
@@ -227,10 +230,10 @@ impl Joint {
 
         let mut stmt = tx.prepare_cached("UPDATE units SET best_parent_unit=? WHERE unit=?")?;
         stmt.execute(&[&best_parent_unit, self.get_unit_hash()])?;
-        Ok(())
+        Ok(best_parent_unit)
     }
 
-    pub fn update_level(&self, tx: &Transaction) -> Result<()> {
+    fn update_level(&self, tx: &Transaction) -> Result<()> {
         let parents_set = self.unit
             .parent_units
             .iter()
@@ -250,8 +253,54 @@ impl Joint {
         Ok(())
     }
 
-    pub fn update_witness_level(&self, _tx: &Transaction) -> Result<()> {
-        unimplemented!()
+    fn save_witness_level(&self, tx: &Transaction, witness_level: u32) -> Result<()> {
+        let mut stmt = tx.prepare_cached("UPDATE units SET witnessed_level=? WHERE unit=?")?;
+        stmt.execute(&[&witness_level, self.get_unit_hash()])?;
+        Ok(())
+    }
+
+    fn update_witness_level_by_witness_list(
+        &self,
+        tx: &Transaction,
+        witness_list: &[String],
+        mut best_parent_unit: String,
+    ) -> Result<()> {
+        let mut collected_witnesses = HashSet::<String>::new();
+        loop {
+            let props = ::storage::get_static_unit_property(&best_parent_unit, tx)?;
+            let authors = ::storage::get_unit_authors(&best_parent_unit, tx)?;
+            let level = props.level;
+
+            // genesis
+            if level == 0 {
+                return self.save_witness_level(tx, 0);
+            }
+
+            for address in authors {
+                if !witness_list.contains(&address) && !collected_witnesses.contains(&address) {
+                    collected_witnesses.insert(address);
+                }
+            }
+
+            if collected_witnesses.len() >= ::config::MAJORITY_OF_WITNESSES {
+                return self.save_witness_level(tx, level);
+            }
+
+            // search next best parent
+            best_parent_unit = props.best_parent_unit;
+        }
+    }
+
+    pub fn update_witness_level(&self, tx: &Transaction, best_parent_unit: String) -> Result<()> {
+        match self.unit.witnesses {
+            Some(ref witness_list) => {
+                self.update_witness_level_by_witness_list(tx, witness_list, best_parent_unit)
+            }
+            None => {
+                let witness_list = ::storage::get_witness_list(self.get_unit_hash(), tx)?;
+                self.update_witness_level_by_witness_list(tx, &witness_list, best_parent_unit)
+            }
+        }
     }
 
     pub fn save(&self) -> Result<()> {
@@ -273,9 +322,9 @@ impl Joint {
         self.save_messages(&tx)?;
         // TODO: add save earning header commission
         // self.save_header_earnings(&tx)?;
-        self.update_best_parent(&tx)?;
+        let best_parent_unit = self.update_best_parent(&tx)?;
         self.update_level(&tx)?;
-        self.update_witness_level(&tx)?;
+        self.update_witness_level(&tx, best_parent_unit)?;
         // TODO: add update mainchain()
         // main_chain::update_main_chain()?;
 
@@ -305,6 +354,7 @@ fn test_write() {
         payload_commission: 0,
         unit: Some(String::from("5CYeTTa4VQxgF4b1Tn33NBlKilJadddwBMLvtp1HIus=")),
         version: String::from("1.0"),
+        witnesses: None,
         witness_list_unit: String::from("MtzrZeOHHjqVZheuLylf0DX7zhp10nBsQX5e/+cA3PQ="),
     };
     let joint = Joint {
