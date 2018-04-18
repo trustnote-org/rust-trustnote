@@ -6,6 +6,7 @@ use obj_ser::to_string;
 use ripemd160::Ripemd160;
 use serde::ser::Serialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 
 pub fn get_base64_hash<T>(object: &T) -> Result<String>
 where
@@ -82,6 +83,53 @@ where
     ))
 }
 
+fn get_checksum_offsets() -> HashSet<i32> {
+    let index_for_mix = [
+        1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6, 2, 6, 4, 3, 3, 8, 3, 2, 7, 9,
+        5, /*0,*/ 2, 8, 8, 4, 1, 9, 7, 1, 6, 9, 3, 9, 9, 3, 7, 5, 1 /*0,*/,
+    ];
+
+    let mut offset = 0;
+    let mut checksum_offsets = HashSet::new();
+    for i in index_for_mix.iter() {
+        offset = offset + i;
+        checksum_offsets.insert(offset);
+    }
+
+    checksum_offsets
+}
+
+fn get_checksum(data: &[u8]) -> BitVec {
+    let sha256 = Sha256::digest(data);
+    let checksum = [sha256[5], sha256[13], sha256[21], sha256[29]];
+    BitVec::from_bytes(&checksum)
+}
+
+pub fn is_chash_valid(encoded: String) -> Result<bool> {
+    let len = encoded.len();
+    let mut valid = false;
+
+    let chash = base32::decode(base32::Alphabet::RFC4648 { padding: true }, &encoded).unwrap();
+    let chash = BitVec::from_bytes(&chash);
+    let checksum_offsets = get_checksum_offsets();
+    let mut checksum = BitVec::new();
+    let mut clean_data = BitVec::new();
+
+    let mut chash_index = 0;
+    for bit in chash.iter() {
+        if checksum_offsets.contains(&chash_index) {
+            checksum.push(bit);
+        } else {
+            clean_data.push(bit);
+        }
+        chash_index = chash_index + 1;
+    }
+
+    valid = get_checksum(&clean_data.to_bytes()) == checksum;
+
+    Ok(valid)
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #[test]
@@ -122,4 +170,13 @@ fn test_chash160() {
     let expected = "YFAR4AK2RSRTAWZ3ILRFZOMN7M7QJTJ2";
 
     assert_eq!(get_chash(&data).unwrap(), expected);
+}
+
+#[test]
+fn test_chash160_validation() {
+    let valid = "YFAR4AK2RSRTAWZ3ILRFZOMN7M7QJTJ2";
+    let invalid = "NFAR4AK2RSRTAWZ3ILRFZOMN7M7QJTJ2";
+
+    assert_eq!(is_chash_valid(valid.to_string()).unwrap(), true);
+    assert_eq!(is_chash_valid(invalid.to_string()).unwrap(), false);
 }
