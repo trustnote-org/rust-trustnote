@@ -24,66 +24,33 @@ where
     let hash = Ripemd160::digest(&to_string(object)?.as_bytes());
     let truncate_hash = &hash[4..];
 
-    let sha256 = Sha256::digest(truncate_hash);
-    let checksum = [sha256[5], sha256[13], sha256[21], sha256[29]];
+    let mut chash = BitVec::from_elem(160, false);
+    let clean_data = BitVec::from_bytes(&truncate_hash);
+    let checksum = get_checksum(&truncate_hash);
 
-    //This is generated as a mix index from PI, see chash.js for details
-    let index_for_mix = [
-        1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6, 2, 6, 4, 3, 3, 8, 3, 2, 7, 9,
-        5, /*0,*/ 2, 8, 8, 4, 1, 9, 7, 1, 6, 9, 3, 9, 9, 3, 7, 5, 1 /*0,*/,
-    ];
+    let checksum_offsets = get_checksum_offsets();
+    let mut clean_data_index = 0;
+    let mut checksum_index = 0;
+    let mut chash_index = 0;
 
-    let mut mixed = BitVec::from_elem(160, false);
-    let truncate_hash = BitVec::from_bytes(&truncate_hash);
-    let checksum = BitVec::from_bytes(&checksum);
-
-    //println!("truncate_hash {:?}", truncate_hash);
-    //println!("checksum {:?}", checksum);
-
-    let mut index = 0;
-    let mut hash_index = 0;
-    let mut mix_index = 0;
-
-    for bit in checksum.iter() {
-        let mut n = if mix_index == 0 {
-            //The head is specially treated
-            index_for_mix[mix_index]
+    while chash_index < chash.len() {
+        if checksum_offsets.contains(&chash_index) {
+            chash.set(chash_index, checksum[checksum_index]);
+            checksum_index = checksum_index + 1;
         } else {
-            index_for_mix[mix_index] - 1
-        };
-
-        while n > 0 {
-            //println!("index {} mix_index {}  hash_index {}", index, mix_index, hash_index);
-            mixed.set(index, truncate_hash[hash_index]);
-            index = index + 1;
-            hash_index = hash_index + 1;
-            n = n - 1;
+            chash.set(chash_index, clean_data[clean_data_index]);
+            clean_data_index = clean_data_index + 1;
         }
-
-        mixed.set(index, bit);
-        //println!("index {} mix_index {}  hash_index {}", index, mix_index, hash_index);
-        //println!("mixed {:?}", mixed);
-        index = index + 1;
-
-        mix_index = mix_index + 1;
+        chash_index = chash_index + 1;
     }
 
-    //Append the tail
-    while index < mixed.len() {
-        //println!("index {} mix_index {}  hash_index {}", index, mix_index, hash_index);
-        mixed.set(index, truncate_hash[hash_index]);
-        index = index + 1;
-        hash_index = hash_index + 1;
-    }
-
-    //println!("mixed {:?}", mixed);
     Ok(base32::encode(
         base32::Alphabet::RFC4648 { padding: true },
-        &mixed.to_bytes(),
+        &chash.to_bytes(),
     ))
 }
 
-fn get_checksum_offsets() -> HashSet<i32> {
+fn get_checksum_offsets() -> HashSet<usize> {
     let index_for_mix = [
         1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6, 2, 6, 4, 3, 3, 8, 3, 2, 7, 9,
         5, /*0,*/ 2, 8, 8, 4, 1, 9, 7, 1, 6, 9, 3, 9, 9, 3, 7, 5, 1 /*0,*/,
@@ -106,15 +73,13 @@ fn get_checksum(data: &[u8]) -> BitVec {
 }
 
 pub fn is_chash_valid(encoded: String) -> Result<bool> {
-    let len = encoded.len();
-    let mut valid = false;
-
     let chash = base32::decode(base32::Alphabet::RFC4648 { padding: true }, &encoded).unwrap();
+
     let chash = BitVec::from_bytes(&chash);
-    let checksum_offsets = get_checksum_offsets();
     let mut checksum = BitVec::new();
     let mut clean_data = BitVec::new();
 
+    let checksum_offsets = get_checksum_offsets();
     let mut chash_index = 0;
     for bit in chash.iter() {
         if checksum_offsets.contains(&chash_index) {
@@ -125,9 +90,7 @@ pub fn is_chash_valid(encoded: String) -> Result<bool> {
         chash_index = chash_index + 1;
     }
 
-    valid = get_checksum(&clean_data.to_bytes()) == checksum;
-
-    Ok(valid)
+    Ok(get_checksum(&clean_data.to_bytes()) == checksum)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
