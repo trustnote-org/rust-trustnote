@@ -28,13 +28,12 @@ where
     let clean_data = BitVec::from_bytes(&truncate_hash);
     let checksum = get_checksum(&truncate_hash);
 
-    let checksum_offsets = get_checksum_offsets();
     let mut clean_data_index = 0;
     let mut checksum_index = 0;
     let mut chash_index = 0;
 
     while chash_index < chash.len() {
-        if checksum_offsets.contains(&chash_index) {
+        if CHECKSUM_OFFSETS.contains(&chash_index) {
             chash.set(chash_index, checksum[checksum_index]);
             checksum_index = checksum_index + 1;
         } else {
@@ -50,20 +49,28 @@ where
     ))
 }
 
-fn get_checksum_offsets() -> HashSet<usize> {
-    let index_for_mix = [
-        1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6, 2, 6, 4, 3, 3, 8, 3, 2, 7, 9,
-        5, /*0,*/ 2, 8, 8, 4, 1, 9, 7, 1, 6, 9, 3, 9, 9, 3, 7, 5, 1 /*0,*/,
-    ];
+//A constant HashSet to store the offsets to insert the checksum into clean data
+//When mix or separate data, it can be used to check whether the bit should be a checksum
+//The original array pi is the fractional part from PI as a array.
+//See the original chash.js for more details.
+lazy_static! {
+    static ref CHECKSUM_OFFSETS: HashSet<usize> = {
+        let pi = [
+            1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3, 2, 3, 8, 4, 6, 2, 6, 4, 3, 3, 8, 3, 2, 7,
+            9, 5, 0, 2, 8, 8, 4, 1, 9, 7, 1, 6, 9, 3, 9, 9, 3, 7, 5, 1, 0,
+        ];
 
-    let mut offset = 0;
-    let mut checksum_offsets = HashSet::new();
-    for i in index_for_mix.iter() {
-        offset = offset + i;
-        checksum_offsets.insert(offset);
-    }
+        let mut offset = 0;
+        let mut set = HashSet::new();
+        for i in pi.iter() {
+            if i > &0 {
+                offset = offset + i;
+                set.insert(offset);
+            }
+        }
 
-    checksum_offsets
+        set
+    };
 }
 
 fn get_checksum(data: &[u8]) -> BitVec {
@@ -79,10 +86,9 @@ pub fn is_chash_valid(encoded: String) -> Result<bool> {
     let mut checksum = BitVec::new();
     let mut clean_data = BitVec::new();
 
-    let checksum_offsets = get_checksum_offsets();
     let mut chash_index = 0;
     for bit in chash.iter() {
-        if checksum_offsets.contains(&chash_index) {
+        if CHECKSUM_OFFSETS.contains(&chash_index) {
             checksum.push(bit);
         } else {
             clean_data.push(bit);
