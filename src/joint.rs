@@ -291,7 +291,7 @@ impl Joint {
         }
     }
 
-    pub fn update_witness_level(&self, tx: &Transaction, best_parent_unit: String) -> Result<()> {
+    fn update_witness_level(&self, tx: &Transaction, best_parent_unit: String) -> Result<()> {
         match self.unit.witnesses {
             Some(ref witness_list) => {
                 self.update_witness_level_by_witness_list(tx, witness_list, best_parent_unit)
@@ -303,6 +303,12 @@ impl Joint {
         }
     }
 
+    // FIXME: this function is not included in the transaction in JS code
+    // but here we included it into the transaction
+    fn save_inline_payment(&self, _tx: &Transaction) -> Result<()> {
+        unimplemented!()
+    }
+
     pub fn save(&self) -> Result<()> {
         // first construct all the sql within a mutex
         info!("saving unit = {:?}", self.unit);
@@ -311,6 +317,8 @@ impl Joint {
         // and then execute the transaction
         let mut db = db::DB_POOL.get_connection();
         let tx = db.transaction()?;
+
+        self.save_inline_payment(&tx)?;
 
         // TODO: add validation, default is good
         let sequence = String::from("good");
