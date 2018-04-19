@@ -12,10 +12,14 @@ pub struct Authors {
     pub definition: Vec<Value>,
 }
 
+// TODO: Input struct is from type
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Inputs {
-    pub message_index: u64,
-    pub output_index: u64,
+pub struct Input {
+    pub from_main_chain_index: Option<u32>,
+    pub message_index: u32,
+    pub kind: Option<String>,
+    pub output_index: u32,
+    pub to_main_chain_index: Option<u32>,
     pub unit: String,
 }
 
@@ -31,15 +35,17 @@ pub struct Message {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Outputs {
+pub struct Output {
     pub address: String,
-    pub amount: u64,
+    pub amount: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Payload {
-    pub inputs: Vec<Inputs>,
-    pub outputs: Vec<Outputs>,
+    pub asset: Option<String>,
+    pub denomination: Option<u32>,
+    pub inputs: Vec<Input>,
+    pub outputs: Vec<Output>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -114,11 +114,9 @@ impl Joint {
     }
 
     // return a vec of author address
-    fn save_authors(&self, tx: &Transaction) -> Result<Vec<&String>> {
+    fn save_authors(&self, tx: &Transaction) -> Result<()> {
         let unit_hash = self.get_unit_hash();
-        let mut author_addresses = vec![];
         for author in &self.unit.authors {
-            author_addresses.push(&author.address);
             let definition = &author.definition;
             let definition_chash = get_chash(definition)?;
             let mut stmt = tx.prepare_cached(
@@ -155,7 +153,7 @@ impl Joint {
                 stmt.insert(&[unit_hash, &author.address, path, authentifier])?;
             }
         }
-        Ok(author_addresses)
+        Ok(())
     }
 
     fn save_messages(&self, tx: &Transaction) -> Result<()> {
@@ -212,7 +210,7 @@ impl Joint {
             .map(|s| format!("'{}'", s))
             .collect::<Vec<_>>()
             .join(", ");
-        // TODO: witness list is fiex
+        // TODO: witness list is fixed
         let sql = format!(
             "SELECT unit \
              FROM units AS parent_units \
@@ -240,7 +238,7 @@ impl Joint {
             .map(|s| format!("'{}'", s))
             .collect::<Vec<_>>()
             .join(", ");
-        // TODO: witness list is fiex
+        // TODO: witness list is fixed
         let sql = format!(
             "SELECT MAX(level) AS max_level FROM units WHERE unit IN({})",
             parents_set
@@ -305,8 +303,146 @@ impl Joint {
 
     // FIXME: this function is not included in the transaction in JS code
     // but here we included it into the transaction
-    fn save_inline_payment(&self, _tx: &Transaction) -> Result<()> {
-        unimplemented!()
+    fn save_inline_payment(&self, tx: &Transaction) -> Result<()> {
+        let mut author_addresses = vec![];
+        for author in &self.unit.authors {
+            author_addresses.push(&author.address);
+        }
+
+        for (i, message) in self.unit.messages.iter().enumerate() {
+            if message.payload_location.as_str() != "inline" || message.app.as_str() != "payment" {
+                continue;
+            }
+
+            let payload = &message.payload;
+            let denomination = payload.denomination.unwrap_or(1);
+
+            for (j, input) in payload.inputs.iter().enumerate() {
+                let default_kind = String::from("transfer");
+                let kind = input.kind.as_ref().unwrap_or(&default_kind);
+                let src_unit = some_if!(kind == "transfer", input.unit.clone());
+                let src_message_index = some_if!(kind == "transfer", input.message_index);
+                let src_output_index = some_if!(kind == "transfer", input.output_index);
+                let from_main_chain_index = if kind == "witnessing" || kind == "headers_commission"
+                {
+                    input.from_main_chain_index
+                } else {
+                    None
+                };
+                let to_main_chain_index = if kind == "witnessing" || kind == "headers_commission" {
+                    input.to_main_chain_index
+                } else {
+                    None
+                };
+
+                let address = if author_addresses.len() == 1 {
+                    author_addresses[0].clone()
+                } else {
+                    match kind.as_str() {
+                        "headers_commission" | "witnessing" | "issue" => unimplemented!(), //input.address.clone(),
+                        _ => self.determine_input_address_from_output(
+                            tx,
+                            payload.asset.as_ref().unwrap(),
+                            denomination,
+                            &input,
+                        )?,
+                    }
+                };
+
+                // TODO: objValidationState.arrDoubleSpendInputs.some(...)
+                // here we give it a unique as default
+                let is_unique = 1;
+
+                let mut stmt = tx.prepare_cached(
+                    "INSERT INTO inputs \
+                     (unit, message_index, input_index, type, \
+                     src_unit, src_message_index, src_output_index, \
+                     from_main_chain_index, to_main_chain_index, \
+                     denomination, amount, serial_number, \
+                     asset, is_unique, address) \
+                     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                )?;
+                stmt.insert(&[
+                    self.get_unit_hash(),
+                    &(i as u32),
+                    &(j as u32),
+                    kind,
+                    &src_unit,
+                    &src_message_index,
+                    &src_output_index,
+                    &from_main_chain_index,
+                    &to_main_chain_index,
+                    &payload.asset,
+                    &is_unique,
+                    &address,
+                ])?;
+
+                match kind.as_str() {
+                    "headers_commission" | "witnessing" => {
+                        let sql = format!(
+                            "UPDATE {}_outputs SET is_spent=1 \
+                             WHERE main_chain_index>=? AND main_chain_index<=? AND address=?",
+                            kind
+                        );
+                        let mut stmt = tx.prepare_cached(&sql)?;
+                        stmt.execute(&[&from_main_chain_index, &to_main_chain_index, &address])?;
+                    }
+                    "transfer" => {
+                        let mut stmt = tx.prepare_cached(
+                            "UPDATE outputs SET is_spent=1 \
+                             WHERE unit=? AND message_index=? AND output_index=?",
+                        )?;
+                        stmt.execute(&[&src_unit, &src_message_index, &src_output_index])?;
+                    }
+                    _ => {}
+                }
+            }
+
+            for (j, output) in payload.outputs.iter().enumerate() {
+                let mut stmt = tx.prepare_cached(
+                    "INSERT INTO outputs \
+                     (unit, message_index, output_index, address, \
+                     amount, asset, denomination, is_serial) \
+                     VALUES(?,?,?,?,?,?,?,1)",
+                )?;
+                stmt.insert(&[
+                    self.get_unit_hash(),
+                    &(i as u32),
+                    &(j as u32),
+                    &output.address,
+                    &output.amount,
+                    &payload.asset,
+                    &denomination,
+                ])?;
+            }
+        }
+        Ok(())
+    }
+
+    fn determine_input_address_from_output(
+        &self,
+        tx: &Transaction,
+        asset: &String,
+        denomination: u32,
+        input: &Input,
+    ) -> Result<String> {
+        let mut stmt = tx.prepare_cached(
+            "SELECT address, denomination, asset FROM outputs \
+             WHERE unit=? AND message_index=? AND output_index=?",
+        )?;
+        let address = stmt.query_row(
+            &[&input.unit, &input.message_index, &input.output_index],
+            |row| {
+                ensure!(asset == &row.get::<_, String>(2), "asset doesn't match");
+                ensure!(
+                    denomination == row.get::<_, u32>(1),
+                    "denomination not match"
+                );
+                Ok(row.get(0))
+            },
+        )?;
+
+        Ok(address?)
     }
 
     pub fn save(&self) -> Result<()> {
@@ -326,7 +462,7 @@ impl Joint {
         self.save_unit(&tx, &sequence)?;
         self.save_ball(&tx)?;
         self.save_parents(&tx)?;
-        let _author_addresses = self.save_authors(&tx)?;
+        self.save_authors(&tx)?;
         self.save_messages(&tx)?;
         // TODO: add save earning header commission
         // self.save_header_earnings(&tx)?;

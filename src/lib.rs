@@ -22,6 +22,15 @@ extern crate ripemd160;
 extern crate secp256k1;
 extern crate sha2;
 
+macro_rules! some_if {
+    ($condition:expr, $some:expr) => {{
+        match $condition {
+            true => Some($some),
+            _ => None,
+        }
+    }};
+}
+
 pub mod config;
 pub mod db;
 pub mod error;
