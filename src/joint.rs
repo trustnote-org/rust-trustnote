@@ -193,14 +193,36 @@ impl Joint {
             }
 
             // TODO: add spend_proofs
+            /*
+            if ("spend_proofs" in message){
+					for (var j=0; j<message.spend_proofs.length; j++){
+						var objSpendProof = message.spend_proofs[j];
+						conn.addQuery(arrQueries, 
+							"INSERT INTO spend_proofs (unit, message_index, spend_proof_index, spend_proof, address) VALUES(?,?,?,?,?)", 
+							[objUnit.unit, i, j, objSpendProof.spend_proof, objSpendProof.address || arrAuthorAddresses[0] ]);
+					}
+				}
+            */
+            // we dont't have spend_proofs now
         }
         Ok(())
     }
 
     #[allow(dead_code)]
     fn save_header_earnings(&self, _tx: &Transaction) -> Result<()> {
-        // TODO:
-        unimplemented!()
+        // TODO: unimplemented!()
+
+        /*
+        if ("earned_headers_commission_recipients" in objUnit){
+			for (var i=0; i<objUnit.earned_headers_commission_recipients.length; i++){
+				var recipient = objUnit.earned_headers_commission_recipients[i];
+				conn.addQuery(arrQueries, 
+					"INSERT INTO earned_headers_commission_recipients (unit, address, earned_headers_commission_share) VALUES(?,?,?)", 
+					[objUnit.unit, recipient.address, recipient.earned_headers_commission_share]);
+			}
+		}
+        */
+        Ok(())
     }
 
     fn update_best_parent(&self, tx: &Transaction) -> Result<String> {
@@ -301,8 +323,6 @@ impl Joint {
         }
     }
 
-    // FIXME: this function is not included in the transaction in JS code
-    // but here we included it into the transaction
     fn save_inline_payment(&self, tx: &Transaction) -> Result<()> {
         let mut author_addresses = vec![];
         for author in &self.unit.authors {
@@ -464,8 +484,7 @@ impl Joint {
         self.save_parents(&tx)?;
         self.save_authors(&tx)?;
         self.save_messages(&tx)?;
-        // TODO: add save earning header commission
-        // self.save_header_earnings(&tx)?;
+        self.save_header_earnings(&tx)?;
         let best_parent_unit = self.update_best_parent(&tx)?;
         self.update_level(&tx)?;
         self.update_witness_level(&tx, best_parent_unit)?;
