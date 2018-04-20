@@ -12,9 +12,9 @@ pub fn get_base64_hash<T>(object: &T) -> Result<String>
 where
     T: Serialize,
 {
-    Ok(base64::encode(
-        &Sha256::digest(&to_string(object)?.as_bytes()),
-    ))
+    Ok(base64::encode(&Sha256::digest(
+        to_string(object)?.as_bytes(),
+    )))
 }
 
 pub fn get_chash<T>(object: &T) -> Result<String>

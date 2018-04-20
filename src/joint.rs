@@ -335,7 +335,7 @@ impl Joint {
                 continue;
             }
 
-            let payload = &message.payload;
+            let payload = message.payload.as_ref().expect("no payload found");
             let denomination = payload.denomination.unwrap_or(1);
 
             for (j, input) in payload.inputs.iter().enumerate() {
@@ -498,6 +498,21 @@ impl Joint {
         // TODO: add sqlite optimization
         Ok(())
     }
+
+    pub fn has_valid_hashes(&self) -> bool {
+        let unit = &self.unit;
+        if unit.unit.is_none() {
+            return false;
+        }
+
+        self.get_unit_hash() == &unit.get_unit_hash()
+    }
+
+    pub fn get_joint_hash(&self) -> String {
+        use base64;
+        use sha2::{Digest, Sha256};
+        base64::encode(&Sha256::digest(&serde_json::to_vec(self).expect("joint to json failed")))
+    }
 }
 
 #[test]
@@ -507,19 +522,21 @@ fn test_write() {
         authors: Vec::new(),
         content_hash: None,
         earned_headers_commission_recipients: None,
-        headers_commission: 0,
-        last_ball: String::from("oiIA6Y+87fk6/QyrbOlwqsQ/LLr82Rcuzcr1G/GoHlA="),
-        last_ball_unit: String::from("vxrlKyY517Z+BGMNG35ExiQsYv3ncp/KU414SqXKXTk="),
+        headers_commission: None,
+        last_ball: Some(String::from("oiIA6Y+87fk6/QyrbOlwqsQ/LLr82Rcuzcr1G/GoHlA=")),
+        last_ball_unit: Some(String::from("vxrlKyY517Z+BGMNG35ExiQsYv3ncp/KU414SqXKXTk=")),
+        main_chain_index: None,
         messages: Vec::new(),
         parent_units: vec![
             "uPbobEuZL+FY1ujTNiYZnM9lgC3xysxuDIpSbvnmbac=".into(),
             "vxrlKyY517Z+BGMNG35ExiQsYv3ncp/KU414SqXKXTk=".into(),
         ],
-        payload_commission: 0,
+        payload_commission: None,
+        timestamp: None,
         unit: Some(String::from("5CYeTTa4VQxgF4b1Tn33NBlKilJadddwBMLvtp1HIus=")),
         version: String::from("1.0"),
         witnesses: None,
-        witness_list_unit: String::from("MtzrZeOHHjqVZheuLylf0DX7zhp10nBsQX5e/+cA3PQ="),
+        witness_list_unit: Some(String::from("MtzrZeOHHjqVZheuLylf0DX7zhp10nBsQX5e/+cA3PQ=")),
     };
     let joint = Joint {
         ball: None,
