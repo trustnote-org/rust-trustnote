@@ -38,6 +38,7 @@ pub mod my_witness;
 pub mod network;
 pub mod spec;
 
+pub mod catchup;
 mod definition;
 pub mod joint;
 mod obj_ser;

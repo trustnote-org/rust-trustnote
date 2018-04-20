@@ -18,6 +18,7 @@ pub struct Joint {
     pub ball: Option<String>,
     pub skiplist_units: Option<Vec<String>>,
     pub unit: Unit,
+    // TODO: can we move unit_hash to here from unit sub filed?
 }
 
 impl Joint {
