@@ -1,10 +1,10 @@
 use error::Result;
 use joint::Joint;
 use rusqlite::Connection;
-use spec::StaticUnitProperty;
+use spec::*;
 
 // TODO: need to cache in memory
-pub fn get_witness_list(unit_hash: &String, db: &Connection) -> Result<Vec<String>> {
+pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
     let mut stmt =
         db.prepare_cached("SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
     let rows = stmt.query_map(&[unit_hash], |row| row.get(0))?;
@@ -22,8 +22,30 @@ pub fn get_witness_list(unit_hash: &String, db: &Connection) -> Result<Vec<Strin
     Ok(names)
 }
 
+pub fn read_unit_props(db: &Connection, unit_hash: &String) -> Result<UnitProps> {
+    let mut stmt = db.prepare_cached(
+        "SELECT unit, level, latest_included_mc_index, main_chain_index, \
+         is_on_main_chain, is_free, is_stable \
+         FROM units WHERE unit=?",
+    )?;
+    let ret = stmt.query_row(&[unit_hash], |row| UnitProps {
+        unit: row.get(0),
+        level: row.get(1),
+        latest_included_mc_index: row.get(2),
+        main_chain_index: row.get(3),
+        is_on_main_chain: row.get(4),
+        is_free: row.get(5),
+        is_stable: row.get(6),
+    })?;
+
+    Ok(ret)
+}
+
 // TODO: need to cache in memory
-pub fn get_static_unit_property(unit_hash: &String, db: &Connection) -> Result<StaticUnitProperty> {
+pub fn read_static_unit_property(
+    db: &Connection,
+    unit_hash: &String,
+) -> Result<StaticUnitProperty> {
     let mut stmt = db.prepare_cached(
         "SELECT level, witnessed_level, best_parent_unit, witness_list_unit \
          FROM units WHERE unit=?",
@@ -39,7 +61,7 @@ pub fn get_static_unit_property(unit_hash: &String, db: &Connection) -> Result<S
 }
 
 // TODO: need to cache in memory
-pub fn get_unit_authors(unit_hash: &String, db: &Connection) -> Result<Vec<String>> {
+pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
     let mut stmt =
         db.prepare_cached("SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
     let rows = stmt.query_map(&[unit_hash], |row| row.get(0))?;

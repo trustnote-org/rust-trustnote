@@ -288,8 +288,8 @@ impl Joint {
     ) -> Result<()> {
         let mut collected_witnesses = HashSet::<String>::new();
         loop {
-            let props = ::storage::get_static_unit_property(&best_parent_unit, tx)?;
-            let authors = ::storage::get_unit_authors(&best_parent_unit, tx)?;
+            let props = ::storage::read_static_unit_property(tx, &best_parent_unit)?;
+            let authors = ::storage::read_unit_authors(tx, &best_parent_unit)?;
             let level = props.level;
 
             // genesis
@@ -318,7 +318,7 @@ impl Joint {
                 self.update_witness_level_by_witness_list(tx, witness_list, best_parent_unit)
             }
             None => {
-                let witness_list = ::storage::get_witness_list(self.get_unit_hash(), tx)?;
+                let witness_list = ::storage::read_witness_list(tx, self.get_unit_hash())?;
                 self.update_witness_level_by_witness_list(tx, &witness_list, best_parent_unit)
             }
         }

@@ -77,7 +77,7 @@ pub fn prepare_witness_proof(
          ORDER BY main_chain_index DESC LIMIT 1",
         last_ball_units_set
     );
-    let row = db.query_row(&sql, &[], |row| (row.get::<_, String>(0), row.get(1)))?;
+    let row = db.query_row(&sql, &[], |row| (row.get(0), row.get(1)))?;
     last_ball_unit = row.0;
     last_ball_mci = row.1;
     if last_stable_mci >= last_ball_mci {

@@ -92,6 +92,18 @@ pub struct StaticUnitProperty {
     pub witness_list_unit: String,
 }
 
+#[derive(Debug)]
+/// internally used struct
+pub struct UnitProps {
+    pub unit: String,
+    pub level: u32,
+    pub latest_included_mc_index: u32,
+    pub main_chain_index: u32,
+    pub is_on_main_chain: u32,
+    pub is_free: u32,
+    pub is_stable: u32,
+}
+
 impl Unit {
     pub fn is_genesis_unit(&self) -> bool {
         match self.unit {
