@@ -45,5 +45,6 @@ mod obj_ser;
 pub mod object_hash;
 pub mod signature;
 mod storage;
+pub mod witness_proof;
 
 pub use error::{Result, TrustnoteError};

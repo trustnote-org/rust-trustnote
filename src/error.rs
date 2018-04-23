@@ -3,10 +3,10 @@ use failure::Error;
 #[derive(Debug, Fail)]
 pub enum TrustnoteError {
     // TODO: need to define own error
-    #[fail(display = "invalid toolchain name: {}", name)]
-    InvalidToolchainName { name: String },
-    #[fail(display = "unknown toolchain version: {}", version)]
-    UnknownToolchainVersion { version: String },
+    #[fail(display = "catchup prepare already current")]
+    CatchupAlreadyCurrent,
+    #[fail(display = "some witnesses have references in their addresses")]
+    WitnessChanged,
 }
 
 pub type Result<T> = ::std::result::Result<T, Error>;
