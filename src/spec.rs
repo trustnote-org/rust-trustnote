@@ -8,10 +8,10 @@ use object_hash::get_base64_hash;
 use serde_json::Value;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Authors {
+pub struct Author {
     pub address: String,
     pub authentifiers: BTreeMap<String, String>,
-    pub definition: Vec<Value>,
+    pub definition: Value,
 }
 
 // TODO: Input struct is from type
@@ -44,7 +44,9 @@ pub struct Output {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Payload {
+    pub address: Option<String>,
     pub asset: Option<String>,
+    pub definition_chash: Option<String>,
     pub denomination: Option<u32>,
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
@@ -66,7 +68,7 @@ pub struct Ball {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Unit {
     pub alt: String,
-    pub authors: Vec<Authors>,
+    pub authors: Vec<Author>,
     pub content_hash: Option<String>, // this may not exist
     pub earned_headers_commission_recipients: Option<Vec<HeaderCommissionShare>>,
     pub headers_commission: Option<u32>, // default 0

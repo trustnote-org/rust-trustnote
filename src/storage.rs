@@ -119,3 +119,17 @@ pub fn read_joint_directly(_db: &Connection, _unit: &String) -> Result<Joint> {
     // TODO: #34
     unimplemented!()
 }
+
+pub fn read_definition(_db: &Connection, _definition_chash: &String) -> Result<String> {
+    // TODO: #??
+    unimplemented!()
+}
+
+pub fn read_definition_by_address(
+    _db: &Connection,
+    _address: &String,
+    _max_mci: Option<u32>,
+) -> Result<Option<String>> {
+    // TODO: #??
+    unimplemented!()
+}

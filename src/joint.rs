@@ -23,7 +23,7 @@ pub struct Joint {
 
 impl Joint {
     #[inline]
-    fn get_unit_hash(&self) -> &String {
+    pub fn get_unit_hash(&self) -> &String {
         self.unit.unit.as_ref().unwrap()
     }
 
