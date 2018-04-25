@@ -132,8 +132,8 @@ pub fn prepare_witness_proof(
 
 #[derive(Debug)]
 pub struct ProcessWitnessProof {
-    last_ball_units: Vec<String>,
-    assoc_last_ball_by_last_ball_unit: HashMap<String, String>,
+    pub last_ball_units: Vec<String>,
+    pub assoc_last_ball_by_last_ball_unit: HashMap<String, String>,
 }
 
 pub fn process_witness_proof(
@@ -298,7 +298,6 @@ pub fn process_witness_proof(
     };
 
     for joint in witness_change_and_definition {
-        let unit = &joint.unit;
         let unit_hash = joint.get_unit_hash();
         if from_current {
             let mut stmt = db.prepare_cached("SELECT 1 FROM units WHERE unit=? AND is_stable=1")?;
@@ -307,7 +306,7 @@ pub fn process_witness_proof(
                 continue;
             }
         }
-        validate_unit(unit, true)?;
+        validate_unit(&joint.unit, true)?;
     }
 
     for joint in witness_joints {
