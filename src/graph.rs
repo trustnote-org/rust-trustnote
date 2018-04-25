@@ -122,12 +122,11 @@ pub fn compare_unit_props(
         (unit_props2, unit_props1, 1)
     };
 
-    // In JS it is okay if main_chain_index === null, the delta will be negative, need to check
-    // the None value in rust
+    // can be negative if main_chain_index == None but that doesn't matter
     let earlier_unit_delta =
-        earlier_unit.main_chain_index.unwrap() - earlier_unit.latest_included_mc_index.unwrap();
+        earlier_unit.main_chain_index.unwrap_or(0) - earlier_unit.latest_included_mc_index.unwrap_or(0);
     let later_unit_delta =
-        later_unit.main_chain_index.unwrap() - later_unit.latest_included_mc_index.unwrap();
+        later_unit.main_chain_index.unwrap_or(0) - later_unit.latest_included_mc_index.unwrap_or(0);
 
     let mut start_units = Vec::new();
     if later_unit_delta > earlier_unit_delta {
