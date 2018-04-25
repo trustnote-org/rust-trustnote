@@ -34,6 +34,7 @@ macro_rules! some_if {
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod graph;
 pub mod my_witness;
 pub mod network;
 pub mod spec;
