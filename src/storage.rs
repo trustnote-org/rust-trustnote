@@ -3,6 +3,11 @@ use joint::Joint;
 use rusqlite::Connection;
 use spec::*;
 
+pub fn is_genesis_ball(ball: &String) -> bool {
+    let _ = ball;
+    unimplemented!()
+}
+
 // TODO: need to cache in memory
 pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
     let mut stmt =
@@ -77,6 +82,19 @@ pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<Stri
         ));
     }
     Ok(names)
+}
+
+// only need part of it.
+pub struct LastStableMcUnitProps {
+    pub unit: String,
+    pub ball: String,
+    pub main_chain_index: u32,
+}
+
+pub fn read_last_stable_mc_unit_props(db: &Connection) -> Result<LastStableMcUnitProps> {
+    // TODO:
+    let _ = db;
+    unimplemented!()
 }
 
 pub fn determine_if_witness_and_address_definition_have_refs(
