@@ -29,15 +29,19 @@ pub fn compare_units(db: &Connection, unit1: &String, unit2: &String) -> Result<
     );
 
     let mut stmt = db.prepare(&sql)?;
-    let unit_props = stmt.query_map(&[], |row| UnitProps {
+    let rows = stmt.query_map(&[], |row| UnitProps {
         unit: row.get(0),
         level: row.get(1),
         latest_included_mc_index: row.get(2),
         main_chain_index: row.get(3),
         is_on_main_chain: row.get(4),
         is_free: row.get(5),
-    })?
-        .collect::<Vec<_>>();
+    })?;
+
+    let mut unit_props = Vec::new();
+    for row in rows {
+        unit_props.push(row?);
+    }
 
     ensure!(
         unit_props.len() == 2,
@@ -46,16 +50,10 @@ pub fn compare_units(db: &Connection, unit1: &String, unit2: &String) -> Result<
         unit2
     );
 
-    let (unit_props1, unit_props2) = if &unit_props[0].as_ref().unwrap().unit == unit1 {
-        (
-            unit_props[0].as_ref().unwrap(),
-            unit_props[1].as_ref().unwrap(),
-        )
+    let (unit_props1, unit_props2) = if &unit_props[0].unit == unit1 {
+        (&unit_props[0], &unit_props[1])
     } else {
-        (
-            unit_props[1].as_ref().unwrap(),
-            unit_props[0].as_ref().unwrap(),
-        )
+        (&unit_props[1], &unit_props[0])
     };
 
     compare_unit_props(db, unit_props1, unit_props2)
