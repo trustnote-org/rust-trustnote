@@ -2,7 +2,7 @@
 //! within this mod all the struct fields should be "sorted" statically to generate the correct
 //! object hash, this is annoying but we have no way to find out how to do that with serde
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use object_hash::get_base64_hash;
 use serde_json::Value;
@@ -10,17 +10,21 @@ use serde_json::Value;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Author {
     pub address: String,
-    pub authentifiers: BTreeMap<String, String>,
+    pub authentifiers: HashMap<String, String>,
     pub definition: Value,
 }
 
 // TODO: Input struct is from type
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Input {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub from_main_chain_index: Option<u32>,
     pub message_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type")]
     pub kind: Option<String>,
     pub output_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub to_main_chain_index: Option<u32>,
     pub unit: String,
 }
@@ -28,11 +32,15 @@ pub struct Input {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message {
     pub app: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<Payload>,
     pub payload_hash: String,
     pub payload_location: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_uri: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_uri_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub spend_proofs: Option<String>,
 }
 
@@ -44,9 +52,13 @@ pub struct Output {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Payload {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub asset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub definition_chash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub denomination: Option<u32>,
     pub inputs: Vec<Input>,
     pub outputs: Vec<Output>,
@@ -69,19 +81,30 @@ pub struct Ball {
 pub struct Unit {
     pub alt: String,
     pub authors: Vec<Author>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content_hash: Option<String>, // this may not exist
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub earned_headers_commission_recipients: Option<Vec<HeaderCommissionShare>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub headers_commission: Option<u32>, // default 0
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_ball: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_ball_unit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub main_chain_index: Option<u32>,
     pub messages: Vec<Message>,
     pub parent_units: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_commission: Option<u32>, // default 0
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>, // this may not exist
     pub version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub witnesses: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub witness_list_unit: Option<String>,
 }
 
@@ -144,11 +167,15 @@ impl Unit {
             alt: String,
             authors: Vec<String>,
             content_hash: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
             last_ball: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             last_ball_unit: Option<String>,
             parent_units: Vec<String>,
             version: String,
+            #[serde(skip_serializing_if = "Option::is_none")]
             witnesses: Option<Vec<String>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             witness_list_unit: Option<String>,
         }
 

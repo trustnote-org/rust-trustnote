@@ -5,6 +5,7 @@ extern crate may;
 extern crate num_cpus;
 extern crate rusqlite;
 extern crate serde;
+#[cfg_attr(test, macro_use)]
 extern crate serde_json;
 extern crate tungstenite;
 extern crate url;

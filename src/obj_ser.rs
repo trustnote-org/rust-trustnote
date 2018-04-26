@@ -1,4 +1,5 @@
 use serde::ser::{self, Serialize};
+use std::collections::BTreeMap;
 use std::error;
 use std::fmt;
 
@@ -40,6 +41,17 @@ pub struct Serializer {
     output: Vec<String>,
 }
 
+pub struct StructSerializer<'a> {
+    s: &'a mut Serializer,
+    fields: BTreeMap<&'static str, Vec<String>>,
+}
+
+pub struct MapSerializer<'a> {
+    s: &'a mut Serializer,
+    entries: BTreeMap<String, Vec<String>>,
+    last_key: Option<String>,
+}
+
 // By convention, the public API of a Serde deserializer is one or more `to_abc`
 // functions such as `to_string`, `to_bytes`, or `to_writer` depending on what
 // Rust types the serializer is able to produce as output.
@@ -76,8 +88,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     type SerializeTuple = Self;
     type SerializeTupleStruct = Self;
     type SerializeTupleVariant = Self;
-    type SerializeMap = Self;
-    type SerializeStruct = Self;
+    type SerializeMap = MapSerializer<'a>;
+    type SerializeStruct = StructSerializer<'a>;
     type SerializeStructVariant = Self;
 
     // Here we go with the simple methods. The following 12 methods receive one
@@ -167,7 +179,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // An absent optional is represented as the JSON `null`.
     fn serialize_none(self) -> Result<()> {
         // self.serialize_unit()
-        self.output.push("none".to_string());
+        self.output.push("null".to_string());
         Ok(())
     }
 
@@ -286,7 +298,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
     // Maps are represented in JSON as `{ K: V, K: V, ... }`.
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        Ok(self)
+        Ok(MapSerializer {
+            s: self,
+            entries: BTreeMap::new(),
+            last_key: None,
+        })
     }
 
     // Structs look just like maps in JSON. In particular, JSON requires that we
@@ -294,8 +310,11 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // omit the field names when serializing structs because the corresponding
     // Deserialize implementation is required to know what the keys are without
     // looking at the serialized data.
-    fn serialize_struct(self, _name: &'static str, len: usize) -> Result<Self::SerializeStruct> {
-        self.serialize_map(Some(len))
+    fn serialize_struct(self, _name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+        Ok(StructSerializer {
+            s: self,
+            fields: BTreeMap::new(),
+        })
     }
 
     // Struct variants are represented in JSON as `{ NAME: { K: V, ... } }`.
@@ -410,7 +429,7 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
 // `serialize_entry` method allows serializers to optimize for the case where
 // key and value are both available simultaneously. In JSON it doesn't make a
 // difference so the default behavior for `serialize_entry` is fine.
-impl<'a> ser::SerializeMap for &'a mut Serializer {
+impl<'a> ser::SerializeMap for MapSerializer<'a> {
     type Ok = ();
     type Error = Error;
 
@@ -432,7 +451,10 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
         if serializer.output.len() != 2 || serializer.output[0] != "s" {
             return Err(Error::Custom("only string key map supported".to_string()));
         }
-        self.output.push(serializer.output[1].clone());
+
+        let key = serializer.output[1].clone();
+        self.last_key = Some(key.clone());
+        self.entries.insert(key, Vec::new());
         Ok(())
     }
 
@@ -443,17 +465,47 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        value.serialize(&mut **self)
+        let mut serializer = Serializer { output: Vec::new() };
+        value.serialize(&mut serializer)?;
+        let mut value = serializer.output;
+        let key = self.last_key.take().unwrap();
+        self.entries.get_mut(&key).map(|v| v.append(&mut value));
+        Ok(())
+    }
+
+    fn serialize_entry<K: ?Sized, V: ?Sized>(&mut self, key: &K, value: &V) -> Result<()>
+    where
+        K: Serialize,
+        V: Serialize,
+    {
+        // only string key is supported, how to do that?
+        let mut serializer = Serializer { output: Vec::new() };
+        key.serialize(&mut serializer)?;
+        if serializer.output.len() != 2 || serializer.output[0] != "s" {
+            return Err(Error::Custom("only string key map supported".to_string()));
+        }
+        let key = serializer.output[1].clone();
+
+        let mut serializer = Serializer { output: Vec::new() };
+        value.serialize(&mut serializer)?;
+        let value = serializer.output;
+
+        self.entries.insert(key, value);
+        Ok(())
     }
 
     fn end(self) -> Result<()> {
+        for (k, mut v) in self.entries {
+            self.s.output.push(k.to_owned());
+            self.s.output.append(&mut v);
+        }
         Ok(())
     }
 }
 
 // Structs are like maps in which the keys are constrained to be compile-time
 // constant strings.
-impl<'a> ser::SerializeStruct for &'a mut Serializer {
+impl<'a> ser::SerializeStruct for StructSerializer<'a> {
     type Ok = ();
     type Error = Error;
 
@@ -461,19 +513,22 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     where
         T: ?Sized + Serialize,
     {
-        // filter out none
+        // filter out null
         let mut serializer = Serializer { output: Vec::new() };
         value.serialize(&mut serializer)?;
-        if serializer.output == ["none"] {
+        if serializer.output == ["null"] {
             return Ok(());
         }
 
-        self.output.push(key.to_string());
-        self.output.append(&mut serializer.output);
+        self.fields.insert(key, serializer.output);
         Ok(())
     }
 
     fn end(self) -> Result<()> {
+        for (k, mut v) in self.fields {
+            self.s.output.push(k.to_owned());
+            self.s.output.append(&mut v);
+        }
         Ok(())
     }
 }
@@ -516,7 +571,7 @@ fn test_struct() {
         seq: vec!["a", "b"],
     };
     let expected =
-        "int\u{0}n\u{0}1\u{0}flag\u{0}b\u{0}false\u{0}seq\u{0}[\u{0}s\u{0}a\u{0}s\u{0}b\u{0}]";
+        "flag\u{0}b\u{0}false\u{0}int\u{0}n\u{0}1\u{0}seq\u{0}[\u{0}s\u{0}a\u{0}s\u{0}b\u{0}]";
     assert_eq!(to_string(&test).unwrap(), expected);
 }
 
@@ -525,6 +580,23 @@ fn test_map() {
     use std::collections::HashMap;
     let mut map = HashMap::new();
     map.insert("unit", "rg1RzwKwnfRHjBojGol3gZaC5w7kR++rOR6O61JRsrQ=");
-    let expected = "unit\u{0}s\u{0}rg1RzwKwnfRHjBojGol3gZaC5w7kR++rOR6O61JRsrQ=";
+    map.insert("aaaa", "some value");
+    let expected =
+        "aaaa\u{0}s\u{0}some value\u{0}unit\u{0}s\u{0}rg1RzwKwnfRHjBojGol3gZaC5w7kR++rOR6O61JRsrQ=";
     assert_eq!(to_string(&map).unwrap(), expected);
+}
+
+#[test]
+fn test_json_value() {
+    let v = json!({
+      "name": "John Doe",
+      "age": 43,
+      "phones": [
+        "+44 1234567",
+      ]
+    });
+
+    let expected =
+        "age\u{0}n\u{0}43\u{0}name\u{0}s\u{0}John Doe\u{0}phones\u{0}[\u{0}s\u{0}+44 1234567\u{0}]";
+    assert_eq!(to_string(&v).unwrap(), expected);
 }
