@@ -226,6 +226,121 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
     Ok(false)
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct HashTreeReq {
+    pub from_ball: String,
+    pub to_ball: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct BallProps {
+    unit: String,
+    ball: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_hash: Option<String>,
+    is_nonserial: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    parent_balls: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    skiplist_balls: Vec<String>,
+}
+
+pub fn read_hash_tree(db: &Connection, hash_tree_req: HashTreeReq) -> Result<Vec<BallProps>> {
+    let HashTreeReq { from_ball, to_ball } = hash_tree_req;
+    let mut from_mci = 0;
+    let mut to_mci = 0;
+
+    // --> BEGIN: query props from db
+    struct Props {
+        is_stable: u32,
+        is_on_main_chain: u32,
+        main_chain_index: u32,
+        ball: String,
+    }
+
+    let mut stmt = db.prepare_cached(
+        "SELECT is_stable, is_on_main_chain, main_chain_index, ball \
+         FROM balls JOIN units USING(unit) WHERE ball IN(?,?)",
+    )?;
+    let rows = stmt.query_map(&[&from_ball, &to_ball], |row| Props {
+        is_stable: row.get(0),
+        is_on_main_chain: row.get(1),
+        main_chain_index: row.get(2),
+        ball: row.get(3),
+    })?;
+
+    let mut props = Vec::new();
+    for row in rows {
+        props.push(row?);
+    }
+    // --> END query props from db
+
+    ensure!(props.len() == 2, "some balls not found");
+    for prop in props {
+        ensure!(prop.is_stable == 1, "some balls not stable");
+        ensure!(prop.is_on_main_chain == 1, "some balls not on mc");
+        if prop.ball == from_ball {
+            from_mci = prop.main_chain_index;
+        }
+        if prop.ball == to_ball {
+            to_mci = prop.main_chain_index;
+        }
+    }
+
+    ensure!(from_mci < to_mci, "from is after to");
+    let mut balls = Vec::new();
+    let op = if from_mci == 0 { ">=" } else { ">" };
+    let sql = format!(
+        "SELECT unit, ball, content_hash FROM units LEFT JOIN balls USING(unit) \
+         WHERE main_chain_index {} ? AND main_chain_index<=? ORDER BY `level`",
+        op
+    );
+    let mut stmt = db.prepare_cached(&sql)?;
+    let rows = stmt.query_map(&[&from_mci, &to_mci], |row| BallProps {
+        unit: row.get(0),
+        ball: row.get(1),
+        content_hash: row.get(2),
+        is_nonserial: false,
+        parent_balls: Vec::new(),
+        skiplist_balls: Vec::new(),
+    })?;
+    for row in rows {
+        let mut ball_prop = row?;
+        ensure!(ball_prop.ball.is_some(), "no ball for unit {}", ball_prop.unit);
+
+        if ball_prop.content_hash.is_some() {
+            ball_prop.content_hash = None;
+            ball_prop.is_nonserial = true;
+        }
+
+        let mut stmt = db.prepare_cached(
+            "SELECT ball FROM parenthoods LEFT JOIN balls \
+             ON parent_unit=balls.unit WHERE child_unit=? ORDER BY ball",
+        )?;
+        let rows = stmt.query_map(&[&ball_prop.unit], |row| row.get::<_, Option<String>>(0))?;
+        for row in rows {
+            let parent_ball = row?;
+            ensure!(parent_ball.is_some(), "some parents have no balls");
+            ball_prop.parent_balls.push(parent_ball.unwrap());
+        }
+
+        let mut stmt = db.prepare_cached(
+            "SELECT ball FROM skiplist_units LEFT JOIN balls \
+             ON skiplist_unit=balls.unit WHERE skiplist_units.unit=? ORDER BY ball",
+        )?;
+        let srows = stmt.query_map(&[&ball_prop.unit], |row| row.get::<_, Option<String>>(0))?;
+        for srow in srows {
+            let skiplist_ball = srow?;
+            ensure!(skiplist_ball.is_some(), "some skiplist units have no balls");
+            ball_prop.skiplist_balls.push(skiplist_ball.unwrap());
+        }
+
+        balls.push(ball_prop);
+    }
+
+    Ok(balls)
+}
+
 pub fn purge_handled_balls_from_hash_tree(db: &Connection) -> Result<()> {
     let mut stmt = db.prepare_cached(
         "SELECT ball FROM hash_tree_balls \
