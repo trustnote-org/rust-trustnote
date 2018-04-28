@@ -99,6 +99,33 @@ pub fn is_chash_valid(encoded: String) -> Result<bool> {
     Ok(get_checksum(&clean_data.to_bytes()) == checksum)
 }
 
+pub fn get_ball_hash(
+    unit: &String,
+    parent_balls: &Vec<String>,
+    skiplist_balls: &Vec<String>,
+    is_nonserial: bool,
+) -> String {
+    #[derive(Serialize)]
+    struct BallHashObj<'a> {
+        unit: &'a String,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        parent_balls: &'a Vec<String>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        skiplist_balls: &'a Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        is_nonserial: Option<bool>,
+    }
+    let is_nonserial = if is_nonserial { Some(true) } else { None };
+    let ball = BallHashObj {
+        unit,
+        parent_balls,
+        skiplist_balls,
+        is_nonserial,
+    };
+
+    get_base64_hash(&ball).expect("failed to calc ball hash")
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #[test]

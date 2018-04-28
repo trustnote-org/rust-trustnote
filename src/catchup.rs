@@ -7,6 +7,7 @@ use witness_proof;
 
 lazy_static! {
     static ref CATCHUP_MUTEX: Mutex<()> = Mutex::new(());
+    static ref HASHTREE_MUTEX: Mutex<()> = Mutex::new(());
 }
 
 #[derive(Serialize, Deserialize)]
@@ -235,7 +236,7 @@ pub struct HashTreeReq {
 #[derive(Serialize, Deserialize)]
 pub struct BallProps {
     unit: String,
-    ball: Option<String>,
+    ball: Option<String>, // this should not be an option
     #[serde(skip_serializing_if = "Option::is_none")]
     content_hash: Option<String>,
     is_nonserial: bool,
@@ -306,7 +307,9 @@ pub fn read_hash_tree(db: &Connection, hash_tree_req: HashTreeReq) -> Result<Vec
     })?;
     for row in rows {
         let mut ball_prop = row?;
-        ensure!(ball_prop.ball.is_some(), "no ball for unit {}", ball_prop.unit);
+        if ball_prop.ball.is_none() {
+            bail!("no ball for unit {}", ball_prop.unit);
+        }
 
         if ball_prop.content_hash.is_some() {
             ball_prop.content_hash = None;
@@ -339,6 +342,174 @@ pub fn read_hash_tree(db: &Connection, hash_tree_req: HashTreeReq) -> Result<Vec
     }
 
     Ok(balls)
+}
+
+// this function take a new db connection
+pub fn process_hash_tree(balls: Vec<BallProps>) -> Result<()> {
+    use db::DB_POOL;
+    use object_hash;
+
+    if balls.is_empty() {
+        return Ok(());
+    }
+
+    let mut db = DB_POOL.get_connection();
+    let _g = HASHTREE_MUTEX.lock().unwrap();
+    let tx = db.transaction()?;
+
+    let mut max_mci = 0;
+    let last_ball = balls.last().as_ref().unwrap().ball.clone().unwrap();
+    for ball_prop in balls {
+        ensure!(ball_prop.ball.is_some(), "no ball");
+        if !storage::is_genesis_unit(&ball_prop.unit) {
+            if ball_prop.parent_balls.is_empty() {
+                bail!("no parents");
+            }
+        } else {
+            if !ball_prop.parent_balls.is_empty() {
+                bail!("genesis with parents?");
+            }
+        }
+        let ball = ball_prop.ball.as_ref().unwrap();
+        if ball != &object_hash::get_ball_hash(
+            &ball_prop.unit,
+            &ball_prop.parent_balls,
+            &ball_prop.skiplist_balls,
+            ball_prop.is_nonserial,
+        ) {
+            bail!("wrong ball hash, ball {}, unit {}", ball_prop.unit, ball);
+        }
+
+        let parent_balls_set = ball_prop
+            .parent_balls
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let skiplist_balls_set = ball_prop
+            .skiplist_balls
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let add_ball = || -> Result<()> {
+            let mut stmt = tx.prepare_cached(
+                "INSERT OR IGNORE INTO hash_tree_balls (ball, unit) VALUES(?,?)",
+            )?;
+            stmt.insert(&[ball, &ball_prop.unit])?;
+            Ok(())
+        };
+
+        let check_skiplist_ball_exist = || -> Result<()> {
+            if ball_prop.skiplist_balls.is_empty() {
+                return add_ball();
+            }
+
+            // FIXME: only count rows, could use select 1
+            let sql = format!(
+                "SELECT ball FROM hash_tree_balls \
+                 WHERE ball IN({}) UNION SELECT ball FROM balls WHERE ball IN({})",
+                parent_balls_set, skiplist_balls_set
+            );
+            let mut stmt = tx.prepare(&sql)?;
+            let rows = stmt.query_map(&[], |row| row.get::<_, String>(0))?;
+            let mut tmp = Vec::new();
+            for row in rows {
+                tmp.push(row?);
+            }
+            if tmp.len() != ball_prop.skiplist_balls.len() {
+                bail!("some skiplist balls not found")
+            }
+            add_ball()
+        };
+
+        if !ball_prop.parent_balls.is_empty() {
+            check_skiplist_ball_exist()?;
+            continue;
+        }
+
+        let sql = format!(
+            "SELECT ball FROM hash_tree_balls WHERE ball IN({})",
+            parent_balls_set,
+        );
+        let mut stmt = tx.prepare(&sql)?;
+        let rows = stmt.query_map(&[], |row| row.get::<_, String>(0))?;
+        let mut found_balls = Vec::new();
+        for row in rows {
+            found_balls.push(row?);
+        }
+        if found_balls.len() == ball_prop.parent_balls.len() {
+            check_skiplist_ball_exist()?;
+            continue;
+        }
+
+        let missing_balls = ball_prop
+            .parent_balls
+            .iter()
+            .filter(|v| !found_balls.contains(&v))
+            .collect::<Vec<_>>();
+        let missing_balls_set = missing_balls
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sql = format!(
+            "SELECT ball, main_chain_index, is_on_main_chain \
+             FROM balls JOIN units USING(unit) WHERE ball IN({})",
+            missing_balls_set,
+        );
+        let mut stmt = tx.prepare(&sql)?;
+        let rows2 = stmt.query_map(&[], |row| {
+            (
+                row.get::<_, String>(0), // ball
+                row.get::<_, u32>(1),    // mci
+                row.get::<_, u32>(2),    // is_on_mc
+            )
+        })?;
+        let mut missing_ball_props = Vec::new();
+        for row in rows2 {
+            missing_ball_props.push(row?);
+        }
+
+        if missing_ball_props.len() != missing_balls.len() {
+            bail!("some parents not found, unit {}", ball_prop.unit);
+        }
+
+        for props in missing_ball_props {
+            if props.2 == 1 && props.1 > max_mci {
+                max_mci = props.1;
+            }
+        }
+
+        check_skiplist_ball_exist()?;
+    }
+
+    let mut stmt = tx.prepare_cached(
+        "SELECT ball, main_chain_index \
+         FROM catchup_chain_balls LEFT JOIN balls USING(ball) LEFT JOIN units USING(unit) \
+         ORDER BY member_index LIMIT 2",
+    )?;
+
+    let rows = stmt.query_map(&[], |row| (row.get::<_, String>(0), row.get::<_, u32>(1)))?;
+    let mut rows_data = Vec::new();
+    for row in rows {
+        rows_data.push(row?);
+    }
+    if rows_data.len() != 2 {
+        bail!("expecting to have 2 elements in the chain");
+    }
+    if rows_data[1].0 != last_ball {
+        bail!("tree root doesn't match second chain element");
+    }
+
+    let mut stmt = tx.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
+    stmt.execute(&[&rows_data[0].0])?;
+    purge_handled_balls_from_hash_tree(&tx)?;
+
+    Ok(())
 }
 
 pub fn purge_handled_balls_from_hash_tree(db: &Connection) -> Result<()> {

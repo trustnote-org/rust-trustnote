@@ -3,6 +3,11 @@ use joint::Joint;
 use rusqlite::Connection;
 use spec::*;
 
+#[inline]
+pub fn is_genesis_unit(unit: &String) -> bool {
+    unit == ::config::GENESIS_UNIT
+}
+
 pub fn is_genesis_ball(ball: &String) -> bool {
     let _ = ball;
     unimplemented!()
