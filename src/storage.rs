@@ -51,6 +51,14 @@ pub fn read_unit_props(db: &Connection, unit_hash: &String) -> Result<UnitProps>
     Ok(ret)
 }
 
+pub fn read_props_of_units(
+    db: &Connection,
+    unit_hash: &String,
+    later_unit_hashes: &[&String],
+) -> Result<(UnitProps, Vec<UnitProps>)> {
+    unimplemented!();
+}
+
 // TODO: need to cache in memory
 pub fn read_static_unit_property(
     db: &Connection,

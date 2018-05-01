@@ -1,5 +1,6 @@
 use error::Result;
 use rusqlite::Connection;
+use storage;
 
 pub struct UnitProps {
     pub unit: String,
@@ -226,16 +227,101 @@ pub fn compare_unit_props(
 
 pub fn determine_if_included(
     db: &Connection,
-    earlier_unit: String,
-    later_units: &[String],
+    earlier_unit: &String,
+    later_units: &[&String],
 ) -> Result<bool> {
-    unimplemented!()
+    if storage::is_genesis_unit(&earlier_unit) {
+        return Ok(true);
+    }
+
+    let (earlier_unit_props, later_units_props) =
+        storage::read_props_of_units(db, &earlier_unit, later_units)?;
+
+    if earlier_unit_props.is_free == 1 {
+        return Ok(false);
+    }
+
+    ensure!(later_units_props.len() > 0, "no later unit props were read");
+
+    //spec::UnitProps.latest_included_mc_index and spec::UnitProps.main_chain_index is not Option
+    let max_later_limci = later_units_props
+        .iter()
+        .max_by_key(|props| props.latest_included_mc_index)
+        .unwrap()
+        .latest_included_mc_index;
+    if
+    /*earlier_unit_props.main_chain_index.is_some()
+        &&*/
+    max_later_limci >= earlier_unit_props.main_chain_index {
+        return Ok(true);
+    }
+
+    let max_later_level = later_units_props
+        .iter()
+        .max_by_key(|props| props.level)
+        .unwrap()
+        .level;
+    if max_later_level < earlier_unit_props.level {
+        return Ok(false);
+    }
+
+    let mut start_units = later_units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>();
+
+    'go_up: loop {
+        let start_unit_list = start_units
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let sql = format!(
+            "SELECT unit, level, latest_included_mc_index, main_chain_index, is_on_main_chain \
+             FROM parenthoods JOIN units ON parent_unit=unit \
+             WHERE child_unit IN({})",
+            start_unit_list
+        );
+
+        let mut stmt = db.prepare(&sql)?;
+        let rows = stmt.query_map(&[], |row| UnitProps {
+            unit: row.get(0),
+            level: row.get(1),
+            latest_included_mc_index: row.get(2),
+            main_chain_index: row.get(3),
+            is_on_main_chain: row.get(4),
+            is_free: 0, //is_free is not queried
+        })?;
+
+        let mut new_start_units = Vec::new();
+        for row in rows {
+            let unit = row?;
+            if unit.unit == *earlier_unit {
+                return Ok(true);
+            }
+
+            if unit.is_on_main_chain == Some(0) && unit.level > earlier_unit_props.level {
+                new_start_units.push(unit.unit.clone());
+            }
+        }
+
+        if new_start_units.len() > 0 {
+            new_start_units.sort();
+            new_start_units.dedup();
+            start_units = new_start_units;
+        } else {
+            break 'go_up;
+        }
+    }
+
+    Ok(false)
 }
 
 pub fn determine_if_included_or_equal(
     db: &Connection,
-    earlier_unit: String,
-    later_units: &[String],
+    earlier_unit: &String,
+    later_units: &[&String],
 ) -> Result<bool> {
     if later_units.contains(&earlier_unit) {
         return Ok(true);
@@ -247,7 +333,7 @@ pub fn determine_if_included_or_equal(
 pub fn read_descendant_units_by_authors_before_mc_index(
     db: &Connection,
     earlier_unit: &UnitProps,
-    author_addresses: &[String],
+    author_addresses: &[&String],
     to_main_chain_index: u32,
 ) -> Result<Vec<String>> {
     let mut units = Vec::new();
