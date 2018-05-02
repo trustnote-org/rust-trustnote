@@ -228,7 +228,7 @@ pub fn compare_unit_props(
 pub fn determine_if_included(
     db: &Connection,
     earlier_unit: &String,
-    later_units: &[&String],
+    later_units: &[String],
 ) -> Result<bool> {
     if storage::is_genesis_unit(&earlier_unit) {
         return Ok(true);
@@ -265,10 +265,7 @@ pub fn determine_if_included(
         return Ok(false);
     }
 
-    let mut start_units = later_units
-        .iter()
-        .map(|s| format!("'{}'", s))
-        .collect::<Vec<_>>();
+    let mut start_units = later_units.to_vec();
 
     'go_up: loop {
         let start_unit_list = start_units
@@ -311,7 +308,7 @@ pub fn determine_if_included(
             new_start_units.dedup();
             start_units = new_start_units;
         } else {
-            break 'go_up;
+            return Ok(false);
         }
     }
 
@@ -321,9 +318,9 @@ pub fn determine_if_included(
 pub fn determine_if_included_or_equal(
     db: &Connection,
     earlier_unit: &String,
-    later_units: &[&String],
+    later_units: &[String],
 ) -> Result<bool> {
-    if later_units.contains(&earlier_unit) {
+    if later_units.contains(earlier_unit) {
         return Ok(true);
     }
 
@@ -420,7 +417,7 @@ pub fn read_descendant_units_by_authors_before_mc_index(
         if new_start_units.len() > 0 {
             start_units = new_start_units;
         } else {
-            break 'go_down;
+            return Ok(units);
         }
     }
 
