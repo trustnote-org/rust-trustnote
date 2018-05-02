@@ -311,8 +311,6 @@ pub fn determine_if_included(
             return Ok(false);
         }
     }
-
-    Ok(false)
 }
 
 pub fn determine_if_included_or_equal(
@@ -420,6 +418,4 @@ pub fn read_descendant_units_by_authors_before_mc_index(
             return Ok(units);
         }
     }
-
-    Ok(units)
 }

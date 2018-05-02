@@ -52,9 +52,9 @@ pub fn read_unit_props(db: &Connection, unit_hash: &String) -> Result<UnitProps>
 }
 
 pub fn read_props_of_units(
-    db: &Connection,
-    unit_hash: &String,
-    later_unit_hashes: &[String],
+    _db: &Connection,
+    _unit_hash: &String,
+    _later_unit_hashes: &[String],
 ) -> Result<(UnitProps, Vec<UnitProps>)> {
     unimplemented!();
 }
