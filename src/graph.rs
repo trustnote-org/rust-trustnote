@@ -160,7 +160,7 @@ pub fn compare_unit_props(
             for row in rows {
                 let unit = row?;
                 if unit.unit == earlier_unit.unit {
-                    break 'go_up;
+                    return Ok(Some(result_if_found))
                 }
 
                 if unit.is_on_main_chain == Some(0) && unit.level > earlier_unit.level {
@@ -206,7 +206,7 @@ pub fn compare_unit_props(
             for row in rows {
                 let unit = row?;
                 if unit.unit == earlier_unit.unit {
-                    break 'go_down;
+                    return Ok(Some(result_if_found));
                 }
 
                 if unit.is_on_main_chain == Some(0) && unit.level < later_unit.level {
@@ -221,8 +221,6 @@ pub fn compare_unit_props(
             }
         }
     }
-
-    return Ok(Some(result_if_found));
 }
 
 pub fn determine_if_included(
