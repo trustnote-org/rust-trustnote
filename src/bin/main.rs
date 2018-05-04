@@ -102,7 +102,7 @@ fn test_ws() -> Result<()> {
         config::WS_PORT
     );
 
-    let mut client = network::WsClient::new(("127.0.0.1", config::WS_PORT))?;
+    let mut client = network::WsConnection::new(("127.0.0.1", config::WS_PORT))?;
     client.send_message("hello world".into())?;
     let msg = client.recv_message()?;
     println!("recv {}", msg);
@@ -166,7 +166,7 @@ fn log_init() {
 
 fn test_wss_client() -> Result<()> {
     // let mut client = network::WssClient::new("shawtest.trustnote.org")?;
-    let mut client = network::WsClient::new(("127.0.0.1", 6655))?;
+    let mut client = network::WsConnection::new(("127.0.0.1", 6655))?;
     loop {
         let msg = client.recv_message()?;
         println!("recv {}", msg);

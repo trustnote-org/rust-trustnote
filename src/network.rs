@@ -42,18 +42,18 @@ pub fn run_websocket_server<T: ToSocketAddrs>(address: T) -> JoinHandle<()> {
     })
 }
 
-pub struct WsClient {
+pub struct WsConnection {
     client: WebSocket<TcpStream>,
 }
 
-impl WsClient {
+impl WsConnection {
     pub fn new<T: ToSocketAddrs>(address: T) -> Result<Self> {
         let stream = TcpStream::connect(address)?;
         let url = Url::parse("wss://localhost/")?;
         let req = Request::from(url);
 
         let (client, _) = client(req, stream)?;
-        Ok(WsClient { client })
+        Ok(WsConnection { client })
     }
 
     pub fn send_message(&mut self, msg: String) -> Result<()> {
@@ -78,11 +78,11 @@ impl WsClient {
 
 // this is only for test client
 // for test server we have to setup the server encrypt pub/priv keys
-pub struct WssClient {
+pub struct WssConnection {
     client: WebSocket<TlsStream<TcpStream>>,
 }
 
-impl WssClient {
+impl WssConnection {
     pub fn new(host: &str) -> Result<Self> {
         let stream = TcpStream::connect((host, 443))?;
         let connector = TlsConnector::builder()?.build()?;
@@ -92,7 +92,7 @@ impl WssClient {
         let req = Request::from(url);
 
         let (client, _) = client(req, stream)?;
-        Ok(WssClient { client })
+        Ok(WssConnection { client })
     }
 
     pub fn send_message(&mut self, msg: String) -> Result<()> {
