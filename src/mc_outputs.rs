@@ -45,7 +45,7 @@ pub fn read_max_spendable_mc_index(db: &Connection, kind: &String) -> Result<u32
         kind
     );
 
-    let mut stmt = db.prepare(&sql)?;
+    let mut stmt = db.prepare_cached(&sql)?;
     let max_mc_index = stmt.query_row(&[], |row| row.get::<_, u32>(0)).unwrap_or(0);
 
     Ok(max_mc_index)
@@ -91,9 +91,9 @@ pub fn find_mc_index_interval_to_target_amount(
     let sql = format!(
         "SELECT main_chain_index, amount \
          FROM {}_outputs \
-         WHERE is_spent=0 AND address={} AND main_chain_index>={} AND main_chain_index<={} \
-         ORDER BY main_chain_index LIMIT {}",
-        kind, address, from_mci, max_spendable_mci, max_count_outputs
+         WHERE is_spent=0 AND address=? AND main_chain_index>=? AND main_chain_index<=? \
+         ORDER BY main_chain_index LIMIT ?",
+        kind
     );
 
     struct Row {
@@ -101,11 +101,19 @@ pub fn find_mc_index_interval_to_target_amount(
         amount: u32,
     }
 
-    let mut stmt = db.prepare(&sql)?;
-    let rows = stmt.query_map(&[], |row| Row {
-        main_chain_index: row.get(0),
-        amount: row.get(1),
-    })?;
+    let mut stmt = db.prepare_cached(&sql)?;
+    let rows = stmt.query_map(
+        &[
+            address,
+            &from_mci,
+            &max_spendable_mci,
+            &max_count_outputs,
+        ],
+        |row| Row {
+            main_chain_index: row.get(0),
+            amount: row.get(1),
+        },
+    )?;
 
     let mut outputs = Vec::new();
     for row in rows {
@@ -145,13 +153,16 @@ pub fn calc_earnings(
 ) -> Result<u32> {
     let sql = format!(
         "SELECT SUM(amount) AS total FROM {}_outputs \
-         WHERE main_chain_index>={} AND main_chain_index<={} \
-         AND address={}",
-        kind, from_main_chain_index, to_main_chain_index, address
+         WHERE main_chain_index>=? AND main_chain_index<=? \
+         AND address=?",
+        kind
     );
 
-    let mut stmt = db.prepare(&sql)?;
-    let total = stmt.query_row(&[], |row| row.get::<_, u32>(0)).unwrap_or(0);
+    let mut stmt = db.prepare_cached(&sql)?;
+    let total = stmt.query_row(
+        &[&from_main_chain_index, &to_main_chain_index, address],
+        |row| row.get::<_, u32>(0),
+    ).unwrap_or(0);
 
     Ok(total)
 }
