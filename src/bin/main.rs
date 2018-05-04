@@ -6,8 +6,12 @@ extern crate log;
 extern crate serde_json;
 extern crate base64;
 extern crate fern;
+extern crate native_tls;
 extern crate trustnote;
 
+extern crate may;
+
+use serde_json::Value;
 use trustnote::*;
 
 fn test_json() -> Result<()> {
@@ -102,6 +106,7 @@ fn test_ws() -> Result<()> {
     client.send_message("hello world".into())?;
     let msg = client.recv_message()?;
     println!("recv {}", msg);
+    client.close()?;
     // server.join().map_err(|_| format_err!("failed to join the server"))
     Ok(())
 }
@@ -159,6 +164,46 @@ fn log_init() {
     info!("log init done!");
 }
 
+fn test_wss_client() -> Result<()> {
+    // let mut client = network::WssClient::new("shawtest.trustnote.org")?;
+    let mut client = network::WsClient::new(("127.0.0.1", 6655))?;
+    loop {
+        let msg = client.recv_message()?;
+        println!("recv {}", msg);
+        let json: Value = serde_json::from_str(&msg)?;
+        println!("josn = {}", json);
+
+        match json[0].as_str() {
+            Some("request") => println!("recv a request"),
+            Some("response") => println!("recv a response"),
+            Some("justsaying") => println!("recv a justsaying"),
+            Some(unkown) => println!("recv unkonw type packet: type = {}", unkown),
+            None => error!("recv a bad formatted packet!"),
+        }
+
+        if json[0].as_str() == Some("request") {
+            println!("get a request");
+            let command = json[1]["command"].as_str();
+            if command == Some("subscribe") {
+                let tag = json[1]["tag"].as_str().unwrap();
+                let rsp = json!(["response", {"tag": tag, "response": "subscribed"}]).to_string();
+                println!("rsp = {}", rsp);
+                client.send_message(rsp)?;
+                println!("send subscribe result done");
+            }
+
+            if command == Some("heartbeat") {
+                let tag = json[1]["tag"].as_str().unwrap();
+                let rsp = json!(["response", { "tag": tag }]).to_string();
+                println!("rsp = {}", rsp);
+                client.send_message(rsp)?;
+                println!("send heartbeat result done");
+            }
+        }
+    }
+    // Ok(())
+}
+
 fn main() {
     // use std::io::{self, Read};
     log_init();
@@ -167,6 +212,7 @@ fn main() {
     test_db().unwrap();
     test_ws().unwrap();
     test_signature().unwrap();
+    test_wss_client().unwrap();
     info!("bye from main!\n\n");
     // io::stdin().read(&mut [0]).ok();
 }

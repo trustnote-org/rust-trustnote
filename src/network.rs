@@ -1,14 +1,14 @@
-use std::io;
 use std::net::ToSocketAddrs;
 
+use error::Result;
 use may::coroutine::JoinHandle;
 use may::net::{TcpListener, TcpStream};
+use native_tls::{TlsConnector, TlsStream};
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::server::accept;
 use tungstenite::{Message, WebSocket};
 use url::Url;
-
 pub fn run_websocket_server<T: ToSocketAddrs>(address: T) -> JoinHandle<()> {
     let address = address
         .to_socket_addrs()
@@ -47,33 +47,69 @@ pub struct WsClient {
 }
 
 impl WsClient {
-    pub fn new<T: ToSocketAddrs>(address: T) -> io::Result<Self> {
+    pub fn new<T: ToSocketAddrs>(address: T) -> Result<Self> {
         let stream = TcpStream::connect(address)?;
-        let url = Url::parse("ws://localhost:8080/").unwrap();
+        let url = Url::parse("wss://localhost/")?;
         let req = Request::from(url);
-        match client(req, stream) {
-            Ok((client, _)) => Ok(WsClient { client }),
-            Err(_) => Err(io::Error::new(
-                io::ErrorKind::NotConnected,
-                "failed ws handshake",
-            )),
-        }
+
+        let (client, _) = client(req, stream)?;
+        Ok(WsClient { client })
     }
 
-    pub fn send_message(&mut self, msg: String) -> io::Result<()> {
-        self.client
-            .write_message(Message::Text(msg))
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+    pub fn send_message(&mut self, msg: String) -> Result<()> {
+        self.client.write_message(Message::Text(msg))?;
+        Ok(())
     }
 
-    pub fn recv_message(&mut self) -> io::Result<String> {
-        let msg = self.client
-            .read_message()
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+    pub fn recv_message(&mut self) -> Result<String> {
+        let msg = self.client.read_message()?;
 
         match msg {
             Message::Text(s) => Ok(s),
-            _ => Err(io::Error::new(io::ErrorKind::Other, "not a text message")),
+            _ => bail!("not a text message"),
         }
+    }
+
+    pub fn close(mut self) -> Result<()> {
+        self.client.close(None)?;
+        Ok(())
+    }
+}
+
+// this is only for test client
+// for test server we have to setup the server encrypt pub/priv keys
+pub struct WssClient {
+    client: WebSocket<TlsStream<TcpStream>>,
+}
+
+impl WssClient {
+    pub fn new(host: &str) -> Result<Self> {
+        let stream = TcpStream::connect((host, 443))?;
+        let connector = TlsConnector::builder()?.build()?;
+        let stream = connector.connect(host, stream)?;
+        let url = format!("wss://{}/", host);
+        let url = Url::parse(&url)?;
+        let req = Request::from(url);
+
+        let (client, _) = client(req, stream)?;
+        Ok(WssClient { client })
+    }
+
+    pub fn send_message(&mut self, msg: String) -> Result<()> {
+        self.client.write_message(Message::Text(msg))?;
+        Ok(())
+    }
+
+    pub fn recv_message(&mut self) -> Result<String> {
+        let msg = self.client.read_message()?;
+        match msg {
+            Message::Text(s) => Ok(s),
+            _ => bail!("not a text message"),
+        }
+    }
+
+    pub fn close(mut self) -> Result<()> {
+        self.client.close(None)?;
+        Ok(())
     }
 }

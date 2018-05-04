@@ -160,7 +160,7 @@ pub fn compare_unit_props(
             for row in rows {
                 let unit = row?;
                 if unit.unit == earlier_unit.unit {
-                    return Ok(Some(result_if_found))
+                    return Ok(Some(result_if_found));
                 }
 
                 if unit.is_on_main_chain == Some(0) && unit.level > earlier_unit.level {
