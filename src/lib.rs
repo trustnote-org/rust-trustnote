@@ -37,6 +37,7 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod graph;
+pub mod mc_outputs;
 pub mod my_witness;
 pub mod network;
 pub mod spec;
