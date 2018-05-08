@@ -103,12 +103,7 @@ pub fn find_mc_index_interval_to_target_amount(
 
     let mut stmt = db.prepare_cached(&sql)?;
     let rows = stmt.query_map(
-        &[
-            address,
-            &from_mci,
-            &max_spendable_mci,
-            &max_count_outputs,
-        ],
+        &[address, &from_mci, &max_spendable_mci, &max_count_outputs],
         |row| Row {
             main_chain_index: row.get(0),
             amount: row.get(1),

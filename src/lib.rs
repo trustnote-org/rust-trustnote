@@ -19,6 +19,7 @@ extern crate serde_derive;
 extern crate base32;
 extern crate base64;
 extern crate bit_vec;
+extern crate may_actor;
 extern crate native_tls;
 extern crate ripemd160;
 extern crate secp256k1;

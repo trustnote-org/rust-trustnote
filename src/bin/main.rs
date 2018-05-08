@@ -11,7 +11,7 @@ extern crate trustnote;
 
 extern crate may;
 
-use serde_json::Value;
+// use serde_json::Value;
 use trustnote::*;
 
 fn test_json() -> Result<()> {
@@ -96,18 +96,18 @@ fn test_db() -> Result<()> {
 }
 
 fn test_ws() -> Result<()> {
-    let _server = network::run_websocket_server(("0.0.0.0", config::WS_PORT));
+    let _server = network::run_ws_server(("0.0.0.0", config::WS_PORT));
     println!(
         "Websocket server running on ws://0.0.0.0:{}",
         config::WS_PORT
     );
 
-    let mut client = network::WsConnection::new(("127.0.0.1", config::WS_PORT))?;
-    client.send_message("hello world".into())?;
-    let msg = client.recv_message()?;
-    println!("recv {}", msg);
-    client.close()?;
-    // server.join().map_err(|_| format_err!("failed to join the server"))
+    let client = network::new_ws(("127.0.0.1", config::WS_PORT))?;
+
+    client.call(|me| me.send_json(&json!(["justsaying", "hahehe"])).unwrap());
+
+    may::coroutine::sleep(std::time::Duration::from_secs(1));
+
     Ok(())
 }
 
@@ -164,45 +164,45 @@ fn log_init() {
     info!("log init done!");
 }
 
-fn test_wss_client() -> Result<()> {
-    // let mut client = network::WssClient::new("shawtest.trustnote.org")?;
-    let mut client = network::WsConnection::new(("127.0.0.1", 6655))?;
-    loop {
-        let msg = client.recv_message()?;
-        println!("recv {}", msg);
-        let json: Value = serde_json::from_str(&msg)?;
-        println!("josn = {}", json);
+// fn test_wss_client() -> Result<()> {
+//     // let mut client = network::WssClient::new("shawtest.trustnote.org")?;
+//     let mut client = network::new_ws(("127.0.0.1", 6655))?;
+//     loop {
+//         let msg = client.recv_message()?;
+//         println!("recv {}", msg);
+//         let json: Value = serde_json::from_str(&msg)?;
+//         println!("josn = {}", json);
 
-        match json[0].as_str() {
-            Some("request") => println!("recv a request"),
-            Some("response") => println!("recv a response"),
-            Some("justsaying") => println!("recv a justsaying"),
-            Some(unkown) => println!("recv unkonw type packet: type = {}", unkown),
-            None => error!("recv a bad formatted packet!"),
-        }
+//         match json[0].as_str() {
+//             Some("request") => println!("recv a request"),
+//             Some("response") => println!("recv a response"),
+//             Some("justsaying") => println!("recv a justsaying"),
+//             Some(unkown) => println!("recv unkonw type packet: type = {}", unkown),
+//             None => error!("recv a bad formatted packet!"),
+//         }
 
-        if json[0].as_str() == Some("request") {
-            println!("get a request");
-            let command = json[1]["command"].as_str();
-            if command == Some("subscribe") {
-                let tag = json[1]["tag"].as_str().unwrap();
-                let rsp = json!(["response", {"tag": tag, "response": "subscribed"}]).to_string();
-                println!("rsp = {}", rsp);
-                client.send_message(rsp)?;
-                println!("send subscribe result done");
-            }
+//         if json[0].as_str() == Some("request") {
+//             println!("get a request");
+//             let command = json[1]["command"].as_str();
+//             if command == Some("subscribe") {
+//                 let tag = json[1]["tag"].as_str().unwrap();
+//                 let rsp = json!(["response", {"tag": tag, "response": "subscribed"}]).to_string();
+//                 println!("rsp = {}", rsp);
+//                 client.send_message(rsp)?;
+//                 println!("send subscribe result done");
+//             }
 
-            if command == Some("heartbeat") {
-                let tag = json[1]["tag"].as_str().unwrap();
-                let rsp = json!(["response", { "tag": tag }]).to_string();
-                println!("rsp = {}", rsp);
-                client.send_message(rsp)?;
-                println!("send heartbeat result done");
-            }
-        }
-    }
-    // Ok(())
-}
+//             if command == Some("heartbeat") {
+//                 let tag = json[1]["tag"].as_str().unwrap();
+//                 let rsp = json!(["response", { "tag": tag }]).to_string();
+//                 println!("rsp = {}", rsp);
+//                 client.send_message(rsp)?;
+//                 println!("send heartbeat result done");
+//             }
+//         }
+//     }
+//     // Ok(())
+// }
 
 fn main() {
     // use std::io::{self, Read};
@@ -212,7 +212,7 @@ fn main() {
     test_db().unwrap();
     test_ws().unwrap();
     test_signature().unwrap();
-    test_wss_client().unwrap();
+    // test_wss_client().unwrap();
     info!("bye from main!\n\n");
     // io::stdin().read(&mut [0]).ok();
 }
