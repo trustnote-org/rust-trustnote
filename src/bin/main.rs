@@ -96,15 +96,23 @@ fn test_db() -> Result<()> {
 }
 
 fn test_ws() -> Result<()> {
-    let _server = network::run_ws_server(("0.0.0.0", config::WS_PORT));
+    use may::net::TcpStream;
+    use network::hub_connection::*;
+    use network::Connection;
+
+    let _server = network::run_ws_server::<HubConnImpl<TcpStream>, _>(("0.0.0.0", config::WS_PORT));
     println!(
         "Websocket server running on ws://0.0.0.0:{}",
         config::WS_PORT
     );
 
-    let client = network::new_ws(("127.0.0.1", config::WS_PORT))?;
+    let client = create_outbound_conn(("127.0.0.1", config::WS_PORT))?;
 
-    client.call(|me| me.send_json(&json!(["justsaying", "hahehe"])).unwrap());
+    client.call(|me| me.send_json(&json!(["justsaying", "hehehe"])).unwrap());
+
+    let g = network::INBOUND_CONN.read().unwrap();
+    let server = &g[0];
+    server.call(|me| me.send_json(&json!(["justsaying", "hahaha"])).unwrap());
 
     Ok(())
 }
