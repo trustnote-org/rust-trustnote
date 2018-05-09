@@ -28,8 +28,9 @@ secp256k1 = "0.9"
 sha2 = "0.7"
 ripemd160 = "0.7"
 bit-vec = "0.4.4"
-
 [dependencies.rusqlite]
 version = "0.13"
 features = ["bundled"]
 
+[patch.crates-io]
+rand = { git = "https://github.com/Xudong-Huang/rand.git" }

@@ -106,8 +106,6 @@ fn test_ws() -> Result<()> {
 
     client.call(|me| me.send_json(&json!(["justsaying", "hahehe"])).unwrap());
 
-    may::coroutine::sleep(std::time::Duration::from_secs(1));
-
     Ok(())
 }
 
@@ -204,15 +202,27 @@ fn log_init() {
 //     // Ok(())
 // }
 
+fn network_clean() {
+    // remove all the actors
+    let mut g = network::OUTBOUND_CONN.write().unwrap();
+    g.clear();
+
+    let mut g = network::INBOUND_CONN.write().unwrap();
+    g.clear();
+}
+
 fn main() {
-    // use std::io::{self, Read};
+    use std::io::{self, Read};
+    may::config().set_stack_size(0x1000 - 1);
     log_init();
     show_config().unwrap();
     test_json().unwrap();
     test_db().unwrap();
     test_ws().unwrap();
     test_signature().unwrap();
+
     // test_wss_client().unwrap();
+    network_clean();
+    io::stdin().read(&mut [0]).ok();
     info!("bye from main!\n\n");
-    // io::stdin().read(&mut [0]).ok();
 }
