@@ -96,23 +96,25 @@ fn test_db() -> Result<()> {
 }
 
 fn test_ws() -> Result<()> {
-    use may::net::TcpStream;
-    use network::hub_connection::*;
-    use network::Connection;
+    use network::hub;
+    use network::WsServer;
 
-    let _server = network::run_ws_server::<HubConnImpl<TcpStream>, _>(("0.0.0.0", config::WS_PORT));
+    let _server = WsServer::start(("0.0.0.0", config::WS_PORT), |c| {
+        let mut g = hub::INBOUND_CONN.write().unwrap();
+        g.push(hub::HubConn(c));
+    });
     println!(
         "Websocket server running on ws://0.0.0.0:{}",
         config::WS_PORT
     );
 
-    let client = create_outbound_conn(("127.0.0.1", config::WS_PORT))?;
+    let client = hub::create_outbound_conn(("127.0.0.1", config::WS_PORT))?;
 
-    client.call(|me| me.send_json(&json!(["justsaying", "hehehe"])).unwrap());
+    client.send_message(json!("hehehe"));
 
-    let g = network::INBOUND_CONN.read().unwrap();
+    let g = hub::INBOUND_CONN.read().unwrap();
     let server = &g[0];
-    server.call(|me| me.send_json(&json!(["justsaying", "hahaha"])).unwrap());
+    server.send_message(json!("hahaha"));
 
     Ok(())
 }
@@ -212,10 +214,10 @@ fn log_init() {
 
 fn network_clean() {
     // remove all the actors
-    let mut g = network::OUTBOUND_CONN.write().unwrap();
+    let mut g = network::hub::OUTBOUND_CONN.write().unwrap();
     g.clear();
 
-    let mut g = network::INBOUND_CONN.write().unwrap();
+    let mut g = network::hub::INBOUND_CONN.write().unwrap();
     g.clear();
 }
 

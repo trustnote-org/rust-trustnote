@@ -12,9 +12,25 @@ use tungstenite::protocol::Role;
 use tungstenite::{Message, WebSocket};
 use url::Url;
 
-use network::*;
+use network::Connection;
 
-pub type HubConn = Actor<HubConnImpl<TcpStream>>;
+use may::sync::RwLock;
+
+lazy_static! {
+    pub static ref INBOUND_CONN: RwLock<Vec<HubConn>> = RwLock::new(Vec::new());
+    pub static ref OUTBOUND_CONN: RwLock<Vec<HubConn>> = RwLock::new(Vec::new());
+}
+
+#[derive(Clone)]
+pub struct HubConn(pub Actor<HubConnImpl<TcpStream>>);
+
+impl HubConn {
+    // just a simple example interface
+    pub fn send_message(&self, msg: Value) {
+        self.0
+            .call(move |me| me.send_json(&json!(["justsaying", msg])).unwrap());
+    }
+}
 
 pub struct HubConnImpl<T: Read + Write> {
     // this half is only used for send message
@@ -64,10 +80,11 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<HubConn> {
 
     let (conn, _) = client(req, stream)?;
     let r_ws = WebSocket::from_raw_socket(r_stream, Role::Client);
-    let outbound = Actor::drive_new(HubConnImpl { conn }, move |actor| {
+    let actor = Actor::drive_new(HubConnImpl { conn }, move |actor| {
         super::network::connection_receiver(r_ws, actor)
     });
 
+    let outbound = HubConn(actor);
     let mut g = OUTBOUND_CONN.write().unwrap();
     g.push(outbound.clone());
     Ok(outbound)

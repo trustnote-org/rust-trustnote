@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 
 use error::Result;
@@ -41,6 +42,37 @@ pub trait Connection<S> {
     fn on_response(&mut self, msg: Value) -> Result<()>;
 }
 
+// helper struct for easy use
+pub struct WsServer<C>(PhantomData<C>);
+
+impl<C: Connection<TcpStream> + Send + 'static> WsServer<C> {
+    // f is used to save the connection actor globally
+    pub fn start<A, F>(address: A, f: F) -> JoinHandle<()>
+    where
+        A: ToSocketAddrs,
+        F: Fn(Actor<C>) + Send + 'static,
+    {
+        let address = address
+            .to_socket_addrs()
+            .expect("invalid address")
+            .next()
+            .expect("can't resolve address");
+
+        go!(move || {
+            let listener = TcpListener::bind(address).unwrap();
+            // for stream in listener.incoming() {
+            while let Ok((stream, _)) = listener.accept() {
+                let r = t_c!(stream.try_clone());
+                let ws = Connection::new(t_c!(accept(stream)));
+                let recv = WebSocket::from_raw_socket(r, Role::Server);
+
+                let actor = Actor::drive_new(ws, move |actor| connection_receiver(recv, actor));
+                f(actor);
+            }
+        })
+    }
+}
+
 // the recevier back ground coroutine logic
 pub fn connection_receiver<S, C>(mut ws: WebSocket<S>, actor: DriverActor<C>)
 where
@@ -79,30 +111,4 @@ where
             }
         }
     }
-}
-
-pub fn run_ws_server<C, A>(address: A) -> JoinHandle<()>
-where
-    A: ToSocketAddrs,
-    C: Connection<TcpStream>,
-{
-    let address = address
-        .to_socket_addrs()
-        .expect("invalid address")
-        .next()
-        .expect("can't resolve address");
-
-    go!(move || {
-        let listener = TcpListener::bind(address).unwrap();
-        // for stream in listener.incoming() {
-        while let Ok((stream, _)) = listener.accept() {
-            let r = t_c!(stream.try_clone());
-            let ws = Connection::new(t_c!(accept(stream)));
-            let recv = WebSocket::from_raw_socket(r, Role::Server);
-
-            let inbound = Actor::drive_new(ws, move |actor| connection_receiver(recv, actor));
-            let mut g = super::INBOUND_CONN.write().unwrap();
-            g.push(inbound);
-        }
-    })
 }
