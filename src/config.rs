@@ -7,6 +7,8 @@ pub const WS_PORT: u16 = 8080;
 pub const COUNT_WITNESSES: usize = 12;
 pub const MAJORITY_OF_WITNESSES: usize = 7;
 pub const GENESIS_UNIT: &str = "rg1RzwKwnfRHjBojGol3gZaC5w7kR++rOR6O61JRsrQ=";
+pub const VERSION: &str = "1.0";
+pub const ALT: &str = "1";
 
 lazy_static! {
     pub static ref CONFIG: RwLock<Config> = RwLock::new({

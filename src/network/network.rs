@@ -36,7 +36,7 @@ macro_rules! t_c {
 
 pub trait Connection<S> {
     fn new(s: WebSocket<S>) -> Self;
-    fn send_json(&mut self, value: &Value) -> Result<()>;
+    fn send_json(&mut self, value: Value) -> Result<()>;
     fn on_message(&mut self, msg: Value) -> Result<()>;
     fn on_request(&mut self, msg: Value) -> Result<()>;
     fn on_response(&mut self, msg: Value) -> Result<()>;

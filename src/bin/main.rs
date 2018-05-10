@@ -110,11 +110,11 @@ fn test_ws() -> Result<()> {
 
     let client = hub::create_outbound_conn(("127.0.0.1", config::WS_PORT))?;
 
-    client.send_message(json!("hehehe"));
+    client.send_version()?;
 
     let g = hub::INBOUND_CONN.read().unwrap();
     let server = &g[0];
-    server.send_message(json!("hahaha"));
+    server.send_version()?;
 
     Ok(())
 }
@@ -223,7 +223,7 @@ fn network_clean() {
 
 fn main() {
     use std::io::{self, Read};
-    may::config().set_stack_size(0x1000 - 1);
+    // may::config().set_stack_size(0x1000 - 1);
     log_init();
     show_config().unwrap();
     test_json().unwrap();
