@@ -1,5 +1,6 @@
 use std::io::{Read, Write};
 use std::net::ToSocketAddrs;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use config;
 use error::Result;
@@ -13,28 +14,88 @@ use tungstenite::protocol::Role;
 use tungstenite::{Message, WebSocket};
 use url::Url;
 
+use may::sync::RwLock;
 use network::Connection;
 
-use may::sync::RwLock;
+// global Ws connections
+pub struct WsConnections {
+    inbound: RwLock<Vec<HubConn>>,
+    outbound: RwLock<Vec<HubConn>>,
+    next_inbound: AtomicUsize,
+    next_outbound: AtomicUsize,
+}
+
+impl WsConnections {
+    fn new() -> Self {
+        WsConnections {
+            inbound: RwLock::new(Vec::new()),
+            outbound: RwLock::new(Vec::new()),
+            next_inbound: AtomicUsize::new(0),
+            next_outbound: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn add_inbound(&self, inbound: HubConn) {
+        let mut g = self.inbound.write().unwrap();
+        g.push(inbound);
+    }
+
+    pub fn add_outbound(&self, outbound: HubConn) {
+        let mut g = self.outbound.write().unwrap();
+        g.push(outbound);
+    }
+
+    pub fn close_all(&self) {
+        let mut g = self.outbound.write().unwrap();
+        g.clear();
+        let mut g = self.inbound.write().unwrap();
+        g.clear();
+    }
+
+    pub fn close(&self, key: usize) {
+        // find out the actor and remove it
+        let mut g = self.outbound.write().unwrap();
+        for i in 0..g.len() {
+            if g[i].0.key() == key {
+                g.swap_remove(i);
+                return;
+            }
+        }
+
+        let mut g = self.inbound.write().unwrap();
+        for i in 0..g.len() {
+            if g[i].0.key() == key {
+                g.swap_remove(i);
+                return;
+            }
+        }
+    }
+
+    pub fn get_next_inbound(&self) -> HubConn {
+        let g = self.inbound.read().unwrap();
+        let len = g.len();
+        assert_ne!(len, 0);
+        let idx = self.next_inbound.fetch_add(1, Ordering::Relaxed) % len;
+        g[idx].clone()
+    }
+
+    pub fn get_next_outbound(&self) -> HubConn {
+        let g = self.outbound.read().unwrap();
+        let len = g.len();
+        assert_ne!(len, 0);
+        let idx = self.next_outbound.fetch_add(1, Ordering::Relaxed) % len;
+        g[idx].clone()
+    }
+}
 
 lazy_static! {
-    pub static ref INBOUND_CONN: RwLock<Vec<HubConn>> = RwLock::new(Vec::new());
-    pub static ref OUTBOUND_CONN: RwLock<Vec<HubConn>> = RwLock::new(Vec::new());
+    pub static ref WSS: WsConnections = WsConnections::new();
 }
 
 #[derive(Clone)]
 pub struct HubConn(pub Actor<HubConnImpl<TcpStream>>);
 
 impl HubConn {
-    #[inline]
-    pub fn with<R, F>(&self, f: F) -> R
-    where
-        F: FnOnce(&mut HubConnImpl<TcpStream>) -> R + Send,
-        R: Send,
-    {
-        self.0.with(f)
-    }
-
     pub fn send_version(&self) -> Result<()> {
         // TODO: read these things from config
         self.0.with(|me| {
@@ -103,8 +164,10 @@ impl<T: Read + Write> Connection<T> for HubConnImpl<T> {
 }
 
 impl<T: Read + Write> HubConnImpl<T> {
+    // remove self from global
     pub fn close(&self) {
-        unimplemented!()
+        let actor = unsafe { Actor::from(self) };
+        WSS.close(actor.key());
     }
 }
 
@@ -173,8 +236,10 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<HubConn> {
     });
 
     let outbound = HubConn(actor);
-    let mut g = OUTBOUND_CONN.write().unwrap();
-    g.push(outbound.clone());
+    {
+        let outbound = outbound.clone();
+        WSS.add_outbound(outbound);
+    }
     Ok(outbound)
 }
 

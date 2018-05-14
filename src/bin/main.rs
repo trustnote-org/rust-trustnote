@@ -97,12 +97,11 @@ fn test_db() -> Result<()> {
 }
 
 fn test_ws() -> Result<()> {
-    use network::hub;
+    use network::hub::{self, WSS};
     use network::WsServer;
 
     let _server = WsServer::start(("0.0.0.0", config::WS_PORT), |c| {
-        let mut g = hub::INBOUND_CONN.write().unwrap();
-        g.push(hub::HubConn(c));
+        WSS.add_inbound(hub::HubConn(c));
     });
     println!(
         "Websocket server running on ws://0.0.0.0:{}",
@@ -113,8 +112,7 @@ fn test_ws() -> Result<()> {
 
     client.send_version()?;
 
-    let g = hub::INBOUND_CONN.read().unwrap();
-    let server = &g[0];
+    let server = WSS.get_next_inbound();
     server.send_version()?;
 
     Ok(())
@@ -218,11 +216,7 @@ fn test_ws_client() -> Result<()> {
 
 fn network_clean() {
     // remove all the actors
-    let mut g = network::hub::OUTBOUND_CONN.write().unwrap();
-    g.clear();
-
-    let mut g = network::hub::INBOUND_CONN.write().unwrap();
-    g.clear();
+    network::hub::WSS.close_all();
 }
 
 fn main_run() -> Result<()> {
