@@ -9,6 +9,7 @@ extern crate fern;
 extern crate native_tls;
 extern crate trustnote;
 
+#[macro_use]
 extern crate may;
 
 // use serde_json::Value;
@@ -224,18 +225,25 @@ fn network_clean() {
     g.clear();
 }
 
-fn main() {
-    use std::io::{self, Read};
-    // may::config().set_stack_size(0x1000 - 1);
-    log_init();
-    show_config().unwrap();
-    test_json().unwrap();
-    test_db().unwrap();
-    test_ws().unwrap();
-    test_signature().unwrap();
+fn main_run() -> Result<()> {
+    test_json()?;
+    test_db()?;
+    test_signature()?;
+    test_ws()?;
+    test_ws_client()?;
+    Ok(())
+}
 
-    test_ws_client().unwrap();
-    io::stdin().read(&mut [0]).ok();
+fn main() -> Result<()> {
+    use std::io::{self, Read};
+    may::config().set_stack_size(0x2000 - 1);
+    signature::init_secp256k1()?;
+    log_init();
+    show_config()?;
+    // run the network stuff in coroutine context
+    go!(|| main_run().unwrap()).join().unwrap();
+    io::stdin().read(&mut [0])?;
     network_clean();
     info!("bye from main!\n\n");
+    Ok(())
 }
