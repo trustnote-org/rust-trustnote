@@ -42,11 +42,11 @@ impl HubConn {
                 "version",
                 json!({
                     "protocol_version": config::VERSION, 
-	            "alt": config::ALT, 
-	            "library": "rust-trustnote", 
-	            "library_version": "0.1.0", 
-	            "program": "rust-trustnote-hub", 
-	            "program_version": "0.1.0"
+	                "alt": config::ALT, 
+		            "library": "rust-trustnote", 
+		            "library_version": "0.1.0", 
+		            "program": "rust-trustnote-hub", 
+		            "program_version": "0.1.0"
                 }),
             )
         })
@@ -80,8 +80,14 @@ impl<T: Read + Write> Connection<T> for HubConnImpl<T> {
         Ok(())
     }
 
-    fn on_message(&mut self, msg: Value) -> Result<()> {
-        println!("recv a message: {}", msg);
+    fn on_message(&mut self, mut msg: Value) -> Result<()> {
+        let mut content = msg[1].take();
+        let subject = content["subject"].take();
+        let body = content["body"].take();
+        match subject.as_str().unwrap_or("none") {
+            "version" => self.on_version(body)?,
+            subject => bail!("on_message unkown subject: {}", subject),
+        }
         Ok(())
     }
 
@@ -92,6 +98,33 @@ impl<T: Read + Write> Connection<T> for HubConnImpl<T> {
 
     fn on_response(&mut self, msg: Value) -> Result<()> {
         println!("recv a resonse: {}", msg);
+        Ok(())
+    }
+}
+
+impl<T: Read + Write> HubConnImpl<T> {
+    pub fn close(&self) {
+        unimplemented!()
+    }
+}
+
+impl<T: Read + Write> HubConnImpl<T> {
+    fn on_version(&mut self, version: Value) -> Result<()> {
+        if version["protocol_version"].as_str() != Some(config::VERSION) {
+            let err_msg = format!("Incompatible versions, mine {}", config::VERSION);
+            self.send_error(json!(err_msg))?;
+            self.close();
+            return Ok(());
+        }
+
+        if version["alt"].as_str() != Some(config::ALT) {
+            let err_msg = format!("Incompatible alt, mine {}", config::ALT);
+            self.send_error(json!(err_msg))?;
+            self.close();
+            return Ok(());
+        }
+
+        info!("got peer version: {}", version);
         Ok(())
     }
 }
@@ -119,6 +152,10 @@ impl<T: Read + Write> HubConnImpl<T> {
 
     pub fn send_error_result(&mut self, unit: &str, error: &str) -> Result<()> {
         self.send_result(json!({"unit": unit, "result": "error", "error": error}))
+    }
+
+    pub fn send_response(&mut self, tag: &str, response: Value) -> Result<()> {
+        self.send_message("response", json!({"tag": tag, "response": response}))
     }
 }
 
