@@ -21,7 +21,6 @@ extern crate base64;
 extern crate bit_vec;
 extern crate may_actor;
 extern crate may_waiter;
-extern crate native_tls;
 extern crate ripemd160;
 extern crate secp256k1;
 extern crate sha2;
@@ -37,6 +36,7 @@ macro_rules! some_if {
 
 pub mod config;
 pub mod db;
+#[macro_use]
 pub mod error;
 pub mod graph;
 pub mod mc_outputs;

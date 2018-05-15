@@ -6,7 +6,6 @@ extern crate log;
 extern crate serde_json;
 extern crate base64;
 extern crate fern;
-extern crate native_tls;
 extern crate trustnote;
 
 #[macro_use]
@@ -99,9 +98,10 @@ fn test_db() -> Result<()> {
 fn test_ws() -> Result<()> {
     use network::hub::{self, WSS};
     use network::WsServer;
+    use std::sync::Arc;
 
-    let _server = WsServer::start(("0.0.0.0", config::WS_PORT), |c| {
-        WSS.add_inbound(hub::HubConn(c));
+    let _server = WsServer::start(("0.0.0.0", config::WS_PORT), hub::HubServer, |c| {
+        WSS.add_inbound(hub::HubConn(Arc::new(c)));
     });
     println!(
         "Websocket server running on ws://0.0.0.0:{}",
