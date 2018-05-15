@@ -23,6 +23,7 @@ extern crate may_actor;
 extern crate may_waiter;
 extern crate ripemd160;
 extern crate secp256k1;
+extern crate sha1;
 extern crate sha2;
 
 macro_rules! some_if {
@@ -39,6 +40,7 @@ pub mod db;
 #[macro_use]
 pub mod error;
 pub mod graph;
+pub mod header_commissions;
 pub mod mc_outputs;
 pub mod my_witness;
 pub mod network;
