@@ -121,6 +121,7 @@ impl Server for HubServer {
     }
 
     fn close(&self, ws: Arc<WsWrapper>) {
+        warn!("need to close the peer socket");
         WSS.close(ws)
     }
 }
@@ -170,6 +171,12 @@ impl HubConn {
         )
     }
 
+    pub fn send_heartbeat(&self) -> Result<()> {
+        let rsp = self.send_request("heartbeat", Value::Null)?;
+        println!("heartbeat rsp = {}", rsp);
+        Ok(())
+    }
+
     // remove self from global
     pub fn close(&self) {
         WSS.close(self.ws.clone());
@@ -186,7 +193,7 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<HubConn> {
     let req = Request::from(url);
     let (conn, _) = client(req, stream)?;
     // let ws
-    let ws = WsConnection::new(conn, HubServer, peer, Role::Server)?;
+    let ws = WsConnection::new(conn, HubServer, peer, Role::Client)?;
 
     let outbound = HubConn(Arc::new(ws));
     {

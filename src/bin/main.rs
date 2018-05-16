@@ -109,7 +109,6 @@ fn test_ws() -> Result<()> {
     );
 
     let client = hub::create_outbound_conn(("127.0.0.1", config::WS_PORT))?;
-
     client.send_version()?;
 
     let server = WSS.get_next_inbound();
@@ -177,40 +176,7 @@ fn test_ws_client() -> Result<()> {
     // let mut client = network::WssClient::new("shawtest.trustnote.org")?;
     let client = hub::create_outbound_conn(("127.0.0.1", 6655))?;
     client.send_version()?;
-    // loop {
-    //     let msg = client.recv_message()?;
-    //     println!("recv {}", msg);
-    //     let json: Value = serde_json::from_str(&msg)?;
-    //     println!("josn = {}", json);
-
-    //     match json[0].as_str() {
-    //         Some("request") => println!("recv a request"),
-    //         Some("response") => println!("recv a response"),
-    //         Some("justsaying") => println!("recv a justsaying"),
-    //         Some(unkown) => println!("recv unkonw type packet: type = {}", unkown),
-    //         None => error!("recv a bad formatted packet!"),
-    //     }
-
-    //     if json[0].as_str() == Some("request") {
-    //         println!("get a request");
-    //         let command = json[1]["command"].as_str();
-    //         if command == Some("subscribe") {
-    //             let tag = json[1]["tag"].as_str().unwrap();
-    //             let rsp = json!(["response", {"tag": tag, "response": "subscribed"}]).to_string();
-    //             println!("rsp = {}", rsp);
-    //             client.send_message(rsp)?;
-    //             println!("send subscribe result done");
-    //         }
-
-    //         if command == Some("heartbeat") {
-    //             let tag = json[1]["tag"].as_str().unwrap();
-    //             let rsp = json!(["response", { "tag": tag }]).to_string();
-    //             println!("rsp = {}", rsp);
-    //             client.send_message(rsp)?;
-    //             println!("send heartbeat result done");
-    //         }
-    //     }
-    // }
+    client.send_heartbeat()?;
     Ok(())
 }
 
@@ -219,24 +185,29 @@ fn network_clean() {
     network::hub::WSS.close_all();
 }
 
+// the main test logic that run in coroutine context
 fn main_run() -> Result<()> {
     test_json()?;
     test_db()?;
     test_signature()?;
     test_ws()?;
-    // test_ws_client()?;
+    test_ws_client()?;
     Ok(())
 }
 
-fn main() -> Result<()> {
+fn pause() {
     use std::io::{self, Read};
+    io::stdin().read(&mut [0]).unwrap();
+}
+
+fn main() -> Result<()> {
     may::config().set_stack_size(0x2000 - 1);
     signature::init_secp256k1()?;
     log_init();
     show_config()?;
     // run the network stuff in coroutine context
     go!(|| main_run().unwrap()).join().unwrap();
-    io::stdin().read(&mut [0])?;
+    pause();
     network_clean();
     info!("bye from main!\n\n");
     Ok(())

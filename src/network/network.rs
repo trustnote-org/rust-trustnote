@@ -182,18 +182,21 @@ impl WsConnection {
                     "request" => {
                         let server = server.clone();
                         go!(move || {
-                            let tag = value[1]["tag"].clone();
-                            if tag.as_str().is_none() {
-                                return error!("tag is not found for request");
-                            }
+                            let tag = serde_json::from_value::<String>(value[1]["tag"].clone());
+                            let tag = match tag {
+                                Ok(t) => t,
+                                Err(_) => return error!("tag is not found for request"),
+                            };
+
                             // need to get and set the tag!!
                             match server.on_request(value) {
                                 Ok(rsp) => {
                                     // send the response
-                                    t!(ws.send_response(tag.as_str().unwrap(), rsp));
+                                    t!(ws.send_response(&tag, rsp));
                                 }
-                                Err(_e) => {
-                                    let error = json!({});
+                                Err(e) => {
+                                    let error = format!("{}", e);
+                                    let error = json!(error);
                                     t!(ws.send_error(error));
                                 }
                             }
@@ -201,8 +204,11 @@ impl WsConnection {
                     }
                     "response" => {
                         // set the wait req
-                        let tag = "asdf".to_owned();
-                        req_map_1.set_rsp(&tag, value).ok();
+                        if let Ok(tag) = serde_json::from_value::<String>(value[1]["tag"].clone()) {
+                            req_map_1.set_rsp(&tag, value).ok();
+                        } else {
+                            error!("tag is not found for request");
+                        }
                     }
                     s => {
                         error!("unkonw msg type: {}", s);
@@ -220,7 +226,10 @@ impl WsConnection {
     }
 
     pub fn send_request(&self, command: &str, param: Value) -> Result<Value> {
-        let mut request = json!({"command": command, "params": param});
+        let mut request = match param {
+            Value::Null => json!({ "command": command }),
+            _ => json!({"command": command, "params": param}),
+        };
         let tag = ::object_hash::get_base64_hash(&request)?;
         request["tag"] = json!(tag);
 
