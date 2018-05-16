@@ -42,7 +42,7 @@ pub trait Server {
     fn on_message(&self, msg: Value) -> Result<()>;
     fn on_request(&self, msg: Value) -> Result<Value>;
     // need to close the connection from global
-    fn close(&self, ws: &WsWrapper);
+    fn close(&self, ws: Arc<WsWrapper>);
 }
 
 pub trait Sender {
@@ -77,10 +77,9 @@ pub trait Sender {
     }
 }
 
-#[derive(Clone)]
 pub struct WsWrapper {
-    ws: Arc<Mutex<WebSocket<TcpStream>>>,
-    peer: Arc<String>,
+    ws: Mutex<WebSocket<TcpStream>>,
+    peer: String,
 }
 
 impl Drop for WsWrapper {
@@ -103,7 +102,7 @@ impl Sender for WsWrapper {
 
 pub struct WsConnection {
     // the connection write half
-    pub ws: WsWrapper,
+    pub ws: Arc<WsWrapper>,
     // the waiting request
     req_map: Arc<WaiterMap<String, Value>>,
     // the listening coroutine
@@ -135,10 +134,10 @@ impl WsConnection {
 
         let req_map_1 = req_map.clone();
         let mut reader = WebSocket::from_raw_socket(ws.get_ref().try_clone()?, role);
-        let ws = WsWrapper {
-            ws: Arc::new(Mutex::new(ws)),
-            peer: Arc::new(peer),
-        };
+        let ws = Arc::new(WsWrapper {
+            ws: Mutex::new(ws),
+            peer: peer,
+        });
         let ws_1 = ws.clone();
 
         let listener = go!(move || {
@@ -175,7 +174,7 @@ impl WsConnection {
                                 if let Some(_) = e.downcast_ref::<::error::TrustnoteError>() {
                                     // need to close the connection
                                     // NOTE: it will dead lock if within the parent coroutine
-                                    server.close(&ws);
+                                    server.close(ws);
                                 }
                             }
                         });
@@ -233,8 +232,8 @@ impl WsConnection {
         Ok(rsp)
     }
 
-    pub fn ws_eq(&self, ws: &WsWrapper) -> bool {
-        Arc::ptr_eq(&self.ws.ws, &ws.ws)
+    pub fn ws_eq(&self, ws: &Arc<WsWrapper>) -> bool {
+        Arc::ptr_eq(&self.ws, ws)
     }
 }
 

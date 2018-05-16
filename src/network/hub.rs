@@ -56,11 +56,11 @@ impl WsConnections {
         g.clear();
     }
 
-    pub fn close(&self, conn: &WsWrapper) {
+    pub fn close(&self, conn: Arc<WsWrapper>) {
         // find out the actor and remove it
         let mut g = self.outbound.write().unwrap();
         for i in 0..g.len() {
-            if g[i].ws_eq(conn) {
+            if g[i].ws_eq(&conn) {
                 g.swap_remove(i);
                 return;
             }
@@ -68,7 +68,7 @@ impl WsConnections {
 
         let mut g = self.inbound.write().unwrap();
         for i in 0..g.len() {
-            if g[i].ws_eq(conn) {
+            if g[i].ws_eq(&conn) {
                 g.swap_remove(i);
                 return;
             }
@@ -120,7 +120,7 @@ impl Server for HubServer {
         Ok(response)
     }
 
-    fn close(&self, ws: &WsWrapper) {
+    fn close(&self, ws: Arc<WsWrapper>) {
         WSS.close(ws)
     }
 }
@@ -172,7 +172,7 @@ impl HubConn {
 
     // remove self from global
     pub fn close(&self) {
-        WSS.close(&self.ws);
+        WSS.close(self.ws.clone());
     }
 }
 

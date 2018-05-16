@@ -224,7 +224,7 @@ fn main_run() -> Result<()> {
     test_db()?;
     test_signature()?;
     test_ws()?;
-    test_ws_client()?;
+    // test_ws_client()?;
     Ok(())
 }
 
