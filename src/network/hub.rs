@@ -1,10 +1,12 @@
 use std::net::ToSocketAddrs;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use config;
 use error::Result;
+use may::coroutine;
 use may::net::TcpStream;
 use may::sync::RwLock;
 use network::{Sender, Server, WsConnection};
@@ -21,10 +23,25 @@ lazy_static! {
     pub static ref WSS: WsConnections = WsConnections::new();
 }
 
+fn start_heartbeat(ws: Weak<HubConn>) {
+    use rand::{thread_rng, Rng};
+
+    let mut rng = thread_rng();
+    let n: u64 = rng.gen_range(0, 1000);
+    go!(move || loop {
+        coroutine::sleep(Duration::from_millis(3000 + n));
+        let ws = match ws.upgrade() {
+            Some(ws) => ws,
+            None => return,
+        };
+        ws.send_heartbeat().ok();
+    });
+}
+
 // global request has no specific ws connections, just find a proper one should be fine
 pub struct WsConnections {
-    inbound: RwLock<Vec<HubConn>>,
-    outbound: RwLock<Vec<HubConn>>,
+    inbound: RwLock<Vec<Arc<HubConn>>>,
+    outbound: RwLock<Vec<Arc<HubConn>>>,
     next_inbound: AtomicUsize,
     next_outbound: AtomicUsize,
 }
@@ -39,12 +56,16 @@ impl WsConnections {
         }
     }
 
-    pub fn add_inbound(&self, inbound: HubConn) {
+    pub fn add_inbound(&self, inbound: Arc<HubConn>) {
+        let ws = Arc::downgrade(&inbound);
+        start_heartbeat(ws);
         let mut g = self.inbound.write().unwrap();
         g.push(inbound);
     }
 
-    pub fn add_outbound(&self, outbound: HubConn) {
+    pub fn add_outbound(&self, outbound: Arc<HubConn>) {
+        let ws = Arc::downgrade(&outbound);
+        start_heartbeat(ws);
         let mut g = self.outbound.write().unwrap();
         g.push(outbound);
     }
@@ -75,7 +96,7 @@ impl WsConnections {
         }
     }
 
-    pub fn get_next_inbound(&self) -> HubConn {
+    pub fn get_next_inbound(&self) -> Arc<HubConn> {
         let g = self.inbound.read().unwrap();
         let len = g.len();
         assert_ne!(len, 0);
@@ -83,7 +104,7 @@ impl WsConnections {
         g[idx].clone()
     }
 
-    pub fn get_next_outbound(&self) -> HubConn {
+    pub fn get_next_outbound(&self) -> Arc<HubConn> {
         let g = self.outbound.read().unwrap();
         let len = g.len();
         assert_ne!(len, 0);
@@ -145,8 +166,7 @@ impl HubServer {
     }
 }
 
-#[derive(Clone)]
-pub struct HubConn(pub Arc<WsConnection>);
+pub struct HubConn(pub WsConnection);
 
 impl Deref for HubConn {
     type Target = WsConnection;
@@ -171,9 +191,8 @@ impl HubConn {
         )
     }
 
-    pub fn send_heartbeat(&self) -> Result<()> {
-        let rsp = self.send_request("heartbeat", Value::Null)?;
-        println!("heartbeat rsp = {}", rsp);
+    fn send_heartbeat(&self) -> Result<()> {
+        self.send_request("heartbeat", Value::Null)?;
         Ok(())
     }
 
@@ -183,7 +202,7 @@ impl HubConn {
     }
 }
 
-pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<HubConn> {
+pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<HubConn>> {
     let stream = TcpStream::connect(address)?;
     let peer = match stream.peer_addr() {
         Ok(addr) => format!("{}", addr),
@@ -195,10 +214,7 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<HubConn> {
     // let ws
     let ws = WsConnection::new(conn, HubServer, peer, Role::Client)?;
 
-    let outbound = HubConn(Arc::new(ws));
-    {
-        let outbound = outbound.clone();
-        WSS.add_outbound(outbound);
-    }
+    let outbound = Arc::new(HubConn(ws));
+    WSS.add_outbound(outbound.clone());
     Ok(outbound)
 }

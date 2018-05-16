@@ -21,6 +21,7 @@ extern crate base64;
 extern crate bit_vec;
 extern crate may_actor;
 extern crate may_waiter;
+extern crate rand;
 extern crate ripemd160;
 extern crate secp256k1;
 extern crate sha1;

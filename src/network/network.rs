@@ -1,6 +1,7 @@
 // use std::io::Read;
 use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
+use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -77,17 +78,21 @@ pub trait Sender {
     }
 }
 
-pub struct WsWrapper {
-    ws: Mutex<WebSocket<TcpStream>>,
-    peer: String,
+struct WsInner {
+    ws: WebSocket<TcpStream>,
+    last_recv: u64,
 }
 
-impl Drop for WsWrapper {
+impl Drop for WsInner {
     fn drop(&mut self) {
         // send the close socket request
-        let mut g = self.ws.lock().unwrap();
-        g.close(None).ok();
+        self.ws.close(None).ok();
     }
+}
+
+pub struct WsWrapper {
+    ws: Mutex<WsInner>,
+    peer: String,
 }
 
 impl Sender for WsWrapper {
@@ -95,8 +100,24 @@ impl Sender for WsWrapper {
         let msg = serde_json::to_string(&value)?;
         info!("SENDING to {}: {}", self.peer, msg);
         let mut g = self.ws.lock().unwrap();
-        g.write_message(Message::Text(msg))?;
+        g.ws.write_message(Message::Text(msg))?;
         Ok(())
+    }
+}
+
+impl WsWrapper {
+    pub fn get_peer(&self) -> &str {
+        &self.peer
+    }
+
+    pub fn get_last_recv(&self) -> u64 {
+        let g = self.ws.lock().unwrap();
+        g.last_recv
+    }
+
+    pub fn set_last_recv(&self, time: u64) {
+        let mut g = self.ws.lock().unwrap();
+        g.last_recv = time;
     }
 }
 
@@ -135,7 +156,7 @@ impl WsConnection {
         let req_map_1 = req_map.clone();
         let mut reader = WebSocket::from_raw_socket(ws.get_ref().try_clone()?, role);
         let ws = Arc::new(WsWrapper {
-            ws: Mutex::new(ws),
+            ws: Mutex::new(WsInner { ws, last_recv: 0 }),
             peer: peer,
         });
         let ws_1 = ws.clone();
@@ -246,9 +267,10 @@ impl WsConnection {
     }
 }
 
-impl Sender for WsConnection {
-    fn send_json(&self, value: Value) -> Result<()> {
-        self.ws.send_json(value)
+impl Deref for WsConnection {
+    type Target = WsWrapper;
+    fn deref(&self) -> &Self::Target {
+        &self.ws
     }
 }
 
