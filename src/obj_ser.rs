@@ -198,7 +198,9 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // In Serde, unit means an anonymous value containing no data. Map this to
     // JSON as `null`.
     fn serialize_unit(self) -> Result<()> {
-        Err(Error::Custom("serialize () not supported".to_string()))
+        self.output.push("null".to_string());
+        Ok(())
+        // Err(Error::Custom("serialize () not supported".to_string()))
     }
 
     // Unit struct means a named value containing no data. Again, since there is
@@ -496,6 +498,10 @@ impl<'a> ser::SerializeMap for MapSerializer<'a> {
 
     fn end(self) -> Result<()> {
         for (k, mut v) in self.entries {
+            // filter out null entry
+            if v[0] == "null" {
+                continue;
+            }
             self.s.output.push(k.to_owned());
             self.s.output.append(&mut v);
         }
