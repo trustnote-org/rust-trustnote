@@ -1,30 +1,24 @@
-use error::Result;
-use rusqlite::Connection;
 use std::collections::HashMap;
+
+use error::Result;
+use may::sync::Mutex;
+use rusqlite::Connection;
 
 struct ChildInfo {
     child_unit: String,
     next_mc_unit: String,
 }
 
-struct ChildrenInfo {
-    headers_commission: u32,
-    children: Vec<ChildInfo>,
+lazy_static! {
+    static ref MAX_SPENDABLE_MCI: Mutex<Option<u32>> = Mutex::new(None);
 }
 
-static mut MAX_SPENDABLE_MCI: Option<u32> = None;
-
-fn init_max_spendable_mci(db: &Connection) -> Result<()> {
+fn get_max_spendable_mci(db: &Connection) -> Result<u32> {
     let mut stmt = db.prepare_cached(
         "SELECT MAX(main_chain_index) AS max_spendable_mci FROM headers_commission_outputs",
     )?;
     let mci = stmt.query_row(&[], |row| row.get(0)).unwrap_or(0);
-
-    unsafe {
-        MAX_SPENDABLE_MCI = Some(mci);
-    }
-
-    Ok(())
+    Ok(mci)
 }
 
 fn get_winner_info<'a>(children: &'a mut Vec<ChildInfo>) -> Result<&'a ChildInfo> {
@@ -44,16 +38,15 @@ fn get_winner_info<'a>(children: &'a mut Vec<ChildInfo>) -> Result<&'a ChildInfo
 }
 
 pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
-    let since_mc_index;
-    unsafe {
-        if MAX_SPENDABLE_MCI.is_none() {
-            init_max_spendable_mci(db)?;
-        }
-        since_mc_index = MAX_SPENDABLE_MCI.unwrap();
+    // here for multi-thread we need a mutex to protect db without dup insertions
+    let mut max_spendable_mci = MAX_SPENDABLE_MCI.lock().unwrap();
+    if max_spendable_mci.is_none() {
+        *max_spendable_mci = Some(get_max_spendable_mci(db)?);
     }
+    let since_mc_index = max_spendable_mci.unwrap();
 
-    let sql = format!(
     // chunits is any child unit and contender for headers commission, punits is hc-payer unit
+    let sql = 
         "SELECT chunits.unit AS child_unit, punits.headers_commission, next_mc_units.unit AS next_mc_unit, punits.unit AS payer_unit \
         FROM units AS chunits \
         JOIN parenthoods ON chunits.unit=parenthoods.child_unit \
@@ -65,8 +58,7 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
             AND +punits.sequence='good' \
             AND punits.is_stable=1 \
             AND chunits.main_chain_index-punits.main_chain_index<=1 \
-            AND next_mc_units.is_stable=1"
-    );
+            AND next_mc_units.is_stable=1";
 
     struct Row {
         child_unit: String,
@@ -82,6 +74,11 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
         next_mc_unit: row.get(2),
         payer_unit: row.get(3),
     })?;
+
+    struct ChildrenInfo {
+        headers_commission: u32,
+        children: Vec<ChildInfo>,
+    }
 
     let mut assoc_children_infos = HashMap::<String, ChildrenInfo>::new();
     for row in rows {
@@ -190,11 +187,7 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
             }
         }
 
-        let value_list = values
-            .iter()
-            .map(|s| format!("{}", s))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let value_list = values.join(", ");
 
         let sql = format!(
             "INSERT INTO headers_commission_contributions (unit, address, amount) VALUES {}",
@@ -202,7 +195,7 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
         );
 
         let mut stmt = db.prepare(&sql)?;
-        stmt.execute(&[])?;
+        stmt.insert(&[])?;
     }
 
     let mut stmt = db.prepare_cached(
@@ -210,19 +203,12 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
                 SELECT main_chain_index, address, SUM(amount) FROM headers_commission_contributions JOIN units USING(unit) \
                 WHERE main_chain_index>? \
                 GROUP BY main_chain_index, address")?;
-    stmt.execute(&[&since_mc_index])?;
+    stmt.insert(&[&since_mc_index])?;
 
-    stmt = db.prepare_cached(
-        "SELECT MAX(main_chain_index) AS max_spendable_mci FROM headers_commission_outputs",
-    )?;
-
-    unsafe {
-        MAX_SPENDABLE_MCI = Some(stmt.query_row(&[], |row| row.get(0))?);
-    }
-
+    *max_spendable_mci = Some(get_max_spendable_mci(db)?);
     Ok(())
 }
 
-pub fn get_max_spendable_mci_for_last_ball_mci(last_ball_mci: u32) -> Result<u32> {
-    Ok(last_ball_mci - 1)
+pub fn get_max_spendable_mci_for_last_ball_mci(last_ball_mci: u32) -> u32 {
+    last_ball_mci - 1
 }
