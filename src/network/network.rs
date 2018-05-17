@@ -54,27 +54,31 @@ pub trait Sender {
     }
 
     fn send_just_saying(&self, subject: &str, body: Value) -> Result<()> {
-        self.send_message("justsaying", json!({"subject": subject, "body": body}))
+        self.send_message("justsaying", json!({ "subject": subject, "body": body }))
     }
 
-    fn send_error(&self, error: Value) -> Result<()> {
-        self.send_just_saying("error", error)
-    }
+    // fn send_error(&self, error: Value) -> Result<()> {
+    //     self.send_just_saying("error", error)
+    // }
 
-    fn send_info(&self, info: Value) -> Result<()> {
-        self.send_just_saying("info", info)
-    }
+    // fn send_info(&self, info: Value) -> Result<()> {
+    //     self.send_just_saying("info", info)
+    // }
 
-    fn send_result(&self, result: Value) -> Result<()> {
-        self.send_just_saying("result", result)
-    }
+    // fn send_result(&self, result: Value) -> Result<()> {
+    //     self.send_just_saying("result", result)
+    // }
 
-    fn send_error_result(&self, unit: &str, error: &str) -> Result<()> {
-        self.send_result(json!({"unit": unit, "result": "error", "error": error}))
-    }
+    // fn send_error_result(&self, unit: &str, error: &str) -> Result<()> {
+    //     self.send_result(json!({ "unit": unit, "result": "error", "error": error }))
+    // }
 
     fn send_response(&self, tag: &str, response: Value) -> Result<()> {
-        self.send_message("response", json!({"tag": tag, "response": response}))
+        self.send_message("response", json!({ "tag": tag, "response": response }))
+    }
+
+    fn send_error_response(&self, tag: &str, error: Value) -> Result<()> {
+        self.send_response(tag, json!({ "error": error }))
     }
 }
 
@@ -220,9 +224,8 @@ impl WsConnection {
                                     t!(ws.send_response(&tag, rsp));
                                 }
                                 Err(e) => {
-                                    let error = format!("{}", e);
-                                    let error = json!(error);
-                                    t!(ws.send_error(error));
+                                    let error = json!(format!("{}", e));
+                                    t!(ws.send_error_response(&tag, error));
                                 }
                             }
                         });
