@@ -19,7 +19,6 @@ extern crate serde_derive;
 extern crate base32;
 extern crate base64;
 extern crate bit_vec;
-extern crate may_actor;
 extern crate may_waiter;
 extern crate rand;
 extern crate ripemd160;

@@ -3,12 +3,12 @@ use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::ops::Deref;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use error::Result;
 use may::coroutine::JoinHandle;
 use may::net::{TcpListener, TcpStream};
-use may::sync::Mutex;
+use may::sync::RwLock;
 use may_waiter::WaiterMap;
 use serde_json::{self, Value};
 use tungstenite::protocol::Role;
@@ -80,7 +80,7 @@ pub trait Sender {
 
 struct WsInner {
     ws: WebSocket<TcpStream>,
-    last_recv: u64,
+    last_recv: Instant,
 }
 
 impl Drop for WsInner {
@@ -91,7 +91,7 @@ impl Drop for WsInner {
 }
 
 pub struct WsWrapper {
-    ws: Mutex<WsInner>,
+    ws: RwLock<WsInner>,
     peer: String,
 }
 
@@ -99,7 +99,7 @@ impl Sender for WsWrapper {
     fn send_json(&self, value: Value) -> Result<()> {
         let msg = serde_json::to_string(&value)?;
         info!("SENDING to {}: {}", self.peer, msg);
-        let mut g = self.ws.lock().unwrap();
+        let mut g = self.ws.write().unwrap();
         g.ws.write_message(Message::Text(msg))?;
         Ok(())
     }
@@ -110,13 +110,13 @@ impl WsWrapper {
         &self.peer
     }
 
-    pub fn get_last_recv(&self) -> u64 {
-        let g = self.ws.lock().unwrap();
+    pub fn get_last_recv_tm(&self) -> Instant {
+        let g = self.ws.read().unwrap();
         g.last_recv
     }
 
-    pub fn set_last_recv(&self, time: u64) {
-        let mut g = self.ws.lock().unwrap();
+    pub fn set_last_recv_tm(&self, time: Instant) {
+        let mut g = self.ws.write().unwrap();
         g.last_recv = time;
     }
 }
@@ -156,7 +156,10 @@ impl WsConnection {
         let req_map_1 = req_map.clone();
         let mut reader = WebSocket::from_raw_socket(ws.get_ref().try_clone()?, role);
         let ws = Arc::new(WsWrapper {
-            ws: Mutex::new(WsInner { ws, last_recv: 0 }),
+            ws: RwLock::new(WsInner {
+                ws,
+                last_recv: Instant::now(),
+            }),
             peer: peer,
         });
         let ws_1 = ws.clone();
@@ -185,6 +188,7 @@ impl WsConnection {
                 let msg_type = t_c!(msg_type.as_str().ok_or("no msg type"));
 
                 let ws = ws_1.clone();
+                ws.set_last_recv_tm(Instant::now());
 
                 match msg_type {
                     "justsaying" => {
@@ -278,7 +282,7 @@ impl Deref for WsConnection {
 pub struct WsServer<S>(PhantomData<S>);
 
 impl<S: Server + Clone + Send + Sync + 'static> WsServer<S> {
-    // f is used to save the connection actor globally
+    // f is used to save the connection globally
     pub fn start<A, F>(address: A, server: S, f: F) -> JoinHandle<()>
     where
         A: ToSocketAddrs,

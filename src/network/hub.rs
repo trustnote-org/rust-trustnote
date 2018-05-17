@@ -34,6 +34,9 @@ fn start_heartbeat(ws: Weak<HubConn>) {
             Some(ws) => ws,
             None => return,
         };
+        if ws.get_last_recv_tm().elapsed() < Duration::from_secs(5) {
+            continue;
+        }
         ws.send_heartbeat().ok();
     });
 }

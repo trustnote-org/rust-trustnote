@@ -46,7 +46,7 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
     let since_mc_index = max_spendable_mci.unwrap();
 
     // chunits is any child unit and contender for headers commission, punits is hc-payer unit
-    let sql = 
+    let sql =
         "SELECT chunits.unit AS child_unit, punits.headers_commission, next_mc_units.unit AS next_mc_unit, punits.unit AS payer_unit \
         FROM units AS chunits \
         JOIN parenthoods ON chunits.unit=parenthoods.child_unit \
