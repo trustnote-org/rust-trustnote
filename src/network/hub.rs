@@ -37,7 +37,10 @@ fn start_heartbeat(ws: Weak<HubConn>) {
         if ws.get_last_recv_tm().elapsed() < Duration::from_secs(5) {
             continue;
         }
-        ws.send_heartbeat().ok();
+        // heartbeat failed so just close the connnection
+        if ws.send_heartbeat().is_err() {
+            ws.close();
+        }
     });
 }
 
@@ -80,7 +83,7 @@ impl WsConnections {
         g.clear();
     }
 
-    pub fn close(&self, conn: Arc<WsWrapper>) {
+    pub fn close(&self, conn: &Arc<WsWrapper>) {
         // find out the actor and remove it
         let mut g = self.outbound.write().unwrap();
         for i in 0..g.len() {
@@ -144,7 +147,7 @@ impl Server for HubServer {
         Ok(response)
     }
 
-    fn close(&self, ws: Arc<WsWrapper>) {
+    fn close(&self, ws: &Arc<WsWrapper>) {
         warn!("need to close the peer socket");
         WSS.close(ws)
     }
@@ -201,7 +204,7 @@ impl HubConn {
 
     // remove self from global
     pub fn close(&self) {
-        WSS.close(self.ws.clone());
+        WSS.close(&self.ws);
     }
 }
 

@@ -43,7 +43,7 @@ pub trait Server {
     fn on_message(&self, msg: Value) -> Result<()>;
     fn on_request(&self, msg: Value) -> Result<Value>;
     // need to close the connection from global
-    fn close(&self, ws: Arc<WsWrapper>);
+    fn close(&self, ws: &Arc<WsWrapper>);
 }
 
 pub trait Sender {
@@ -199,7 +199,7 @@ impl WsConnection {
                                 if let Some(_) = e.downcast_ref::<::error::TrustnoteError>() {
                                     // need to close the connection
                                     // NOTE: it will dead lock if within the parent coroutine
-                                    server.close(ws);
+                                    server.close(&ws);
                                 }
                             }
                         });
