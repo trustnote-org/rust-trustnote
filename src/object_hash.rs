@@ -3,6 +3,7 @@ use base64;
 use bit_vec::BitVec;
 use error::Result;
 use obj_ser::to_string;
+use rand::{self, Rng};
 use ripemd160::Ripemd160;
 use serde::ser::Serialize;
 use sha2::{Digest, Sha256};
@@ -124,6 +125,17 @@ pub fn get_ball_hash(
     };
 
     get_base64_hash(&ball).expect("failed to calc ball hash")
+}
+
+#[inline]
+pub fn gen_random_string(len: usize) -> String {
+    use rand::distributions::Standard;
+
+    let bytes: Vec<u8> = rand::thread_rng()
+        .sample_iter(&Standard)
+        .take(len)
+        .collect();
+    base64::encode(&bytes)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

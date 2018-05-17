@@ -1,14 +1,14 @@
 // use std::io::Read;
 use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
-use std::ops::Deref;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use error::Result;
 use may::coroutine::JoinHandle;
 use may::net::{TcpListener, TcpStream};
-use may::sync::RwLock;
+use may::sync::{AtomicOption, RwLock};
 use may_waiter::WaiterMap;
 use serde_json::{self, Value};
 use tungstenite::protocol::Role;
@@ -40,10 +40,8 @@ macro_rules! t_c {
 
 // the server part trait
 pub trait Server {
-    fn on_message(&self, msg: Value) -> Result<()>;
-    fn on_request(&self, msg: Value) -> Result<Value>;
-    // need to close the connection from global
-    fn close(&self, ws: &Arc<WsWrapper>);
+    fn on_message(&self, ws: Arc<WsConnection>, msg: Value) -> Result<()>;
+    fn on_request(&self, ws: Arc<WsConnection>, msg: Value) -> Result<Value>;
 }
 
 pub trait Sender {
@@ -74,6 +72,9 @@ pub trait Sender {
     // }
 
     fn send_response(&self, tag: &str, response: Value) -> Result<()> {
+        if response.is_null() {
+            return self.send_message("response", json!({ "tag": tag }));
+        }
         self.send_message("response", json!({ "tag": tag, "response": response }))
     }
 
@@ -94,12 +95,18 @@ impl Drop for WsInner {
     }
 }
 
-pub struct WsWrapper {
+pub struct WsConnection {
+    // lock proected inner
     ws: RwLock<WsInner>,
+    // peer name is never changed once init
     peer: String,
+    // the waiting request
+    req_map: Arc<WaiterMap<String, Value>>,
+    // the listening coroutine
+    listener: AtomicOption<JoinHandle<()>>,
 }
 
-impl Sender for WsWrapper {
+impl Sender for WsConnection {
     fn send_json(&self, value: Value) -> Result<()> {
         let msg = serde_json::to_string(&value)?;
         info!("SENDING to {}: {}", self.peer, msg);
@@ -109,7 +116,7 @@ impl Sender for WsWrapper {
     }
 }
 
-impl WsWrapper {
+impl WsConnection {
     pub fn get_peer(&self) -> &str {
         &self.peer
     }
@@ -125,24 +132,12 @@ impl WsWrapper {
     }
 }
 
-pub struct WsConnection {
-    // the connection write half
-    pub ws: Arc<WsWrapper>,
-    // the waiting request
-    req_map: Arc<WaiterMap<String, Value>>,
-    // the listening coroutine
-    listener: Option<JoinHandle<()>>,
-}
-
-unsafe impl Send for WsConnection {}
-unsafe impl Sync for WsConnection {}
-
 impl Drop for WsConnection {
     fn drop(&mut self) {
         if ::std::thread::panicking() {
             return;
         }
-        self.listener.take().map(|h| {
+        self.listener.take(Ordering::Relaxed).map(|h| {
             unsafe { h.coroutine().cancel() };
             h.join().ok();
         });
@@ -151,7 +146,12 @@ impl Drop for WsConnection {
 
 impl WsConnection {
     /// create a client from stream socket
-    pub fn new<S>(ws: WebSocket<TcpStream>, server: S, peer: String, role: Role) -> Result<Self>
+    pub fn new<S>(
+        ws: WebSocket<TcpStream>,
+        server: S,
+        peer: String,
+        role: Role,
+    ) -> Result<Arc<Self>>
     where
         S: Server + Clone + Send + Sync + 'static,
     {
@@ -159,14 +159,19 @@ impl WsConnection {
 
         let req_map_1 = req_map.clone();
         let mut reader = WebSocket::from_raw_socket(ws.get_ref().try_clone()?, role);
-        let ws = Arc::new(WsWrapper {
+        let ws = Arc::new(WsConnection {
             ws: RwLock::new(WsInner {
                 ws,
                 last_recv: Instant::now(),
             }),
             peer: peer,
+            req_map: req_map,
+            listener: AtomicOption::none(),
         });
-        let ws_1 = ws.clone();
+
+        // we can't have a strong ref in the driver coroutine!
+        // or it will never got dropped
+        let ws_1 = Arc::downgrade(&ws);
 
         let listener = go!(move || {
             loop {
@@ -191,34 +196,30 @@ impl WsConnection {
                 let msg_type = value[0].clone();
                 let msg_type = t_c!(msg_type.as_str().ok_or("no msg type"));
 
-                let ws = ws_1.clone();
+                // we use weak ref here, need to upgrade to check if dropped
+                let ws = match ws_1.upgrade() {
+                    Some(c) => c,
+                    None => return,
+                };
                 ws.set_last_recv_tm(Instant::now());
 
                 match msg_type {
                     "justsaying" => {
                         let server = server.clone();
-                        go!(move || {
-                            if let Err(e) = server.on_message(value) {
-                                error!("{}", e);
-                                if let Some(_) = e.downcast_ref::<::error::TrustnoteError>() {
-                                    // need to close the connection
-                                    // NOTE: it will dead lock if within the parent coroutine
-                                    server.close(&ws);
-                                }
-                            }
+                        go!(move || if let Err(e) = server.on_message(ws, value) {
+                            error!("{}", e);
                         });
                     }
                     "request" => {
                         let server = server.clone();
                         go!(move || {
-                            let tag = serde_json::from_value::<String>(value[1]["tag"].clone());
-                            let tag = match tag {
-                                Ok(t) => t,
-                                Err(_) => return error!("tag is not found for request"),
+                            let tag = match value[1]["tag"].as_str() {
+                                Some(t) => t.to_owned(),
+                                None => return error!("tag is not found for request"),
                             };
 
                             // need to get and set the tag!!
-                            match server.on_request(value) {
+                            match server.on_request(ws.clone(), value) {
                                 Ok(rsp) => {
                                     // send the response
                                     t!(ws.send_response(&tag, rsp));
@@ -246,11 +247,8 @@ impl WsConnection {
             }
         });
 
-        Ok(WsConnection {
-            ws: ws,
-            req_map: req_map,
-            listener: Some(listener),
-        })
+        ws.listener.swap(listener, Ordering::Relaxed);
+        Ok(ws)
     }
 
     pub fn send_request(&self, command: &str, param: Value) -> Result<Value> {
@@ -269,15 +267,9 @@ impl WsConnection {
         Ok(rsp)
     }
 
-    pub fn ws_eq(&self, ws: &Arc<WsWrapper>) -> bool {
-        Arc::ptr_eq(&self.ws, ws)
-    }
-}
-
-impl Deref for WsConnection {
-    type Target = WsWrapper;
-    fn deref(&self) -> &Self::Target {
-        &self.ws
+    #[inline]
+    pub fn is_same_connection(&self, ws: &Arc<WsConnection>) -> bool {
+        ::std::ptr::eq(self, &**ws)
     }
 }
 
@@ -289,7 +281,7 @@ impl<S: Server + Clone + Send + Sync + 'static> WsServer<S> {
     pub fn start<A, F>(address: A, server: S, f: F) -> JoinHandle<()>
     where
         A: ToSocketAddrs,
-        F: Fn(WsConnection) + Send + 'static,
+        F: Fn(Arc<WsConnection>) + Send + 'static,
     {
         let address = address
             .to_socket_addrs()

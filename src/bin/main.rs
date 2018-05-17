@@ -102,7 +102,7 @@ fn test_ws() -> Result<()> {
     use std::sync::Arc;
 
     let _server = WsServer::start(("0.0.0.0", config::WS_PORT), hub::HubServer, |c| {
-        WSS.add_inbound(Arc::new(hub::HubConn(c)));
+        WSS.add_inbound(Arc::new(hub::HubConn::new(c)));
     });
     println!(
         "Websocket server running on ws://0.0.0.0:{}",
@@ -177,6 +177,7 @@ fn test_ws_client() -> Result<()> {
     // let mut client = network::WssClient::new("shawtest.trustnote.org")?;
     let client = hub::create_outbound_conn(("127.0.0.1", 6655))?;
     client.send_version()?;
+    client.send_subscribe()?;
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 use std::net::ToSocketAddrs;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -15,8 +15,6 @@ use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
-
-use super::network::WsWrapper;
 
 // global Ws connections
 lazy_static! {
@@ -83,11 +81,11 @@ impl WsConnections {
         g.clear();
     }
 
-    pub fn close(&self, conn: &Arc<WsWrapper>) {
+    pub fn close(&self, conn: &Arc<WsConnection>) {
         // find out the actor and remove it
         let mut g = self.outbound.write().unwrap();
         for i in 0..g.len() {
-            if g[i].ws_eq(&conn) {
+            if g[i].is_same_connection(&conn) {
                 g.swap_remove(i);
                 return;
             }
@@ -95,7 +93,7 @@ impl WsConnections {
 
         let mut g = self.inbound.write().unwrap();
         for i in 0..g.len() {
-            if g[i].ws_eq(&conn) {
+            if g[i].is_same_connection(&conn) {
                 g.swap_remove(i);
                 return;
             }
@@ -123,61 +121,104 @@ impl WsConnections {
 pub struct HubServer;
 
 impl Server for HubServer {
-    fn on_message(&self, mut msg: Value) -> Result<()> {
+    fn on_message(&self, ws: Arc<WsConnection>, mut msg: Value) -> Result<()> {
         let mut content = msg[1].take();
         let subject = content["subject"].take();
         let body = content["body"].take();
         match subject.as_str().unwrap_or("none") {
-            "version" => self.on_version(body)?,
+            "version" => self.on_version(ws, body)?,
             subject => bail!("on_message unkown subject: {}", subject),
         }
         Ok(())
     }
 
-    fn on_request(&self, mut msg: Value) -> Result<Value> {
+    fn on_request(&self, ws: Arc<WsConnection>, mut msg: Value) -> Result<Value> {
         let mut content = msg[1].take();
         let command = content["command"].take();
         let body = content["params"].take();
         // let tag = content["tag"].take();
 
         let response = match command.as_str().unwrap_or("none") {
-            "heartbeat" => self.on_heartbeat(body)?,
+            "heartbeat" => self.on_heartbeat(ws, body)?,
+            "subscribe" => self.on_subscribe(ws, body)?,
             command => bail!("on_request unkown command: {}", command),
         };
         Ok(response)
     }
-
-    fn close(&self, ws: &Arc<WsWrapper>) {
-        warn!("need to close the peer socket");
-        WSS.close(ws)
-    }
 }
 
 impl HubServer {
-    fn on_version(&self, version: Value) -> Result<()> {
+    fn on_version(&self, ws: Arc<WsConnection>, version: Value) -> Result<()> {
         if version["protocol_version"].as_str() != Some(config::VERSION) {
-            bail_close!("Incompatible versions, mine {}", config::VERSION);
+            error!("Incompatible versions, mine {}", config::VERSION);
+            WSS.close(&ws)
         }
 
         if version["alt"].as_str() != Some(config::ALT) {
-            bail_close!("Incompatible alt, mine {}", config::ALT);
+            error!("Incompatible alt, mine {}", config::ALT);
+            // TODO:
+            // HubConn(ws).close();
         }
 
         info!("got peer version: {}", version);
         Ok(())
     }
 
-    fn on_heartbeat(&self, _: Value) -> Result<Value> {
+    fn on_heartbeat(&self, _ws: Arc<WsConnection>, _: Value) -> Result<Value> {
         Ok(Value::Null)
+    }
+
+    fn on_subscribe(&self, _ws: Arc<WsConnection>, param: Value) -> Result<Value> {
+        if param.is_null() {
+            bail!("no params");
+        }
+        let _subscription_id = param["subscription_id"]
+            .as_str()
+            .ok_or(format_err!("no subscription_id"))?;
+
+        // TODO:
+        // ws.set_subscribed();
+        Ok(json!("subscribed"))
     }
 }
 
-pub struct HubConn(pub WsConnection);
+pub struct HubConn {
+    ws: Arc<WsConnection>,
+    // indicate if this connection is a subscribed peer
+    is_subscribed: AtomicBool,
+    is_source: AtomicBool,
+}
+
+impl HubConn {
+    pub fn new(ws: Arc<WsConnection>) -> Self {
+        HubConn {
+            ws: ws,
+            is_subscribed: AtomicBool::new(false),
+            is_source: AtomicBool::new(false),
+        }
+    }
+
+    pub fn is_subscribed(&self) -> bool {
+        self.is_subscribed.load(Ordering::Relaxed)
+    }
+
+    pub fn set_subscribed(&self) {
+        self.is_subscribed.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_source(&self) -> bool {
+        self.is_source.load(Ordering::Relaxed)
+    }
+
+    pub fn set_source(&self) {
+        self.is_source.store(true, Ordering::Relaxed);
+    }
+}
 
 impl Deref for HubConn {
     type Target = WsConnection;
     fn deref(&self) -> &WsConnection {
-        &self.0
+        &self.ws
     }
 }
 
@@ -195,6 +236,20 @@ impl HubConn {
 		        "program_version": "0.1.0"
             }),
         )
+    }
+
+    pub fn send_subscribe(&self) -> Result<()> {
+        use object_hash;
+        // TODO: this is used to detect self-connect
+        let subscription_id = object_hash::gen_random_string(30);
+        // let last_mci = storage::read_last_main_chain_index()?;
+        let rsp = self.send_request(
+            "subscribe",
+            json!({ "subscription_id": subscription_id, "last_mci": 100}),
+        )?;
+
+        println!("subscribe rsp={}", rsp);
+        Ok(())
     }
 
     fn send_heartbeat(&self) -> Result<()> {
@@ -220,7 +275,7 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<HubConn>
     // let ws
     let ws = WsConnection::new(conn, HubServer, peer, Role::Client)?;
 
-    let outbound = Arc::new(HubConn(ws));
+    let outbound = Arc::new(HubConn::new(ws));
     WSS.add_outbound(outbound.clone());
     Ok(outbound)
 }
