@@ -99,10 +99,9 @@ fn test_db() -> Result<()> {
 fn test_ws() -> Result<()> {
     use network::hub::{self, WSS};
     use network::WsServer;
-    use std::sync::Arc;
 
-    let _server = WsServer::start(("0.0.0.0", config::WS_PORT), hub::HubServer, |c| {
-        WSS.add_inbound(Arc::new(hub::HubConn::new(c)));
+    let _server = WsServer::start(("0.0.0.0", config::WS_PORT), |c| {
+        WSS.add_inbound(c);
     });
     println!(
         "Websocket server running on ws://0.0.0.0:{}",

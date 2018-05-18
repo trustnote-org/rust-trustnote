@@ -39,9 +39,10 @@ macro_rules! t_c {
 }
 
 // the server part trait
-pub trait Server {
-    fn on_message(&self, ws: Arc<WsConnection>, msg: Value) -> Result<()>;
-    fn on_request(&self, ws: Arc<WsConnection>, msg: Value) -> Result<Value>;
+pub trait Server<T> {
+    fn new() -> T;
+    fn on_message(ws: Arc<WsConnection<T>>, msg: Value) -> Result<()>;
+    fn on_request(ws: Arc<WsConnection<T>>, msg: Value) -> Result<Value>;
 }
 
 pub trait Sender {
@@ -95,7 +96,7 @@ impl Drop for WsInner {
     }
 }
 
-pub struct WsConnection {
+pub struct WsConnection<T> {
     // lock proected inner
     ws: RwLock<WsInner>,
     // peer name is never changed once init
@@ -104,19 +105,21 @@ pub struct WsConnection {
     req_map: Arc<WaiterMap<String, Value>>,
     // the listening coroutine
     listener: AtomicOption<JoinHandle<()>>,
+    // the actual state data
+    data: T,
 }
 
-impl Sender for WsConnection {
+impl<T> Sender for WsConnection<T> {
     fn send_json(&self, value: Value) -> Result<()> {
         let msg = serde_json::to_string(&value)?;
-        info!("SENDING to {}: {}", self.peer, msg);
+        debug!("SENDING to {}: {}", self.peer, msg);
         let mut g = self.ws.write().unwrap();
         g.ws.write_message(Message::Text(msg))?;
         Ok(())
     }
 }
 
-impl WsConnection {
+impl<T> WsConnection<T> {
     pub fn get_peer(&self) -> &str {
         &self.peer
     }
@@ -130,9 +133,13 @@ impl WsConnection {
         let mut g = self.ws.write().unwrap();
         g.last_recv = time;
     }
+
+    pub fn get_data(&self) -> &T {
+        &self.data
+    }
 }
 
-impl Drop for WsConnection {
+impl<T> Drop for WsConnection<T> {
     fn drop(&mut self) {
         if ::std::thread::panicking() {
             return;
@@ -144,16 +151,11 @@ impl Drop for WsConnection {
     }
 }
 
-impl WsConnection {
+impl<T> WsConnection<T> {
     /// create a client from stream socket
-    pub fn new<S>(
-        ws: WebSocket<TcpStream>,
-        server: S,
-        peer: String,
-        role: Role,
-    ) -> Result<Arc<Self>>
+    pub fn new(ws: WebSocket<TcpStream>, data: T, peer: String, role: Role) -> Result<Arc<Self>>
     where
-        S: Server + Clone + Send + Sync + 'static,
+        T: Server<T> + Send + Sync + 'static,
     {
         let req_map = Arc::new(WaiterMap::<String, Value>::new());
 
@@ -167,6 +169,7 @@ impl WsConnection {
             peer: peer,
             req_map: req_map,
             listener: AtomicOption::none(),
+            data: data,
         });
 
         // we can't have a strong ref in the driver coroutine!
@@ -190,7 +193,6 @@ impl WsConnection {
                         continue;
                     }
                 };
-                debug!("receive msg: {}", msg);
 
                 let value: Value = t_c!(serde_json::from_str(&msg));
                 let msg_type = value[0].clone();
@@ -201,17 +203,16 @@ impl WsConnection {
                     Some(c) => c,
                     None => return,
                 };
+                debug!("RECV from {}: {}", ws.peer, msg);
                 ws.set_last_recv_tm(Instant::now());
 
                 match msg_type {
                     "justsaying" => {
-                        let server = server.clone();
-                        go!(move || if let Err(e) = server.on_message(ws, value) {
+                        go!(move || if let Err(e) = T::on_message(ws, value) {
                             error!("{}", e);
                         });
                     }
                     "request" => {
-                        let server = server.clone();
                         go!(move || {
                             let tag = match value[1]["tag"].as_str() {
                                 Some(t) => t.to_owned(),
@@ -219,7 +220,7 @@ impl WsConnection {
                             };
 
                             // need to get and set the tag!!
-                            match server.on_request(ws.clone(), value) {
+                            match T::on_request(ws.clone(), value) {
                                 Ok(rsp) => {
                                     // send the response
                                     t!(ws.send_response(&tag, rsp));
@@ -268,20 +269,21 @@ impl WsConnection {
     }
 
     #[inline]
-    pub fn is_same_connection(&self, ws: &Arc<WsConnection>) -> bool {
-        ::std::ptr::eq(self, &**ws)
+    pub fn conn_eq(&self, other: &WsConnection<T>) -> bool {
+        ::std::ptr::eq(self, other)
     }
 }
 
 // helper struct for easy use
-pub struct WsServer<S>(PhantomData<S>);
+pub struct WsServer<T>(PhantomData<T>);
 
-impl<S: Server + Clone + Send + Sync + 'static> WsServer<S> {
+impl<T> WsServer<T> {
     // f is used to save the connection globally
-    pub fn start<A, F>(address: A, server: S, f: F) -> JoinHandle<()>
+    pub fn start<A, F>(address: A, f: F) -> JoinHandle<()>
     where
         A: ToSocketAddrs,
-        F: Fn(Arc<WsConnection>) + Send + 'static,
+        F: Fn(Arc<WsConnection<T>>) + Send + 'static,
+        T: Server<T> + Send + Sync + 'static,
     {
         let address = address
             .to_socket_addrs()
@@ -298,7 +300,7 @@ impl<S: Server + Clone + Send + Sync + 'static> WsServer<S> {
                     Err(_) => "unknown peer".to_owned(),
                 };
                 let ws = t_c!(accept(stream));
-                let ws = t_c!(WsConnection::new(ws, server.clone(), peer, Role::Server));
+                let ws = t_c!(WsConnection::new(ws, T::new(), peer, Role::Server));
                 f(ws);
             }
         })
