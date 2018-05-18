@@ -3,12 +3,12 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::network::{Sender, Server, WsConnection};
 use config;
 use error::Result;
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::RwLock;
-use network::{Sender, Server, WsConnection};
 use serde_json::Value;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
@@ -211,7 +211,7 @@ impl HubConn {
 
 // the client side impl
 impl HubConn {
-    pub fn send_version(&self) -> Result<()> {
+    fn send_version(&self) -> Result<()> {
         // TODO: read these things from config
         self.send_just_saying(
             "version",
@@ -226,7 +226,7 @@ impl HubConn {
         )
     }
 
-    pub fn send_subscribe(&self) -> Result<()> {
+    fn send_subscribe(&self) -> Result<()> {
         use object_hash;
         // TODO: this is used to detect self-connect (#63)
         let subscription_id = object_hash::gen_random_string(30);

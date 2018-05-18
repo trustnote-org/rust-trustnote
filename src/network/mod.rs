@@ -1,4 +1,4 @@
 pub mod hub;
 mod network;
 
-pub use self::network::{Sender, Server, WsConnection, WsServer};
+pub use self::network::{WsConnection, WsServer};
