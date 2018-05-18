@@ -1,6 +1,6 @@
 use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::Duration;
 
 use config;
@@ -28,11 +28,15 @@ lazy_static! {
     pub static ref WSS: WsConnections = WsConnections::new();
 }
 
-fn start_heartbeat(ws: Weak<HubConn>) {
+fn init_connection(ws: &Arc<HubConn>) {
     use rand::{thread_rng, Rng};
+
+    t!(ws.send_version());
+    t!(ws.send_subscribe());
 
     let mut rng = thread_rng();
     let n: u64 = rng.gen_range(0, 1000);
+    let ws = Arc::downgrade(ws);
     go!(move || loop {
         coroutine::sleep(Duration::from_millis(3000 + n));
         let ws = match ws.upgrade() {
@@ -68,15 +72,13 @@ impl WsConnections {
     }
 
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
-        let ws = Arc::downgrade(&inbound);
-        start_heartbeat(ws);
+        init_connection(&inbound);
         let mut g = self.inbound.write().unwrap();
         g.push(inbound);
     }
 
     pub fn add_outbound(&self, outbound: Arc<HubConn>) {
-        let ws = Arc::downgrade(&outbound);
-        start_heartbeat(ws);
+        init_connection(&outbound);
         let mut g = self.outbound.write().unwrap();
         g.push(outbound);
     }
@@ -203,9 +205,7 @@ impl HubConn {
     }
 
     fn on_subscribe(&self, param: Value) -> Result<Value> {
-        if param.is_null() {
-            bail!("no params");
-        }
+        // TODO: is it necessary to detect the self connection? (#63)
         let _subscription_id = param["subscription_id"]
             .as_str()
             .ok_or(format_err!("no subscription_id"))?;
@@ -234,7 +234,7 @@ impl HubConn {
 
     pub fn send_subscribe(&self) -> Result<()> {
         use object_hash;
-        // TODO: this is used to detect self-connect
+        // TODO: this is used to detect self-connect (#63)
         let subscription_id = object_hash::gen_random_string(30);
         // let last_mci = storage::read_last_main_chain_index()?;
         let rsp = self.send_request(

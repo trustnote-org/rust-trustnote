@@ -107,12 +107,7 @@ fn test_ws() -> Result<()> {
         "Websocket server running on ws://0.0.0.0:{}",
         config::WS_PORT
     );
-
-    let client = hub::create_outbound_conn(("127.0.0.1", config::WS_PORT))?;
-    client.send_version()?;
-
-    let server = WSS.get_next_inbound();
-    server.send_version()?;
+    hub::create_outbound_conn(("127.0.0.1", config::WS_PORT))?;
 
     Ok(())
 }
@@ -173,10 +168,7 @@ fn log_init() {
 #[allow(dead_code)]
 fn test_ws_client() -> Result<()> {
     use network::hub;
-    // let mut client = network::WssClient::new("shawtest.trustnote.org")?;
-    let client = hub::create_outbound_conn(("127.0.0.1", 6655))?;
-    client.send_version()?;
-    client.send_subscribe()?;
+    hub::create_outbound_conn(("127.0.0.1", 6655))?;
     Ok(())
 }
 
@@ -190,7 +182,7 @@ fn main_run() -> Result<()> {
     test_json()?;
     test_db()?;
     test_signature()?;
-    // test_ws()?;
+    test_ws()?;
     test_ws_client()?;
     Ok(())
 }

@@ -15,17 +15,6 @@ use tungstenite::protocol::Role;
 use tungstenite::server::accept;
 use tungstenite::{Message, WebSocket};
 
-macro_rules! t {
-    ($e:expr) => {
-        match $e {
-            Ok(val) => val,
-            Err(err) => {
-                error!("call = {:?}\nerr = {:?}", stringify!($e), err);
-            }
-        }
-    };
-}
-
 macro_rules! t_c {
     ($e:expr) => {
         match $e {

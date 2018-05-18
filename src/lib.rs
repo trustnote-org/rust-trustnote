@@ -35,6 +35,17 @@ macro_rules! some_if {
     }};
 }
 
+macro_rules! t {
+    ($e:expr) => {
+        match $e {
+            Ok(val) => val,
+            Err(err) => {
+                error!("call = {:?}\nerr = {:?}", stringify!($e), err);
+            }
+        }
+    };
+}
+
 pub mod config;
 pub mod db;
 #[macro_use]
