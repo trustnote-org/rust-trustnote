@@ -30,8 +30,8 @@ macro_rules! t_c {
 // the server part trait
 pub trait Server<T> {
     fn new() -> T;
-    fn on_message(ws: Arc<WsConnection<T>>, msg: Value) -> Result<()>;
-    fn on_request(ws: Arc<WsConnection<T>>, msg: Value) -> Result<Value>;
+    fn on_message(ws: Arc<WsConnection<T>>, subject: String, body: Value) -> Result<()>;
+    fn on_request(ws: Arc<WsConnection<T>>, command: String, params: Value) -> Result<Value>;
 }
 
 pub trait Sender {
@@ -183,8 +183,8 @@ impl<T> WsConnection<T> {
                     }
                 };
 
-                let value: Value = t_c!(serde_json::from_str(&msg));
-                let msg_type = value[0].clone();
+                let mut value: Value = t_c!(serde_json::from_str(&msg));
+                let msg_type = value[0].take();
                 let msg_type = t_c!(msg_type.as_str().ok_or("no msg type"));
 
                 // we use weak ref here, need to upgrade to check if dropped
@@ -197,19 +197,34 @@ impl<T> WsConnection<T> {
 
                 match msg_type {
                     "justsaying" => {
-                        go!(move || if let Err(e) = T::on_message(ws, value) {
+                        #[derive(Deserialize)]
+                        struct JustSaying {
+                            subject: String,
+                            #[serde(default)]
+                            body: Value,
+                        };
+                        let JustSaying { subject, body } =
+                            t_c!(serde_json::from_value(value[1].take()));
+                        go!(move || if let Err(e) = T::on_message(ws, subject, body) {
                             error!("{}", e);
                         });
                     }
                     "request" => {
+                        #[derive(Deserialize)]
+                        struct Request {
+                            command: String,
+                            tag: String,
+                            #[serde(default)]
+                            params: Value,
+                        };
+                        let Request {
+                            command,
+                            tag,
+                            params,
+                        } = t_c!(serde_json::from_value(value[1].take()));
                         go!(move || {
-                            let tag = match value[1]["tag"].as_str() {
-                                Some(t) => t.to_owned(),
-                                None => return error!("tag is not found for request"),
-                            };
-
                             // need to get and set the tag!!
-                            match T::on_request(ws.clone(), value) {
+                            match T::on_request(ws.clone(), command, params) {
                                 Ok(rsp) => {
                                     // send the response
                                     t!(ws.send_response(&tag, rsp));
@@ -223,11 +238,14 @@ impl<T> WsConnection<T> {
                     }
                     "response" => {
                         // set the wait req
-                        if let Ok(tag) = serde_json::from_value::<String>(value[1]["tag"].clone()) {
-                            req_map_1.set_rsp(&tag, value).ok();
-                        } else {
-                            error!("tag is not found for request");
-                        }
+                        let tag = match value[1]["tag"].as_str() {
+                            Some(t) => t.to_owned(),
+                            None => {
+                                error!("tag is not found for response");
+                                continue;
+                            }
+                        };
+                        req_map_1.set_rsp(&tag, value).ok();
                     }
                     s => {
                         error!("unkonw msg type: {}", s);
@@ -253,8 +271,19 @@ impl<T> WsConnection<T> {
         self.send_message("request", request)?;
 
         let timeout = Some(Duration::from_secs(::config::STALLED_TIMEOUT as u64));
-        let rsp = blocker.wait_rsp(timeout)?;
-        Ok(rsp)
+        #[derive(Deserialize)]
+        struct Response {
+            #[allow(dead_code)]
+            tag: String,
+            #[serde(default)]
+            response: Value,
+        };
+
+        let rsp: Response = serde_json::from_value(blocker.wait_rsp(timeout)?[1].take())?;
+        if !rsp.response["error"].is_null() {
+            bail!("{} err: {}", command, rsp.response["error"]);
+        }
+        Ok(rsp.response)
     }
 
     #[inline]

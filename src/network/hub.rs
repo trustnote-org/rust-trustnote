@@ -47,7 +47,9 @@ fn init_connection(ws: &Arc<HubConn>) {
             continue;
         }
         // heartbeat failed so just close the connnection
-        if ws.send_heartbeat().is_err() {
+        let rsp = ws.send_heartbeat();
+        if rsp.is_err() {
+            error!("heartbeat err= {}", rsp.unwrap_err());
             ws.close();
         }
     });
@@ -134,26 +136,18 @@ impl Server<HubData> for HubData {
         }
     }
 
-    fn on_message(ws: Arc<HubConn>, mut msg: Value) -> Result<()> {
-        let mut content = msg[1].take();
-        let subject = content["subject"].take();
-        let body = content["body"].take();
-        match subject.as_str().unwrap_or("none") {
+    fn on_message(ws: Arc<HubConn>, subject: String, body: Value) -> Result<()> {
+        match subject.as_str() {
             "version" => ws.on_version(body)?,
             subject => bail!("on_message unkown subject: {}", subject),
         }
         Ok(())
     }
 
-    fn on_request(ws: Arc<HubConn>, mut msg: Value) -> Result<Value> {
-        let mut content = msg[1].take();
-        let command = content["command"].take();
-        let body = content["params"].take();
-        // let tag = content["tag"].take();
-
-        let response = match command.as_str().unwrap_or("none") {
-            "heartbeat" => ws.on_heartbeat(body)?,
-            "subscribe" => ws.on_subscribe(body)?,
+    fn on_request(ws: Arc<HubConn>, command: String, params: Value) -> Result<Value> {
+        let response = match command.as_str() {
+            "heartbeat" => ws.on_heartbeat(params)?,
+            "subscribe" => ws.on_subscribe(params)?,
             command => bail!("on_request unkown command: {}", command),
         };
         Ok(response)
@@ -237,12 +231,12 @@ impl HubConn {
         // TODO: this is used to detect self-connect (#63)
         let subscription_id = object_hash::gen_random_string(30);
         // let last_mci = storage::read_last_main_chain_index()?;
-        let rsp = self.send_request(
+        self.send_request(
             "subscribe",
             json!({ "subscription_id": subscription_id, "last_mci": 100}),
         )?;
 
-        println!("subscribe rsp={}", rsp);
+        self.set_source();
         Ok(())
     }
 
@@ -253,6 +247,7 @@ impl HubConn {
 
     // remove self from global
     pub fn close(&self) {
+        info!("close connection: {}", self.get_peer());
         WSS.close(self);
     }
 }
