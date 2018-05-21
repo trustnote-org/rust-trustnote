@@ -32,6 +32,13 @@ pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<Stri
     Ok(names)
 }
 
+pub fn read_last_main_chain_index(db: &Connection) -> Result<u32> {
+    let mut stmt = db.prepare_cached("SELECT MAX(main_chain_index) AS last_mc_index FROM units")?;
+    let ret = stmt.query_row(&[], |row| row.get_checked(0))?;
+    let mci = ret.unwrap_or(0);
+    Ok(mci)
+}
+
 pub fn read_unit_props(db: &Connection, unit_hash: &String) -> Result<UnitProps> {
     let mut stmt = db.prepare_cached(
         "SELECT unit, level, latest_included_mc_index, main_chain_index, \

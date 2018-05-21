@@ -10,6 +10,7 @@ use may::coroutine;
 use may::net::TcpStream;
 use may::sync::RwLock;
 use serde_json::Value;
+use storage;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
@@ -21,7 +22,7 @@ pub struct HubData {
     is_source: AtomicBool,
 }
 
-type HubConn = WsConnection<HubData>;
+pub type HubConn = WsConnection<HubData>;
 
 // global Ws connections
 lazy_static! {
@@ -230,10 +231,11 @@ impl HubConn {
         use object_hash;
         // TODO: this is used to detect self-connect (#63)
         let subscription_id = object_hash::gen_random_string(30);
-        // let last_mci = storage::read_last_main_chain_index()?;
+        let db = ::db::DB_POOL.get_connection();
+        let last_mci = storage::read_last_main_chain_index(&db)?;
         self.send_request(
             "subscribe",
-            json!({ "subscription_id": subscription_id, "last_mci": 100}),
+            json!({ "subscription_id": subscription_id, "last_mci": last_mci}),
         )?;
 
         self.set_source();
