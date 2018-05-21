@@ -15,7 +15,9 @@ lazy_static! {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Joint {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ball: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub skiplist_units: Option<Vec<String>>,
     pub unit: Unit,
     // TODO: can we move unit_hash to here from unit sub filed?

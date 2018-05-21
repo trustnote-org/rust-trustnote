@@ -6,10 +6,11 @@ use std::time::Duration;
 use super::network::{Sender, Server, WsConnection};
 use config;
 use error::Result;
+use joint::Joint;
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::RwLock;
-use serde_json::Value;
+use serde_json::{self, Value};
 use storage;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
@@ -142,6 +143,11 @@ impl Server<HubData> for HubData {
         match subject.as_str() {
             "version" => ws.on_version(body)?,
             "hub/challenge" => ws.on_hub_challenge(body)?,
+            "free_joints_end" => {} // not handled
+            "error" => error!("recevie error: {}", body),
+            "info" => info!("recevie info: {}", body),
+            "result" => info!("recevie result: {}", body),
+            "joint" => ws.on_joint(body)?,
             subject => bail!("on_message unkown subject: {}", subject),
         }
         Ok(())
@@ -216,6 +222,12 @@ impl HubConn {
         // only wallet would save the challenge and save the challenge
         // for next login and match
         info!("peer is a hub, challenge = {}", param);
+        Ok(())
+    }
+
+    fn on_joint(&self, param: Value) -> Result<()> {
+        let joint: Joint = serde_json::from_value(param)?;
+        info!("receive a joint: {:?}", joint);
         Ok(())
     }
 }
