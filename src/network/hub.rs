@@ -34,6 +34,7 @@ fn init_connection(ws: &Arc<HubConn>) {
 
     t!(ws.send_version());
     t!(ws.send_subscribe());
+    t!(ws.send_hub_challenge());
 
     let mut rng = thread_rng();
     let n: u64 = rng.gen_range(0, 1000);
@@ -140,6 +141,7 @@ impl Server<HubData> for HubData {
     fn on_message(ws: Arc<HubConn>, subject: String, body: Value) -> Result<()> {
         match subject.as_str() {
             "version" => ws.on_version(body)?,
+            "hub/challenge" => ws.on_hub_challenge(body)?,
             subject => bail!("on_message unkown subject: {}", subject),
         }
         Ok(())
@@ -162,7 +164,7 @@ impl HubConn {
         data.is_subscribed.load(Ordering::Relaxed)
     }
 
-    pub fn set_subscribed(&self) {
+    fn set_subscribed(&self) {
         let data = self.get_data();
         data.is_subscribed.store(true, Ordering::Relaxed);
     }
@@ -172,7 +174,7 @@ impl HubConn {
         data.is_source.load(Ordering::Relaxed)
     }
 
-    pub fn set_source(&self) {
+    fn set_source(&self) {
         let data = self.get_data();
         data.is_source.store(true, Ordering::Relaxed);
     }
@@ -208,6 +210,14 @@ impl HubConn {
         self.set_subscribed();
         Ok(json!("subscribed"))
     }
+
+    fn on_hub_challenge(&self, param: Value) -> Result<()> {
+        // this is hub, we do nothing here
+        // only wallet would save the challenge and save the challenge
+        // for next login and match
+        info!("peer is a hub, challenge = {}", param);
+        Ok(())
+    }
 }
 
 // the client side impl
@@ -225,6 +235,13 @@ impl HubConn {
                 "program_version": "0.1.0"
             }),
         )
+    }
+
+    fn send_hub_challenge(&self) -> Result<()> {
+        use object_hash;
+        let challenge = object_hash::gen_random_string(30);
+        self.send_just_saying("hub/challenge", json!(challenge))?;
+        Ok(())
     }
 
     fn send_subscribe(&self) -> Result<()> {
