@@ -39,17 +39,20 @@ impl ser::Error for Error {
 pub struct Serializer {
     // This string starts empty and JSON is appended as values are serialized.
     output: Vec<String>,
+    size: usize,
 }
 
 pub struct StructSerializer<'a> {
     s: &'a mut Serializer,
     fields: BTreeMap<&'static str, Vec<String>>,
+    size: usize,
 }
 
 pub struct MapSerializer<'a> {
     s: &'a mut Serializer,
     entries: BTreeMap<String, Vec<String>>,
     last_key: Option<String>,
+    size: usize,
 }
 
 // By convention, the public API of a Serde deserializer is one or more `to_abc`
@@ -57,15 +60,30 @@ pub struct MapSerializer<'a> {
 // Rust types the serializer is able to produce as output.
 //
 // This basic serializer supports only `to_string`.
-// TODO: disable dead code
-#[allow(dead_code)]
 pub fn to_string<T>(value: &T) -> Result<String>
 where
     T: Serialize,
 {
-    let mut serializer = Serializer { output: Vec::new() };
+    let mut serializer = Serializer {
+        output: Vec::new(),
+        size: 0,
+    };
     value.serialize(&mut serializer)?;
     Ok(serializer.output.join("\u{0000}"))
+}
+
+// get object size (special with trustnote)
+#[allow(dead_code)]
+pub fn obj_size<T>(value: &T) -> Result<usize>
+where
+    T: Serialize,
+{
+    let mut serializer = Serializer {
+        output: Vec::new(),
+        size: 0,
+    };
+    value.serialize(&mut serializer)?;
+    Ok(serializer.size)
 }
 
 impl<'a> ser::Serializer for &'a mut Serializer {
@@ -99,6 +117,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         let value = if v { "true" } else { "false" };
         self.output.push("b".to_string());
         self.output.push(value.to_string());
+        self.size += 1;
         Ok(())
     }
 
@@ -123,6 +142,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_i64(self, v: i64) -> Result<()> {
         self.output.push("n".to_string());
         self.output.push(v.to_string());
+        self.size += 8;
         Ok(())
     }
 
@@ -141,6 +161,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_u64(self, v: u64) -> Result<()> {
         self.output.push("n".to_string());
         self.output.push(v.to_string());
+        self.size += 8;
         Ok(())
     }
 
@@ -151,6 +172,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_f64(self, v: f64) -> Result<()> {
         self.output.push("n".to_string());
         self.output.push(v.to_string());
+        self.size += 8;
         Ok(())
     }
 
@@ -166,6 +188,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_str(self, v: &str) -> Result<()> {
         self.output.push("s".to_string());
         self.output.push(v.to_string());
+        self.size += v.len();
         Ok(())
     }
 
@@ -304,6 +327,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             s: self,
             entries: BTreeMap::new(),
             last_key: None,
+            size: 0,
         })
     }
 
@@ -316,6 +340,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
         Ok(StructSerializer {
             s: self,
             fields: BTreeMap::new(),
+            size: 0,
         })
     }
 
@@ -448,7 +473,10 @@ impl<'a> ser::SerializeMap for MapSerializer<'a> {
         T: ?Sized + Serialize,
     {
         // only string key is supported, how to do that?
-        let mut serializer = Serializer { output: Vec::new() };
+        let mut serializer = Serializer {
+            output: Vec::new(),
+            size: 0,
+        };
         key.serialize(&mut serializer)?;
         if serializer.output.len() != 2 || serializer.output[0] != "s" {
             return Err(Error::Custom("only string key map supported".to_string()));
@@ -467,11 +495,15 @@ impl<'a> ser::SerializeMap for MapSerializer<'a> {
     where
         T: ?Sized + Serialize,
     {
-        let mut serializer = Serializer { output: Vec::new() };
+        let mut serializer = Serializer {
+            output: Vec::new(),
+            size: 0,
+        };
         value.serialize(&mut serializer)?;
         let mut value = serializer.output;
         let key = self.last_key.take().unwrap();
         self.entries.get_mut(&key).map(|v| v.append(&mut value));
+        self.size += serializer.size;
         Ok(())
     }
 
@@ -481,18 +513,25 @@ impl<'a> ser::SerializeMap for MapSerializer<'a> {
         V: Serialize,
     {
         // only string key is supported, how to do that?
-        let mut serializer = Serializer { output: Vec::new() };
+        let mut serializer = Serializer {
+            output: Vec::new(),
+            size: 0,
+        };
         key.serialize(&mut serializer)?;
         if serializer.output.len() != 2 || serializer.output[0] != "s" {
             return Err(Error::Custom("only string key map supported".to_string()));
         }
         let key = serializer.output[1].clone();
 
-        let mut serializer = Serializer { output: Vec::new() };
+        let mut serializer = Serializer {
+            output: Vec::new(),
+            size: 0,
+        };
         value.serialize(&mut serializer)?;
         let value = serializer.output;
 
         self.entries.insert(key, value);
+        self.size += serializer.size;
         Ok(())
     }
 
@@ -505,6 +544,7 @@ impl<'a> ser::SerializeMap for MapSerializer<'a> {
             self.s.output.push(k.to_owned());
             self.s.output.append(&mut v);
         }
+        self.s.size += self.size;
         Ok(())
     }
 }
@@ -520,13 +560,17 @@ impl<'a> ser::SerializeStruct for StructSerializer<'a> {
         T: ?Sized + Serialize,
     {
         // filter out null
-        let mut serializer = Serializer { output: Vec::new() };
+        let mut serializer = Serializer {
+            output: Vec::new(),
+            size: 0,
+        };
         value.serialize(&mut serializer)?;
         if serializer.output == ["null"] {
             return Ok(());
         }
 
         self.fields.insert(key, serializer.output);
+        self.size += serializer.size;
         Ok(())
     }
 
@@ -535,6 +579,7 @@ impl<'a> ser::SerializeStruct for StructSerializer<'a> {
             self.s.output.push(k.to_owned());
             self.s.output.append(&mut v);
         }
+        self.s.size += self.size;
         Ok(())
     }
 }
@@ -605,4 +650,17 @@ fn test_json_value() {
     let expected =
         "age\u{0}n\u{0}43\u{0}name\u{0}s\u{0}John Doe\u{0}phones\u{0}[\u{0}s\u{0}+44 1234567\u{0}]";
     assert_eq!(to_string(&v).unwrap(), expected);
+}
+
+#[test]
+fn test_json_size() {
+    let v = json!({
+      "name": "John Doe",
+      "age": 43,
+      "phones": [
+        "+44 1234567",
+      ]
+    });
+
+    assert_eq!(obj_size(&v).unwrap(), 27);
 }
