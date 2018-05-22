@@ -52,6 +52,7 @@ pub mod db;
 pub mod error;
 pub mod graph;
 pub mod header_commissions;
+pub mod map_lock;
 pub mod mc_outputs;
 pub mod my_witness;
 pub mod network;

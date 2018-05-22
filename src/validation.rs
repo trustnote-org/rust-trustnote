@@ -47,6 +47,6 @@ pub fn validate(joint: &Joint) -> Result<ValidationResult> {
         )));
     }
 
-    // TODO add more checks
+    // TODO: add more checks
     unimplemented!()
 }
