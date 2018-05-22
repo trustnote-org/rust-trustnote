@@ -226,8 +226,9 @@ impl HubConn {
     }
 
     fn on_joint(&self, param: Value) -> Result<()> {
-        let joint: Joint = serde_json::from_value(param)?;
+        let mut joint: Joint = serde_json::from_value(param)?;
         info!("receive a joint: {:?}", joint);
+        joint.unit.main_chain_index = None;
         Ok(())
     }
 }
