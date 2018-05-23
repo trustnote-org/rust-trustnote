@@ -45,21 +45,21 @@ pub trait Sender {
         self.send_message("justsaying", json!({ "subject": subject, "body": body }))
     }
 
-    // fn send_error(&self, error: Value) -> Result<()> {
-    //     self.send_just_saying("error", error)
-    // }
+    fn send_error(&self, error: Value) -> Result<()> {
+        self.send_just_saying("error", error)
+    }
 
     // fn send_info(&self, info: Value) -> Result<()> {
     //     self.send_just_saying("info", info)
     // }
 
-    // fn send_result(&self, result: Value) -> Result<()> {
-    //     self.send_just_saying("result", result)
-    // }
+    fn send_result(&self, result: Value) -> Result<()> {
+        self.send_just_saying("result", result)
+    }
 
-    // fn send_error_result(&self, unit: &str, error: &str) -> Result<()> {
-    //     self.send_result(json!({ "unit": unit, "result": "error", "error": error }))
-    // }
+    fn send_error_result(&self, unit: &str, error: &str) -> Result<()> {
+        self.send_result(json!({ "unit": unit, "result": "error", "error": error }))
+    }
 
     fn send_response(&self, tag: &str, response: Value) -> Result<()> {
         if response.is_null() {

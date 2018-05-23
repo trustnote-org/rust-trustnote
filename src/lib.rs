@@ -61,10 +61,11 @@ pub mod spec;
 pub mod catchup;
 mod definition;
 pub mod joint;
+pub mod joint_storage;
 mod obj_ser;
 pub mod object_hash;
 pub mod signature;
-mod storage;
+pub mod storage;
 pub mod validation;
 pub mod witness_proof;
 

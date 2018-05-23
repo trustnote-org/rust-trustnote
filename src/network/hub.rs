@@ -5,17 +5,20 @@ use std::time::Duration;
 
 use super::network::{Sender, Server, WsConnection};
 use config;
+use db;
 use error::Result;
 use joint::Joint;
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::RwLock;
+use rusqlite::Connection;
 use serde_json::{self, Value};
 use storage;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
+use validation::{self, ValidationResult};
 
 pub struct HubData {
     // indicate if this connection is a subscribed peer
@@ -226,10 +229,50 @@ impl HubConn {
     }
 
     fn on_joint(&self, param: Value) -> Result<()> {
-        let mut joint: Joint = serde_json::from_value(param)?;
+        let joint: Joint = serde_json::from_value(param)?;
         info!("receive a joint: {:?}", joint);
+        ensure!(joint.unit.unit.is_some(), "no unit");
+        let db = db::DB_POOL.get_connection();
+        let mut stmt =
+            db.prepare_cached("SELECT 1 FROM archived_joints WHERE unit=? AND reason='uncovered'")?;
+
+        if stmt.exists(&[joint.unit.unit.as_ref().unwrap()])? {
+            return self.send_error(json!("this unit is already known and archived"));
+        }
+        self.handle_online_joint(joint, &db)
+    }
+}
+
+impl HubConn {
+    fn handle_online_joint(&self, mut joint: Joint, db: &Connection) -> Result<()> {
         joint.unit.main_chain_index = None;
+        let unit = joint.unit.unit.as_ref().unwrap();
+
+        match self.handle_joint(&joint, false, db)? {
+            ValidationResult::UnitInWork => {}
+            ValidationResult::UnitError(err) | ValidationResult::JointError(err) => {
+                self.send_error_result(unit, &err)?;
+            }
+            ValidationResult::NeedHashTree => {}
+            _ => unimplemented!(),
+        }
+
         Ok(())
+    }
+
+    fn handle_joint(
+        &self,
+        joint: &Joint,
+        need_save: bool,
+        db: &Connection,
+    ) -> Result<ValidationResult> {
+        let _ = (joint, need_save, db);
+        let ret = validation::validate(joint)?;
+        match ret {
+            ValidationResult::UnitInWork => {}
+            _ => unimplemented!(),
+        }
+        Ok(ret)
     }
 }
 
