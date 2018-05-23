@@ -66,6 +66,7 @@ mod obj_ser;
 pub mod object_hash;
 pub mod signature;
 pub mod storage;
+pub mod time;
 pub mod validation;
 pub mod witness_proof;
 
