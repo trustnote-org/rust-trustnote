@@ -56,6 +56,7 @@ pub mod map_lock;
 pub mod mc_outputs;
 pub mod my_witness;
 pub mod network;
+pub mod paid_witnessing;
 pub mod spec;
 
 pub mod catchup;

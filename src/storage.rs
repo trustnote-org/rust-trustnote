@@ -117,6 +117,12 @@ pub fn read_last_stable_mc_unit_props(db: &Connection) -> Result<LastStableMcUni
     unimplemented!()
 }
 
+pub fn read_last_stable_mc_index(db: &Connection) -> Result<u32> {
+    // TODO:
+    let _ = db;
+    unimplemented!()
+}
+
 pub fn determine_if_witness_and_address_definition_have_refs(
     db: &Connection,
     witnesses: &[String],
