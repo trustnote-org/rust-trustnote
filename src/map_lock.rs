@@ -118,10 +118,13 @@ impl<T: Clone + Hash + Eq> MapLock<T> {
         let mut g = self.0.lock().unwrap();
 
         // first check if there are other pending task is ok for wakeup
-        while let Some(task) = g.task_dequeue() {
-            g.keys_lock(&task.keys);
-            task.blocker.unpark();
-        }
+        // we don't need to do this because:
+        // 1. the mutex already have a task queue for fairness
+        // 2. the drop of guard should wakeup all the tasks
+        // while let Some(task) = g.task_dequeue() {
+        //     g.keys_lock(&task.keys);
+        //     task.blocker.unpark();
+        // }
 
         // check our keys at last
         if g.keys_is_locked(&keys) {
@@ -145,10 +148,13 @@ impl<T: Clone + Hash + Eq> MapLock<T> {
         let mut g = self.0.lock().unwrap();
 
         // first check if there are other pending task is ok for wakeup
-        while let Some(task) = g.task_dequeue() {
-            g.keys_lock(&task.keys);
-            task.blocker.unpark();
-        }
+        // we don't need to do this because:
+        // 1. the mutex already have a task queue for fairness
+        // 2. the drop of guard should wakeup all the tasks
+        // while let Some(task) = g.task_dequeue() {
+        //     g.keys_lock(&task.keys);
+        //     task.blocker.unpark();
+        // }
 
         if !g.keys_is_locked(&keys) {
             // ok, the keys are not in use
