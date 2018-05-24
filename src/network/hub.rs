@@ -8,6 +8,8 @@ use config;
 use db;
 use error::Result;
 use joint::Joint;
+use joint_storage;
+use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::RwLock;
@@ -31,6 +33,7 @@ pub type HubConn = WsConnection<HubData>;
 // global Ws connections
 lazy_static! {
     pub static ref WSS: WsConnections = WsConnections::new();
+    static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
 }
 
 fn init_connection(ws: &Arc<HubConn>) {
@@ -245,34 +248,146 @@ impl HubConn {
 
 impl HubConn {
     fn handle_online_joint(&self, mut joint: Joint, db: &Connection) -> Result<()> {
+        use joint_storage::CheckNewResult;
+
+        // clear the main chain index
         joint.unit.main_chain_index = None;
         let unit = joint.unit.unit.as_ref().unwrap();
+        // check if unit is in work, when g is dropped unlock the unit
+        let g = UNIT_IN_WORK.try_lock(vec![unit.to_owned()]);
+        if g.is_none() {
+            // the unit is in work, do nothing
+            return Ok(());
+        }
 
-        match self.handle_joint(&joint, false, db)? {
-            ValidationResult::UnitInWork => {}
-            ValidationResult::UnitError(err) | ValidationResult::JointError(err) => {
-                self.send_error_result(unit, &err)?;
+        match joint_storage::check_new_joint(db, &joint)? {
+            CheckNewResult::New => {
+                // do nothing here, proceed to valide
             }
-            ValidationResult::NeedHashTree => {}
-            _ => unimplemented!(),
+            CheckNewResult::Known => {
+                if joint.unsigned == Some(true) {
+                    bail!("known unsigned");
+                }
+                self.send_result(json!({"unit": unit, "result": "known"}))?;
+                self.write_event("know_good")?;
+            }
+            CheckNewResult::KnownBad => {
+                self.send_result(json!({"unit": unit, "result": "known_bad"}))?;
+                self.write_event("know_bad")?;
+            }
+
+            CheckNewResult::KnownUnverified => {
+                self.send_result(json!({"unit": unit, "result": "known_unverified"}))?
+            }
+        }
+
+        match validation::validate(db, &joint)? {
+            ValidationResult::UnitError(err) => {
+                warn!("{} validation failed: {}", unit, err);
+                self.send_error_result(unit, &err)?;
+                self.purge_joint_and_dependencies_and_notify_peers(&joint, &err)?;
+                if !err.contains("authentifier verification failed")
+                    && !err.contains("bad merkle proof at path")
+                {
+                    self.write_event("invalid")?;
+                }
+            }
+            ValidationResult::JointError(err) => {
+                self.send_error_result(unit, &err)?;
+                self.write_event("invalid")?;
+                // TODO: insert known_bad_jonts
+                unimplemented!()
+                // b.query(
+                // 	"INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
+                // 	[objectHash.getJointHash(objJoint), JSON.stringify(objJoint), error],
+                // 	function(){
+                // 		delete assocUnitsInWork[unit];
+                // 	}
+                // );
+            }
+            ValidationResult::NeedHashTree => {
+                info!("need hash tree for unit {}", unit);
+                if joint.unsigned == Some(true) {
+                    bail!("need hash tree unsigned");
+                }
+                unimplemented!()
+                // if !bCatchingUp && !bWaitingForCatchupChain {
+                //     self.request_catchup()?;
+                // }
+            }
+            ValidationResult::NeedParentUnits(missing_units) => {
+                let info = format!("unresolved dependencies: {}", missing_units.join(", "));
+                self.send_info(json!({"unit": unit, "info": info}))?;
+                unimplemented!()
+                // TODO: need parent units
+                // joint_storage::save_unhandled_joint_and_dependencies(
+                //     &joint,
+                //     &missing_units,
+                //     self.get_peer(),
+                // )?;
+                // drop(g);
+                // self.request_new_missing_joints(&missing_units)?
+            }
+            ValidationResult::Ok(true) => {
+                if joint.unsigned == Some(true) {
+                    bail!("ifOk() unsigned");
+                }
+                joint.save()?;
+                // self.validation_unlock()?;
+                // self.send_result(json!({"unit": unit, "result": "accepted"}))?;
+                // // forward to other peers
+                // if (!bCatchingUp) {
+                //     self.forwardJoint(ws, objJoint)?;
+                // }
+                // drop(g);
+                // // wake up other joints that depend on me
+                // self.findAndHandleJointsThatAreReady(unit);
+                unimplemented!();
+                // TODO: forward to other peers
+                // wake up other joints that depend on me
+                // self.find_and_handle_joints_that_are_ready(unit)?;
+            }
+            ValidationResult::Ok(false) => {
+                if joint.unsigned != Some(true) {
+                    bail!("ifOkUnsigned() signed");
+                }
+            }
+            ValidationResult::TransientError(e) => bail!("transient error: {}", e),
         }
 
         Ok(())
     }
 
-    fn handle_joint(
+    // record peer event in database
+    fn write_event(&self, event: &str) -> Result<()> {
+        // TODO: write event to database to record if the peer is evil
+        let _ = event;
+        Ok(())
+    }
+
+    fn purge_joint_and_dependencies_and_notify_peers(
         &self,
         joint: &Joint,
-        need_save: bool,
-        db: &Connection,
-    ) -> Result<ValidationResult> {
-        let _ = (joint, need_save, db);
-        let ret = validation::validate(joint)?;
-        match ret {
-            ValidationResult::UnitInWork => {}
-            _ => unimplemented!(),
-        }
-        Ok(ret)
+        err: &str,
+    ) -> Result<()> {
+        let _ = (joint, err);
+        unimplemented!()
+    }
+
+    #[allow(dead_code)]
+    fn request_catchup(&self) -> Result<()> {
+        unimplemented!()
+    }
+
+    #[allow(dead_code)]
+    fn request_new_missing_joints(&self, units: &Vec<String>) -> Result<()> {
+        let _ = units;
+        unimplemented!()
+    }
+    #[allow(dead_code)]
+    fn notify_watchers(&self, joint: &Joint) -> Result<()> {
+        let _ = joint;
+        unimplemented!()
     }
 }
 

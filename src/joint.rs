@@ -19,8 +19,9 @@ pub struct Joint {
     pub ball: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skiplist_units: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unsigned: Option<bool>,
     pub unit: Unit,
-    // TODO: can we move unit_hash to here from unit sub filed?
 }
 
 impl Joint {
@@ -544,6 +545,7 @@ fn test_write() {
         ball: None,
         skiplist_units: None,
         unit: unit,
+        unsigned: None,
     };
     let parents_set = joint
         .unit
