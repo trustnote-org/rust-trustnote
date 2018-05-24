@@ -7,15 +7,12 @@ const HASH_LENGTH: usize = 44;
 
 #[derive(Debug)]
 pub enum ValidationResult {
-    UnitInWork,
     UnitError(String),
     JointError(String),
     NeedHashTree,
-    NeedParentUnits,
-    Ok(bool), // unsinged
-    Known,
-    KnownBad,
-    KnownUnverified,
+    NeedParentUnits(Vec<String>),
+    // false if unsinged
+    Ok(bool),
     TransientError(String),
 }
 
@@ -28,9 +25,10 @@ pub fn validate_author_signature_without_ref(
     unimplemented!()
 }
 
-pub fn validate(joint: &Joint) -> Result<ValidationResult> {
+pub fn validate(_db: &Connection, joint: &Joint) -> Result<ValidationResult> {
     let unit = &joint.unit;
-    ensure!(unit.unit.is_some(), "no unit");
+    // already checked in earlier network processing
+    // ensure!(unit.unit.is_some(), "no unit");
 
     let unit_hash = unit.unit.as_ref().unwrap();
     info!("validating joint identified by unit {}", unit_hash);

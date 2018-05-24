@@ -49,9 +49,9 @@ pub trait Sender {
         self.send_just_saying("error", error)
     }
 
-    // fn send_info(&self, info: Value) -> Result<()> {
-    //     self.send_just_saying("info", info)
-    // }
+    fn send_info(&self, info: Value) -> Result<()> {
+        self.send_just_saying("info", info)
+    }
 
     fn send_result(&self, result: Value) -> Result<()> {
         self.send_just_saying("result", result)
