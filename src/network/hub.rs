@@ -20,7 +20,7 @@ use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
-use validation::{self, ValidationResult};
+use validation;
 
 pub struct HubData {
     // indicate if this connection is a subscribed peer
@@ -30,9 +30,11 @@ pub struct HubData {
 
 pub type HubConn = WsConnection<HubData>;
 
-// global Ws connections
+// global data that record the internal state
 lazy_static! {
+    // global Ws connections
     pub static ref WSS: WsConnections = WsConnections::new();
+    // maybe this is too heavy, could use an optimized hashset<AtomicBool>
     static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
 }
 
@@ -249,6 +251,7 @@ impl HubConn {
 impl HubConn {
     fn handle_online_joint(&self, mut joint: Joint, db: &Connection) -> Result<()> {
         use joint_storage::CheckNewResult;
+        use validation::ValidationResult;
 
         // clear the main chain index
         joint.unit.main_chain_index = None;
