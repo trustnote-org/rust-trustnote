@@ -68,7 +68,7 @@ fn read_mc_unit_witnesses(db: &Connection, main_chain_index: u32) -> Result<Vec<
     ensure!(units.len() == 1, "not 1 row on MC {}", main_chain_index);
 
     let unit = if units[0].witness_list_unit.is_some() {
-        units[0].witness_list_unit.clone().unwrap().clone()
+        units[0].witness_list_unit.as_ref().unwrap().clone()
     } else {
         units[0].unit.clone()
     };
@@ -104,6 +104,9 @@ fn build_paid_witnesses(
         .collect::<Vec<_>>()
         .join(", ");
 
+    let mut paid_witnesses = Vec::new();
+    let value_list;
+
     if units.len() > 0 {
         let sql = format!(
             "SELECT address, MIN(main_chain_index-{}) AS delay FROM units \
@@ -124,39 +127,39 @@ fn build_paid_witnesses(
             delay: row.get(1),
         })?;
 
-        let mut paid_witnesses = Vec::new();
-        let value_list;
         for row in rows {
             paid_witnesses.push(row?);
         }
-
-        let mut count_paid_witnesses = paid_witnesses.len() as u32;
-        if count_paid_witnesses == 0 {
-            count_paid_witnesses = witnesses.len() as u32;
-            value_list = witnesses
-                .iter()
-                .map(|s| format!("('{}', '{}', NULL)", unit, s))
-                .collect::<Vec<_>>()
-                .join(", ");
-        } else {
-            value_list = paid_witnesses
-                .iter()
-                .map(|s| format!("('{}', '{}', {})", unit, s.address, s.delay))
-                .collect::<Vec<_>>()
-                .join(", ");
-        }
-
-        let sql = format!(
-            "INSERT INTO paid_witness_events_tmp (unit, address, delay) VALUES {}",
-            value_list
-        );
-        let mut stmt = db.prepare(&sql)?;
-        stmt.insert(&[])?;
-
-        //update count paid witnesses
-        let mut stmt = db.prepare_cached("UPDATE balls SET count_paid_witnesses=? WHERE unit=?")?;
-        stmt.execute(&[&count_paid_witnesses, &unit])?;
     }
+
+    let mut count_paid_witnesses = paid_witnesses.len() as u32;
+
+    //If the query result is empty or no query at all
+    if count_paid_witnesses == 0 {
+        count_paid_witnesses = witnesses.len() as u32;
+        value_list = witnesses
+            .iter()
+            .map(|s| format!("('{}', '{}', NULL)", unit, s))
+            .collect::<Vec<_>>()
+            .join(", ");
+    } else {
+        value_list = paid_witnesses
+            .iter()
+            .map(|s| format!("('{}', '{}', {})", unit, s.address, s.delay))
+            .collect::<Vec<_>>()
+            .join(", ");
+    }
+
+    let sql = format!(
+        "INSERT INTO paid_witness_events_tmp (unit, address, delay) VALUES {}",
+        value_list
+    );
+    let mut stmt = db.prepare(&sql)?;
+    stmt.insert(&[])?;
+
+    //update count paid witnesses
+    let mut stmt = db.prepare_cached("UPDATE balls SET count_paid_witnesses=? WHERE unit=?")?;
+    stmt.execute(&[&count_paid_witnesses, &unit])?;
 
     Ok(())
 }
