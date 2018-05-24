@@ -204,6 +204,18 @@ fn build_paid_witnesses_for_main_chain_index(db: &Connection, main_chain_index: 
     )?;
     stmt.execute(&[])?;
 
+    struct TablePaidWitnessEventsTmp<'a> {
+        db: &'a Connection,
+    }
+    impl<'a> Drop for TablePaidWitnessEventsTmp<'a> {
+        fn drop(&mut self) {
+            let _ = self.db
+                .prepare_cached("DROP TABLE IF EXISTS paid_witness_events_tmp")
+                .and_then(|mut stmt| stmt.execute(&[]));
+        }
+    }
+    let _tmp_table = TablePaidWitnessEventsTmp { db: db };
+
     //In build_paid_witnesses(), graph::UnitProp only use some of the columns, no need to select * and parse them all
     let mut stmt = db.prepare_cached(
         "SELECT unit, level, latest_included_mc_index, main_chain_index, is_on_main_chain, is_free \
@@ -235,9 +247,6 @@ fn build_paid_witnesses_for_main_chain_index(db: &Connection, main_chain_index: 
         )?;
         stmt.insert(&[&main_chain_index])?;
     }
-
-    let mut stmt = db.prepare_cached("DROP TABLE IF EXISTS paid_witness_events_tmp")?;
-    stmt.execute(&[])?;
 
     Ok(())
 }
