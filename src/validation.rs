@@ -12,6 +12,7 @@ pub enum ValidationResult {
     NeedHashTree,
     NeedParentUnits(Vec<String>),
     // false if unsinged
+    // TODO: Ok takes two parameters: validation_state which contains extral sql and a lockguard
     Ok(bool),
     TransientError(String),
 }

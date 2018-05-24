@@ -1,7 +1,16 @@
+use std::collections::{HashMap, HashSet};
+
 use error::Result;
 use joint::Joint;
+use may::sync::RwLock;
 use rusqlite::Connection;
 use spec::*;
+
+// global data that store unit info
+lazy_static! {
+    static ref CACHED_UNIT: RwLock<HashMap<String, StaticUnitProperty>> = RwLock::new(HashMap::new());
+    static ref KNOWN_UNIT: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
+}
 
 #[inline]
 pub fn is_genesis_unit(unit: &String) -> bool {
@@ -10,6 +19,36 @@ pub fn is_genesis_unit(unit: &String) -> bool {
 
 pub fn is_genesis_ball(ball: &String) -> bool {
     let _ = ball;
+    unimplemented!()
+}
+
+pub fn is_known_unit(unit: &String) -> bool {
+    {
+        let g = CACHED_UNIT.read().unwrap();
+        if g.contains_key(unit) {
+            return true;
+        }
+    }
+    let g = KNOWN_UNIT.read().unwrap();
+    g.contains(unit)
+}
+
+pub fn set_unit_is_known(unit: &String) {
+    let mut g = KNOWN_UNIT.write().unwrap();
+    g.insert(unit.to_owned());
+}
+
+pub fn forget_unit(unit: &String) {
+    {
+        let mut g = KNOWN_UNIT.write().unwrap();
+        g.remove(unit);
+    }
+
+    {
+        let mut g = CACHED_UNIT.write().unwrap();
+        g.remove(unit);
+    }
+
     unimplemented!()
 }
 
