@@ -7,6 +7,11 @@ use spec::*;
 const HASH_LENGTH: usize = 44;
 
 #[derive(Debug)]
+pub struct ValidationState {
+    unsigned: bool,
+}
+
+#[derive(Debug)]
 pub enum ValidationResult {
     UnitError(String),
     JointError(String),
@@ -98,7 +103,61 @@ pub fn validate(_db: &Connection, joint: &Joint) -> Result<ValidationResult> {
         if unit.messages.len() > config::MAX_MESSAGES_PER_UNIT {
             return Ok(ValidationResult::UnitError("too many messages".to_owned()));
         }
+
+        let header_size = unit.get_header_size();
+        if unit.headers_commission != Some(header_size) {
+            let msg = format!("wrong headers commission, expected {}", header_size);
+            return Ok(ValidationResult::UnitError(msg));
+        }
+
+        let payload_size = unit.get_payload_size();
+        if unit.payload_commission != Some(payload_size) {
+            let msg = format!("wrong payload commission, expected {}", payload_size);
+            return Ok(ValidationResult::UnitError(msg));
+        }
     }
+
+    if unit.authors.is_empty() {
+        return Ok(ValidationResult::UnitError(
+            "missing or empty authors array".to_owned(),
+        ));
+    }
+
+    if unit.version != config::VERSION {
+        return Ok(ValidationResult::UnitError("wrong version".to_owned()));
+    }
+
+    if unit.alt != config::ALT {
+        return Ok(ValidationResult::UnitError("wrong alt".to_owned()));
+    }
+
+    if !unit.is_genesis_unit() {
+        if unit.parent_units.is_empty() {
+            return Ok(ValidationResult::UnitError(
+                "missing or empty parent units array".to_owned(),
+            ));
+        }
+
+        if unit.last_ball.as_ref().map(|s| s.len()).unwrap_or(0) != HASH_LENGTH {
+            return Ok(ValidationResult::UnitError(
+                "wrong length of last ball".to_owned(),
+            ));
+        }
+
+        if unit.last_ball_unit.as_ref().map(|s| s.len()).unwrap_or(0) != HASH_LENGTH {
+            return Ok(ValidationResult::UnitError(
+                "wrong length of last ball unit".to_owned(),
+            ));
+        }
+    }
+
+    if unit.witness_list_unit.is_some() && unit.witnesses.is_some() {
+        return Ok(ValidationResult::UnitError(
+            "ambiguous witnesses".to_owned(),
+        ));
+    }
+
+    let _author_addresses: Vec<String> = unit.authors.iter().map(|a| a.address.clone()).collect();
 
     // TODO: add more checks
     unimplemented!()

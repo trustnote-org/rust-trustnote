@@ -230,7 +230,7 @@ impl Unit {
         Sha256::digest(obj_str.as_bytes()).to_vec()
     }
 
-    pub fn get_header_size(&self) -> usize {
+    pub fn get_header_size(&self) -> u32 {
         if self.content_hash.is_some() {
             error!("trying to get headers size of stripped unit");
             return 0;
@@ -245,10 +245,10 @@ impl Unit {
         header.messages.clear();
         header.parent_units.clear();
 
-        const PARENT_UNITS_SIZE: usize = 2 * 44;
+        const PARENT_UNITS_SIZE: u32 = 2 * 44;
 
         let size = match obj_ser::obj_size(&header) {
-            Ok(s) => s,
+            Ok(s) => s as u32,
             Err(e) => {
                 error!("failed to get header size, err={}", e);
                 0
@@ -258,14 +258,14 @@ impl Unit {
         size + PARENT_UNITS_SIZE
     }
 
-    pub fn get_payload_size(&self) -> usize {
+    pub fn get_payload_size(&self) -> u32 {
         if self.content_hash.is_some() {
             error!("trying to get payload size of stripped unit");
             return 0;
         }
 
         match obj_ser::obj_size(&self.messages) {
-            Ok(s) => s,
+            Ok(s) => s as u32,
             Err(e) => {
                 error!("failed to get payload size, err={}", e);
                 0
