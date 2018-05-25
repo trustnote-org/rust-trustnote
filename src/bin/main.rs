@@ -182,7 +182,7 @@ fn main_run() -> Result<()> {
     test_json()?;
     test_db()?;
     test_signature()?;
-    test_ws()?;
+    // test_ws()?;
     test_ws_client()?;
     Ok(())
 }
