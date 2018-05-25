@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use obj_ser;
 use object_hash::get_base64_hash;
 use serde_json::Value;
 
@@ -217,7 +218,6 @@ impl Unit {
     }
 
     pub fn get_unit_hash_to_sign(&self) -> Vec<u8> {
-        use obj_ser;
         use sha2::{Digest, Sha256};
 
         let mut naked_unit = self.get_naked_unit();
@@ -228,6 +228,49 @@ impl Unit {
         let obj_str = obj_ser::to_string(&naked_unit).expect("naked_unit to string failed");
 
         Sha256::digest(obj_str.as_bytes()).to_vec()
+    }
+
+    pub fn get_header_size(&self) -> usize {
+        if self.content_hash.is_some() {
+            error!("trying to get headers size of stripped unit");
+            return 0;
+        }
+
+        let mut header = self.clone();
+        header.unit = None;
+        header.headers_commission = None;
+        header.payload_commission = None;
+        header.main_chain_index = None;
+        header.timestamp = None;
+        header.messages.clear();
+        header.parent_units.clear();
+
+        const PARENT_UNITS_SIZE: usize = 2 * 44;
+
+        let size = match obj_ser::obj_size(&header) {
+            Ok(s) => s,
+            Err(e) => {
+                error!("failed to get header size, err={}", e);
+                0
+            }
+        };
+
+        size + PARENT_UNITS_SIZE
+    }
+
+    pub fn get_payload_size(&self) -> usize {
+        if self.content_hash.is_some() {
+            error!("trying to get payload size of stripped unit");
+            return 0;
+        }
+
+        match obj_ser::obj_size(&self.messages) {
+            Ok(s) => s,
+            Err(e) => {
+                error!("failed to get payload size, err={}", e);
+                0
+            }
+        }
     }
 }
 
@@ -285,4 +328,6 @@ fn test_unit_hash() {
         unit.get_unit_hash(),
         "nIcYRvz1AiAwoMWhOz/h5tRL3fZvI2CdEg4tNo7hhLk="
     );
+    assert_eq!(unit.get_header_size(), 344);
+    assert_eq!(unit.get_payload_size(), 157);
 }
