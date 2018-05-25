@@ -11,6 +11,8 @@ pub const VERSION: &str = "1.0";
 pub const ALT: &str = "1";
 pub const STALLED_TIMEOUT: usize = 10;
 
+pub const COUNT_MC_BALLS_FOR_PAID_WITNESSING: u32 = 100;
+
 lazy_static! {
     pub static ref CONFIG: RwLock<Config> = RwLock::new({
         let mut settings = Config::default();

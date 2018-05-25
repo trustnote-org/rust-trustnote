@@ -326,7 +326,7 @@ pub fn determine_if_included_or_equal(
 pub fn read_descendant_units_by_authors_before_mc_index(
     db: &Connection,
     earlier_unit: &UnitProps,
-    author_addresses: &[&String],
+    author_addresses: &[String],
     to_main_chain_index: u32,
 ) -> Result<Vec<String>> {
     let mut units = Vec::new();

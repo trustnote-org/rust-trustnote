@@ -182,7 +182,7 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
                         .round() as u32
                 };
 
-                let value = format!("('{}','{}','{}')", payer_unit, row.address, amount);
+                let value = format!("('{}','{}',{})", payer_unit, row.address, amount);
                 values.push(value);
             }
         }
