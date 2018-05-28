@@ -17,8 +17,9 @@ lazy_static! {
 pub struct Joint {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ball: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub skiplist_units: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub skiplist_units: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unsigned: Option<bool>,
     pub unit: Unit,
@@ -69,8 +70,8 @@ impl Joint {
         let mut stmt = tx.prepare_cached("DELETE FROM hash_tree_balls WHERE ball=? AND unit=?")?;
         stmt.execute(&[ball_hash, unit_hash])?;
 
-        if self.skiplist_units.is_some() {
-            for unit in self.skiplist_units.as_ref().unwrap() {
+        if !self.skiplist_units.is_empty() {
+            for unit in &self.skiplist_units {
                 let mut stmt = tx.prepare_cached(
                     "INSERT INTO skiplist_units (unit, skiplist_unit) VALUES (?, ?)",
                 )?;
@@ -316,14 +317,11 @@ impl Joint {
     }
 
     fn update_witness_level(&self, tx: &Transaction, best_parent_unit: String) -> Result<()> {
-        match self.unit.witnesses {
-            Some(ref witness_list) => {
-                self.update_witness_level_by_witness_list(tx, witness_list, best_parent_unit)
-            }
-            None => {
-                let witness_list = ::storage::read_witness_list(tx, self.get_unit_hash())?;
-                self.update_witness_level_by_witness_list(tx, &witness_list, best_parent_unit)
-            }
+        if self.unit.witnesses.is_empty() {
+            let witness_list = ::storage::read_witness_list(tx, self.get_unit_hash())?;
+            self.update_witness_level_by_witness_list(tx, &witness_list, best_parent_unit)
+        } else {
+            self.update_witness_level_by_witness_list(tx, &self.unit.witnesses, best_parent_unit)
         }
     }
 
@@ -524,7 +522,7 @@ fn test_write() {
         alt: String::from("1"),
         authors: Vec::new(),
         content_hash: None,
-        earned_headers_commission_recipients: None,
+        earned_headers_commission_recipients: Vec::new(),
         headers_commission: None,
         last_ball: Some(String::from("oiIA6Y+87fk6/QyrbOlwqsQ/LLr82Rcuzcr1G/GoHlA=")),
         last_ball_unit: Some(String::from("vxrlKyY517Z+BGMNG35ExiQsYv3ncp/KU414SqXKXTk=")),
@@ -538,12 +536,12 @@ fn test_write() {
         timestamp: None,
         unit: Some(String::from("5CYeTTa4VQxgF4b1Tn33NBlKilJadddwBMLvtp1HIus=")),
         version: String::from("1.0"),
-        witnesses: None,
+        witnesses: Vec::new(),
         witness_list_unit: Some(String::from("MtzrZeOHHjqVZheuLylf0DX7zhp10nBsQX5e/+cA3PQ=")),
     };
     let joint = Joint {
         ball: None,
-        skiplist_units: None,
+        skiplist_units: Vec::new(),
         unit: unit,
         unsigned: None,
     };

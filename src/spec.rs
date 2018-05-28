@@ -85,8 +85,9 @@ pub struct Unit {
     pub authors: Vec<Author>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_hash: Option<String>, // this may not exist
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub earned_headers_commission_recipients: Option<Vec<HeaderCommissionShare>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub earned_headers_commission_recipients: Vec<HeaderCommissionShare>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headers_commission: Option<u32>, // default 0
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -104,8 +105,9 @@ pub struct Unit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>, // this may not exist
     pub version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub witnesses: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub witnesses: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub witness_list_unit: Option<String>,
 }
@@ -180,8 +182,9 @@ impl Unit {
             last_ball_unit: Option<String>,
             parent_units: Vec<String>,
             version: String,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            witnesses: Option<Vec<String>>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            #[serde(default)]
+            witnesses: Vec<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             witness_list_unit: Option<String>,
         }
@@ -199,7 +202,7 @@ impl Unit {
             last_ball_unit: None,
             parent_units: self.parent_units.clone(),
             version: self.version.clone(),
-            witnesses: None,
+            witnesses: Vec::new(),
             witness_list_unit: None,
         };
 

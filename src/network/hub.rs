@@ -289,7 +289,7 @@ impl HubConn {
 
         match validation::validate(db, &joint) {
             Ok(ok) => match ok {
-                ValidationOk::Unsigned => {
+                ValidationOk::Unsigned(_) => {
                     if joint.unsigned != Some(true) {
                         bail!("ifOkUnsigned() signed");
                     }

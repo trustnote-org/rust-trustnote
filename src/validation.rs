@@ -28,6 +28,7 @@ pub struct DoubleSpendInput {
 #[derive(Debug)]
 pub struct ValidationState {
     unsigned: bool,
+    sequence: String,
     pub additional_queries: Vec<String>,
     pub double_spend_inputs: Vec<DoubleSpendInput>,
     // input_keys: // what this?
@@ -37,6 +38,7 @@ impl ValidationState {
     pub fn new() -> Self {
         ValidationState {
             unsigned: false,
+            sequence: "good".to_owned(),
             additional_queries: Vec::new(),
             double_spend_inputs: Vec::new(),
         }
@@ -59,7 +61,7 @@ pub enum ValidationError {
 
 #[derive(Debug)]
 pub enum ValidationOk {
-    Unsigned,
+    Unsigned(bool),
     Signed(ValidationState, map_lock::LockGuard<'static, String>),
 }
 
@@ -94,7 +96,7 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
     }
 
     if joint.unsigned == Some(true) {
-        if joint.ball.is_some() || joint.skiplist_units.is_some() {
+        if joint.ball.is_some() || !joint.skiplist_units.is_empty() {
             err!(ValidationError::JointError {
                 err: "unknown fields in unsigned unit-joint".to_owned(),
             });
@@ -106,12 +108,10 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
                 err: "wrong ball length".to_owned()
             });
         }
-        if joint.skiplist_units.is_some() {
-            if joint.skiplist_units.as_ref().unwrap().len() == 0 {
-                err!(ValidationError::JointError {
-                    err: "missing or empty skiplist array".to_owned(),
-                });
-            }
+        if !joint.skiplist_units.is_empty() {
+            err!(ValidationError::JointError {
+                err: "empty skiplist array".to_owned(),
+            });
         }
     }
 
@@ -122,7 +122,7 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
                 err: "wrong content_hash length".to_owned(),
             });
         }
-        if unit.earned_headers_commission_recipients.is_some() || unit.headers_commission.is_some()
+        if unit.earned_headers_commission_recipients.len() > 0 || unit.headers_commission.is_some()
             || unit.payload_commission.is_some() || unit.main_chain_index.is_some()
             || !unit.messages.is_empty()
         {
@@ -202,7 +202,7 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
         }
     }
 
-    if unit.witness_list_unit.is_some() && unit.witnesses.is_some() {
+    if unit.witness_list_unit.is_some() && !unit.witnesses.is_empty() {
         err!(ValidationError::UnitError {
             err: "ambiguous witnesses".to_owned()
         });
@@ -214,13 +214,39 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
     }
 
     let author_addresses: Vec<String> = unit.authors.iter().map(|a| a.address.clone()).collect();
-    let _g = ADDRESS_LOCK.lock(author_addresses);
+    let lock = ADDRESS_LOCK.lock(author_addresses);
 
     let tx = db.transaction()?;
     check_duplicate(&tx, unit_hash)?;
+    if unit.content_hash.is_none() {
+        // this is not using db
+        validate_headers_commission_recipients(unit)?;
+    }
+
+    if !unit.parent_units.is_empty() {
+        validate_hash_tree(&tx, joint, &mut validate_state)?;
+        validate_parents(&tx, joint, &mut validate_state)?;
+    }
+
+    if !joint.skiplist_units.is_empty() {
+        validate_skip_list(&tx, &joint.skiplist_units)?;
+    }
+
+    validate_witnesses(&tx, unit, &mut validate_state)?;
+    validate_authors(&tx, unit, &mut validate_state)?;
+
+    if unit.content_hash.is_none() {
+        // this is not using db
+        validate_messages(&tx, unit, &mut validate_state)?;
+    }
+
+    // done the checks
+    if joint.unsigned == Some(true) {
+        return Ok(ValidationOk::Unsigned(validate_state.sequence == "good"));
+    }
 
     // TODO: add more checks
-    Ok(ValidationOk::Unsigned)
+    Ok(ValidationOk::Signed(validate_state, lock))
 }
 
 fn check_duplicate(tx: &Transaction, unit: &String) -> Result<()> {
@@ -231,4 +257,52 @@ fn check_duplicate(tx: &Transaction, unit: &String) -> Result<()> {
         });
     }
     Ok(())
+}
+
+fn validate_headers_commission_recipients(_unit: &Unit) -> Result<()> {
+    unimplemented!("validate_headers_commission_recipients")
+}
+
+fn validate_hash_tree(
+    _tx: &Transaction,
+    _joint: &Joint,
+    _validate_state: &mut ValidationState,
+) -> Result<()> {
+    unimplemented!("validate_hash_tree")
+}
+
+fn validate_parents(
+    _tx: &Transaction,
+    _joint: &Joint,
+    _validate_state: &mut ValidationState,
+) -> Result<()> {
+    unimplemented!("validate_parents")
+}
+
+fn validate_skip_list(_tx: &Transaction, _skip_list: &Vec<String>) -> Result<()> {
+    unimplemented!("validate_skip_list")
+}
+
+fn validate_witnesses(
+    _tx: &Transaction,
+    _unit: &Unit,
+    _validate_state: &mut ValidationState,
+) -> Result<()> {
+    unimplemented!()
+}
+
+fn validate_authors(
+    _tx: &Transaction,
+    _unit: &Unit,
+    _validate_state: &mut ValidationState,
+) -> Result<()> {
+    unimplemented!()
+}
+
+fn validate_messages(
+    _tx: &Transaction,
+    _unit: &Unit,
+    _validate_state: &mut ValidationState,
+) -> Result<()> {
+    unimplemented!()
 }
