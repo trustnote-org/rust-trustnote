@@ -98,11 +98,61 @@ pub fn read_unit_props(db: &Connection, unit_hash: &String) -> Result<UnitProps>
 }
 
 pub fn read_props_of_units(
-    _db: &Connection,
-    _unit_hash: &String,
-    _later_unit_hashes: &[String],
+    db: &Connection,
+    unit_hash: &String,
+    later_unit_hashes: &[String],
 ) -> Result<(UnitProps, Vec<UnitProps>)> {
-    unimplemented!();
+    let b_earlier_in_later_units = later_unit_hashes.contains(unit_hash);
+
+    let mut hash_list = later_unit_hashes
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>();
+
+    hash_list.push(unit_hash.clone());
+
+    let hash_list = hash_list.join(", ");
+
+    let sql = format!(
+        "SELECT unit, level, latest_included_mc_index, main_chain_index, is_on_main_chain, is_free FROM units WHERE unit IN ({})",
+        hash_list
+    );
+    let mut stmt = db.prepare(&sql)?;
+    let rows = stmt.query_map(&[], |row| UnitProps {
+        unit: row.get(0),
+        level: row.get(1),
+        latest_included_mc_index: row.get(2),
+        main_chain_index: row.get(3),
+        is_on_main_chain: row.get(4),
+        is_free: row.get(5),
+        is_stable: 0,
+    })?;
+
+    let mut props = Vec::new();
+    for row in rows {
+        let row = row?;
+            props.push(row);
+    }
+
+    if props.len() != later_unit_hashes.len() + if b_earlier_in_later_units {0} else {1} {
+        bail!(
+            "wrong number of rows for earlier {:?}, later {:?}",
+            unit_hash,
+            later_unit_hashes
+        ); 
+    }
+
+    let mut prop = None;
+    for p in &props {
+        if &p.unit == unit_hash {
+            prop = Some(p.clone());
+            break;
+        }
+    }
+
+    ensure!(prop.is_some(), "unit prop not found");
+
+    Ok((prop.unwrap(), props))
 }
 
 // TODO: need to cache in memory

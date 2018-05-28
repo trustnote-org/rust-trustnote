@@ -121,7 +121,7 @@ pub struct StaticUnitProperty {
     pub witness_list_unit: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// internally used struct
 pub struct UnitProps {
     pub unit: String,
