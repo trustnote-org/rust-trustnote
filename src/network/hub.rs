@@ -237,21 +237,24 @@ impl HubConn {
         let joint: Joint = serde_json::from_value(param)?;
         info!("receive a joint: {:?}", joint);
         ensure!(joint.unit.unit.is_some(), "no unit");
-        let db = db::DB_POOL.get_connection();
-        let mut stmt =
-            db.prepare_cached("SELECT 1 FROM archived_joints WHERE unit=? AND reason='uncovered'")?;
+        let mut db = db::DB_POOL.get_connection();
+        {
+            let mut stmt = db.prepare_cached(
+                "SELECT 1 FROM archived_joints WHERE unit=? AND reason='uncovered'",
+            )?;
 
-        if stmt.exists(&[joint.unit.unit.as_ref().unwrap()])? {
-            return self.send_error(json!("this unit is already known and archived"));
+            if stmt.exists(&[joint.unit.unit.as_ref().unwrap()])? {
+                return self.send_error(json!("this unit is already known and archived"));
+            }
         }
-        self.handle_online_joint(joint, &db)
+        self.handle_online_joint(joint, &mut db)
     }
 }
 
 impl HubConn {
-    fn handle_online_joint(&self, mut joint: Joint, db: &Connection) -> Result<()> {
+    fn handle_online_joint(&self, mut joint: Joint, db: &mut Connection) -> Result<()> {
         use joint_storage::CheckNewResult;
-        use validation::ValidationResult;
+        use validation::{ValidationError, ValidationOk};
 
         // clear the main chain index
         joint.unit.main_chain_index = None;
@@ -284,78 +287,85 @@ impl HubConn {
             }
         }
 
-        match validation::validate(db, &joint)? {
-            ValidationResult::UnitError(err) => {
-                warn!("{} validation failed: {}", unit, err);
-                self.send_error_result(unit, &err)?;
-                self.purge_joint_and_dependencies_and_notify_peers(&joint, &err)?;
-                if !err.contains("authentifier verification failed")
-                    && !err.contains("bad merkle proof at path")
-                {
-                    self.write_event("invalid")?;
+        match validation::validate(db, &joint) {
+            Ok(ok) => match ok {
+                ValidationOk::Unsigned => {
+                    if joint.unsigned != Some(true) {
+                        bail!("ifOkUnsigned() signed");
+                    }
+                }
+                ValidationOk::Signed(_, _) => {
+                    if joint.unsigned == Some(true) {
+                        bail!("ifOk() unsigned");
+                    }
+                    joint.save()?;
+                    // self.validation_unlock()?;
+                    // self.send_result(json!({"unit": unit, "result": "accepted"}))?;
+                    // // forward to other peers
+                    // if (!bCatchingUp) {
+                    //     self.forwardJoint(ws, objJoint)?;
+                    // }
+                    // drop(g);
+                    // // wake up other joints that depend on me
+                    // self.findAndHandleJointsThatAreReady(unit);
+                    unimplemented!();
+                    // TODO: forward to other peers
+                    // wake up other joints that depend on me
+                    // self.find_and_handle_joints_that_are_ready(unit)?;
+                }
+            },
+            Err(err) => {
+                let err: ValidationError = err.downcast()?;
+                match err {
+                    ValidationError::UnitError { err } => {
+                        warn!("{} validation failed: {}", unit, err);
+                        self.send_error_result(unit, &err)?;
+                        self.purge_joint_and_dependencies_and_notify_peers(&joint, &err)?;
+                        if !err.contains("authentifier verification failed")
+                            && !err.contains("bad merkle proof at path")
+                        {
+                            self.write_event("invalid")?;
+                        }
+                    }
+                    ValidationError::JointError { err } => {
+                        self.send_error_result(unit, &err)?;
+                        self.write_event("invalid")?;
+                        // TODO: insert known_bad_jonts
+                        unimplemented!()
+                        // b.query(
+                        // 	"INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
+                        // 	[objectHash.getJointHash(objJoint), JSON.stringify(objJoint), error],
+                        // 	function(){
+                        // 		delete assocUnitsInWork[unit];
+                        // 	}
+                        // );
+                    }
+                    ValidationError::NeedHashTree => {
+                        info!("need hash tree for unit {}", unit);
+                        if joint.unsigned == Some(true) {
+                            bail!("need hash tree unsigned");
+                        }
+                        unimplemented!()
+                        // if !bCatchingUp && !bWaitingForCatchupChain {
+                        //     self.request_catchup()?;
+                        // }
+                    }
+                    ValidationError::NeedParentUnits(missing_units) => {
+                        let info = format!("unresolved dependencies: {}", missing_units.join(", "));
+                        self.send_info(json!({"unit": unit, "info": info}))?;
+                        unimplemented!()
+                        // TODO: need parent units
+                        // joint_storage::save_unhandled_joint_and_dependencies(
+                        //     &joint,
+                        //     &missing_units,
+                        //     self.get_peer(),
+                        // )?;
+                        // drop(g);
+                        // self.request_new_missing_joints(&missing_units)?
+                    }
+                    ValidationError::TransientError { err } => bail!(err),
                 }
             }
-            ValidationResult::JointError(err) => {
-                self.send_error_result(unit, &err)?;
-                self.write_event("invalid")?;
-                // TODO: insert known_bad_jonts
-                unimplemented!()
-                // b.query(
-                // 	"INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
-                // 	[objectHash.getJointHash(objJoint), JSON.stringify(objJoint), error],
-                // 	function(){
-                // 		delete assocUnitsInWork[unit];
-                // 	}
-                // );
-            }
-            ValidationResult::NeedHashTree => {
-                info!("need hash tree for unit {}", unit);
-                if joint.unsigned == Some(true) {
-                    bail!("need hash tree unsigned");
-                }
-                unimplemented!()
-                // if !bCatchingUp && !bWaitingForCatchupChain {
-                //     self.request_catchup()?;
-                // }
-            }
-            ValidationResult::NeedParentUnits(missing_units) => {
-                let info = format!("unresolved dependencies: {}", missing_units.join(", "));
-                self.send_info(json!({"unit": unit, "info": info}))?;
-                unimplemented!()
-                // TODO: need parent units
-                // joint_storage::save_unhandled_joint_and_dependencies(
-                //     &joint,
-                //     &missing_units,
-                //     self.get_peer(),
-                // )?;
-                // drop(g);
-                // self.request_new_missing_joints(&missing_units)?
-            }
-            ValidationResult::Ok(true) => {
-                if joint.unsigned == Some(true) {
-                    bail!("ifOk() unsigned");
-                }
-                joint.save()?;
-                // self.validation_unlock()?;
-                // self.send_result(json!({"unit": unit, "result": "accepted"}))?;
-                // // forward to other peers
-                // if (!bCatchingUp) {
-                //     self.forwardJoint(ws, objJoint)?;
-                // }
-                // drop(g);
-                // // wake up other joints that depend on me
-                // self.findAndHandleJointsThatAreReady(unit);
-                unimplemented!();
-                // TODO: forward to other peers
-                // wake up other joints that depend on me
-                // self.find_and_handle_joints_that_are_ready(unit)?;
-            }
-            ValidationResult::Ok(false) => {
-                if joint.unsigned != Some(true) {
-                    bail!("ifOkUnsigned() signed");
-                }
-            }
-            ValidationResult::TransientError(e) => bail!("transient error: {}", e),
         }
 
         Ok(())

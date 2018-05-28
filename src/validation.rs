@@ -1,26 +1,66 @@
 use config;
 use error::Result;
 use joint::Joint;
-use rusqlite::Connection;
+use map_lock::{self, MapLock};
+use rusqlite::{Connection, Transaction};
 use spec::*;
 
 const HASH_LENGTH: usize = 44;
 
-#[derive(Debug)]
-pub struct ValidationState {
-    unsigned: bool,
+// global address map lock
+lazy_static! {
+    // maybe this is too heavy, could use an optimized hashset<AtomicBool>
+    static ref ADDRESS_LOCK: MapLock<String> = MapLock::new();
+}
+
+macro_rules! err {
+    ($e:expr) => {
+        return Err($e.into());
+    };
 }
 
 #[derive(Debug)]
-pub enum ValidationResult {
-    UnitError(String),
-    JointError(String),
+pub struct DoubleSpendInput {
+    message_index: u32,
+    input_index: u32,
+}
+
+#[derive(Debug)]
+pub struct ValidationState {
+    unsigned: bool,
+    pub additional_queries: Vec<String>,
+    pub double_spend_inputs: Vec<DoubleSpendInput>,
+    // input_keys: // what this?
+}
+
+impl ValidationState {
+    pub fn new() -> Self {
+        ValidationState {
+            unsigned: false,
+            additional_queries: Vec::new(),
+            double_spend_inputs: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Fail)]
+pub enum ValidationError {
+    #[fail(display = "Unit Error: {}", err)]
+    UnitError { err: String },
+    #[fail(display = "Joint Error {}", err)]
+    JointError { err: String },
+    #[fail(display = "Need Hash Tree")]
     NeedHashTree,
+    #[fail(display = "Need Parent Units")]
     NeedParentUnits(Vec<String>),
-    // false if unsinged
-    // TODO: Ok takes two parameters: validation_state which contains extral sql and a lockguard
-    Ok(bool),
-    TransientError(String),
+    #[fail(display = "TransientError: {}", err)]
+    TransientError { err: String },
+}
+
+#[derive(Debug)]
+pub enum ValidationOk {
+    Unsigned,
+    Signed(ValidationState, map_lock::LockGuard<'static, String>),
 }
 
 pub fn validate_author_signature_without_ref(
@@ -32,7 +72,7 @@ pub fn validate_author_signature_without_ref(
     unimplemented!()
 }
 
-pub fn validate(_db: &Connection, joint: &Joint) -> Result<ValidationResult> {
+pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
     let unit = &joint.unit;
     // already checked in earlier network processing
     // ensure!(unit.unit.is_some(), "no unit");
@@ -41,33 +81,36 @@ pub fn validate(_db: &Connection, joint: &Joint) -> Result<ValidationResult> {
     info!("validating joint identified by unit {}", unit_hash);
 
     if unit_hash.len() != HASH_LENGTH {
-        return Ok(ValidationResult::JointError("wrong unit length".to_owned()));
+        err!(ValidationError::JointError {
+            err: "wrong unit length".to_owned()
+        });
     }
 
     let calc_unit_hash = unit.get_unit_hash();
     if &calc_unit_hash != unit_hash {
-        return Ok(ValidationResult::JointError(format!(
-            "wrong unit hash: {} != {}",
-            calc_unit_hash, unit_hash
-        )));
+        err!(ValidationError::JointError {
+            err: format!("wrong unit hash: {} != {}", calc_unit_hash, unit_hash),
+        });
     }
 
     if joint.unsigned == Some(true) {
         if joint.ball.is_some() || joint.skiplist_units.is_some() {
-            return Ok(ValidationResult::JointError(
-                "unknown fields in unsigned unit-joint".to_owned(),
-            ));
+            err!(ValidationError::JointError {
+                err: "unknown fields in unsigned unit-joint".to_owned(),
+            });
         }
     } else if joint.ball.is_some() {
         let ball = joint.ball.as_ref().unwrap();
         if ball.len() != HASH_LENGTH {
-            return Ok(ValidationResult::JointError("wrong ball length".to_owned()));
+            err!(ValidationError::JointError {
+                err: "wrong ball length".to_owned()
+            });
         }
         if joint.skiplist_units.is_some() {
             if joint.skiplist_units.as_ref().unwrap().len() == 0 {
-                return Ok(ValidationResult::JointError(
-                    "missing or empty skiplist array".to_owned(),
-                ));
+                err!(ValidationError::JointError {
+                    err: "missing or empty skiplist array".to_owned(),
+                });
             }
         }
     }
@@ -75,90 +118,117 @@ pub fn validate(_db: &Connection, joint: &Joint) -> Result<ValidationResult> {
     if unit.content_hash.is_some() {
         let content_hash = unit.content_hash.as_ref().unwrap();
         if content_hash.len() != HASH_LENGTH {
-            return Ok(ValidationResult::UnitError(
-                "wrong content_hash length".to_owned(),
-            ));
+            err!(ValidationError::UnitError {
+                err: "wrong content_hash length".to_owned(),
+            });
         }
         if unit.earned_headers_commission_recipients.is_some() || unit.headers_commission.is_some()
             || unit.payload_commission.is_some() || unit.main_chain_index.is_some()
             || !unit.messages.is_empty()
         {
-            return Ok(ValidationResult::UnitError(
-                "unknown fields in nonserial unit".to_owned(),
-            ));
+            err!(ValidationError::UnitError {
+                err: "unknown fields in nonserial unit".to_owned(),
+            });
         }
         if joint.ball.is_none() {
-            return Ok(ValidationResult::JointError(
-                "content_hash allowed only in finished ball".to_owned(),
-            ));
+            err!(ValidationError::JointError {
+                err: "content_hash allowed only in finished ball".to_owned(),
+            });
         }
     } else {
         // serial
         if unit.messages.is_empty() {
-            return Ok(ValidationResult::UnitError(
-                "missing or empty messages array".to_owned(),
-            ));
+            err!(ValidationError::UnitError {
+                err: "missing or empty messages array".to_owned(),
+            });
         }
 
         if unit.messages.len() > config::MAX_MESSAGES_PER_UNIT {
-            return Ok(ValidationResult::UnitError("too many messages".to_owned()));
+            err!(ValidationError::UnitError {
+                err: "too many messages".to_owned()
+            });
         }
 
         let header_size = unit.get_header_size();
         if unit.headers_commission != Some(header_size) {
-            let msg = format!("wrong headers commission, expected {}", header_size);
-            return Ok(ValidationResult::UnitError(msg));
+            err!(ValidationError::UnitError {
+                err: format!("wrong headers commission, expected {}", header_size),
+            });
         }
 
         let payload_size = unit.get_payload_size();
         if unit.payload_commission != Some(payload_size) {
-            let msg = format!("wrong payload commission, expected {}", payload_size);
-            return Ok(ValidationResult::UnitError(msg));
+            err!(ValidationError::UnitError {
+                err: format!("wrong payload commission, expected {}", payload_size),
+            });
         }
     }
 
     if unit.authors.is_empty() {
-        return Ok(ValidationResult::UnitError(
-            "missing or empty authors array".to_owned(),
-        ));
+        err!(ValidationError::UnitError {
+            err: "missing or empty authors array".to_owned(),
+        });
     }
 
     if unit.version != config::VERSION {
-        return Ok(ValidationResult::UnitError("wrong version".to_owned()));
+        err!(ValidationError::UnitError {
+            err: "wrong version".to_owned()
+        });
     }
 
     if unit.alt != config::ALT {
-        return Ok(ValidationResult::UnitError("wrong alt".to_owned()));
+        err!(ValidationError::UnitError {
+            err: "wrong alt".to_owned()
+        });
     }
 
     if !unit.is_genesis_unit() {
         if unit.parent_units.is_empty() {
-            return Ok(ValidationResult::UnitError(
-                "missing or empty parent units array".to_owned(),
-            ));
+            err!(ValidationError::UnitError {
+                err: "missing or empty parent units array".to_owned(),
+            });
         }
 
         if unit.last_ball.as_ref().map(|s| s.len()).unwrap_or(0) != HASH_LENGTH {
-            return Ok(ValidationResult::UnitError(
-                "wrong length of last ball".to_owned(),
-            ));
+            err!(ValidationError::UnitError {
+                err: "wrong length of last ball".to_owned(),
+            });
         }
 
         if unit.last_ball_unit.as_ref().map(|s| s.len()).unwrap_or(0) != HASH_LENGTH {
-            return Ok(ValidationResult::UnitError(
-                "wrong length of last ball unit".to_owned(),
-            ));
+            err!(ValidationError::UnitError {
+                err: "wrong length of last ball unit".to_owned(),
+            });
         }
     }
 
     if unit.witness_list_unit.is_some() && unit.witnesses.is_some() {
-        return Ok(ValidationResult::UnitError(
-            "ambiguous witnesses".to_owned(),
-        ));
+        err!(ValidationError::UnitError {
+            err: "ambiguous witnesses".to_owned()
+        });
     }
 
-    let _author_addresses: Vec<String> = unit.authors.iter().map(|a| a.address.clone()).collect();
+    let mut validate_state = ValidationState::new();
+    if joint.unsigned == Some(true) {
+        validate_state.unsigned = true;
+    }
+
+    let author_addresses: Vec<String> = unit.authors.iter().map(|a| a.address.clone()).collect();
+    let _g = ADDRESS_LOCK.lock(author_addresses);
+
+    let tx = db.transaction()?;
+    check_duplicate(&tx, unit_hash)?;
 
     // TODO: add more checks
-    unimplemented!()
+    Ok(ValidationOk::Unsigned)
+}
+
+fn check_duplicate(tx: &Transaction, unit: &String) -> Result<()> {
+    let mut stmt = tx.prepare_cached("SELECT 1 FROM units WHERE unit=?")?;
+    if stmt.exists(&[unit])? {
+        err!(ValidationError::JointError {
+            err: format!("unit {} already exist", unit),
+        });
+    }
+    Ok(())
 }

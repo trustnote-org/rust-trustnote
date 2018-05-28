@@ -27,7 +27,7 @@ pub fn prepare_witness_proof(
     let last_ball_unit;
 
     if storage::determine_if_witness_and_address_definition_have_refs(db, &witnesses)? {
-        bail!(TrustnoteError::WitnessChanged);
+        return Err(TrustnoteError::WitnessChanged.into());
     }
 
     // collect all unstable MC units
@@ -86,7 +86,7 @@ pub fn prepare_witness_proof(
     last_ball_unit = row.0;
     last_ball_mci = row.1;
     if last_stable_mci >= last_ball_mci {
-        bail!(TrustnoteError::CatchupAlreadyCurrent);
+        return Err(TrustnoteError::CatchupAlreadyCurrent.into());
     }
 
     // add definition changes and new definitions of witnesses

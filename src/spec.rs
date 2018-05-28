@@ -49,7 +49,7 @@ pub struct Message {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Output {
     pub address: String,
-    pub amount: u32,
+    pub amount: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
