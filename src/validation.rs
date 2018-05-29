@@ -30,6 +30,7 @@ pub struct DoubleSpendInput {
 pub struct ValidationState {
     unsigned: bool,
     sequence: String,
+    skiplist_balls: Vec<String>,
     pub additional_queries: Vec<String>,
     pub double_spend_inputs: Vec<DoubleSpendInput>,
     // input_keys: // what this?
@@ -40,6 +41,7 @@ impl ValidationState {
         ValidationState {
             unsigned: false,
             sequence: "good".to_owned(),
+            skiplist_balls: Vec::new(),
             additional_queries: Vec::new(),
             double_spend_inputs: Vec::new(),
         }
@@ -283,17 +285,17 @@ fn validate_headers_commission_recipients(unit: &Unit) -> Result<()> {
         if recipient.earned_headers_commission_share < 0 {
             err!(ValidationError::UnitError {
                 err: "earned_headers_commission_share must be positive integer".to_owned(),
-            })
+            });
         }
         if recipient.address <= prev_address {
             err!(ValidationError::UnitError {
                 err: "recipient list must be sorted by address".to_owned(),
-            })
+            });
         }
         if !is_valid_address(&recipient.address)? {
             err!(ValidationError::UnitError {
                 err: "invalid recipient address checksum".to_owned(),
-            })
+            });
         }
         total_earned_headers_commission_share += recipient.earned_headers_commission_share;
         prev_address = recipient.address.clone();
@@ -302,18 +304,105 @@ fn validate_headers_commission_recipients(unit: &Unit) -> Result<()> {
     if total_earned_headers_commission_share != 100 {
         err!(ValidationError::UnitError {
             err: "sum of earned_headers_commission_share is not 100".to_owned(),
-        })
+        });
     }
 
     Ok(())
 }
 
 fn validate_hash_tree(
-    _tx: &Transaction,
-    _joint: &Joint,
-    _validate_state: &mut ValidationState,
+    tx: &Transaction,
+    joint: &Joint,
+    validate_state: &mut ValidationState,
 ) -> Result<()> {
-    unimplemented!("validate_hash_tree")
+    if joint.ball.is_none() {
+        return Ok(());
+    }
+
+    let ball = joint.ball.as_ref().unwrap();
+    let unit = &joint.unit;
+    let unit_hash = unit.unit.as_ref().unwrap();
+    let mut stmt = tx.prepare_cached("SELECT unit FROM hash_tree_balls WHERE ball=?")?;
+    let mut rows = stmt.query(&[ball])?;
+
+    let row = rows.next();
+    if row.is_none() {
+        info!("ball {} is not known in hash tree", ball);
+        err!(ValidationError::NeedHashTree);
+    }
+    let row = row.unwrap()?;
+    if unit_hash != &row.get::<_, String>(0) {
+        err!(ValidationError::JointError {
+            err: format!("ball {} unit {} contradicts hash tree", ball, unit_hash),
+        });
+    }
+
+    let parent_units = unit.parent_units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let sql = format!(
+        "SELECT ball FROM hash_tree_balls WHERE unit IN({}) \
+         UNION \
+         SELECT ball FROM balls WHERE unit IN({}) \
+         ORDER BY ball",
+        parent_units, parent_units
+    );
+    let mut stmt = tx.prepare(&sql)?;
+    let parent_balls = stmt.query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    if parent_balls.len() != unit.parent_units.len() {
+        err!(ValidationError::JointError {
+            err: "some parents not found in balls nor in hash tree".to_owned(),
+        });
+    }
+
+    let validate_ball_hash = || {
+        let ball_hash = object_hash::get_ball_hash(
+            unit_hash,
+            &parent_balls,
+            &validate_state.skiplist_balls,
+            unit.content_hash.is_some(),
+        );
+        if &ball_hash != ball {
+            err!(ValidationError::JointError {
+                err: "ball hash is wrong".to_owned(),
+            });
+        }
+        return Ok(());
+    };
+
+    if joint.skiplist_units.is_empty() {
+        return validate_ball_hash();
+    }
+
+    let skiplist_units = joint
+        .skiplist_units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let sql = format!(
+        "SELECT ball FROM hash_tree_balls WHERE unit IN({}) \
+         UNION \
+         SELECT ball FROM balls WHERE unit IN({}) \
+         ORDER BY ball",
+        skiplist_units, skiplist_units
+    );
+
+    let mut stmt = tx.prepare(&sql)?;
+    let skiplist_balls = stmt.query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    if skiplist_balls.len() != joint.skiplist_units.len() {
+        err!(ValidationError::JointError {
+            err: "some skiplist balls not found".to_owned(),
+        });
+    }
+
+    validate_ball_hash()
 }
 
 fn validate_parents(

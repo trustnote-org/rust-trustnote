@@ -131,15 +131,15 @@ pub fn read_props_of_units(
     let mut props = Vec::new();
     for row in rows {
         let row = row?;
-            props.push(row);
+        props.push(row);
     }
 
-    if props.len() != later_unit_hashes.len() + if b_earlier_in_later_units {0} else {1} {
+    if props.len() != later_unit_hashes.len() + if b_earlier_in_later_units { 0 } else { 1 } {
         bail!(
             "wrong number of rows for earlier {:?}, later {:?}",
             unit_hash,
             later_unit_hashes
-        ); 
+        );
     }
 
     let mut prop = None;
