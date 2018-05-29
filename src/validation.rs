@@ -2,6 +2,7 @@ use config;
 use error::Result;
 use joint::Joint;
 use map_lock::{self, MapLock};
+use object_hash;
 use rusqlite::{Connection, Transaction};
 use spec::*;
 
@@ -63,6 +64,11 @@ pub enum ValidationError {
 pub enum ValidationOk {
     Unsigned(bool),
     Signed(ValidationState, map_lock::LockGuard<'static, String>),
+}
+
+pub fn is_valid_address(address: &String) -> Result<bool> {
+    let address = address.to_uppercase();
+    object_hash::is_chash_valid(&address)
 }
 
 pub fn validate_author_signature_without_ref(
@@ -259,8 +265,47 @@ fn check_duplicate(tx: &Transaction, unit: &String) -> Result<()> {
     Ok(())
 }
 
-fn validate_headers_commission_recipients(_unit: &Unit) -> Result<()> {
-    unimplemented!("validate_headers_commission_recipients")
+fn validate_headers_commission_recipients(unit: &Unit) -> Result<()> {
+    if unit.authors.len() > 1 && unit.earned_headers_commission_recipients.is_empty() {
+        err!(ValidationError::UnitError {
+            err: "must specify earned_headers_commission_recipients when more than 1 author"
+                .to_owned(),
+        });
+    }
+
+    if unit.earned_headers_commission_recipients.is_empty() {
+        return Ok(());
+    }
+
+    let mut total_earned_headers_commission_share = 0;
+    let mut prev_address = "".to_owned();
+    for recipient in &unit.earned_headers_commission_recipients {
+        if recipient.earned_headers_commission_share < 0 {
+            err!(ValidationError::UnitError {
+                err: "earned_headers_commission_share must be positive integer".to_owned(),
+            })
+        }
+        if recipient.address <= prev_address {
+            err!(ValidationError::UnitError {
+                err: "recipient list must be sorted by address".to_owned(),
+            })
+        }
+        if !is_valid_address(&recipient.address)? {
+            err!(ValidationError::UnitError {
+                err: "invalid recipient address checksum".to_owned(),
+            })
+        }
+        total_earned_headers_commission_share += recipient.earned_headers_commission_share;
+        prev_address = recipient.address.clone();
+    }
+
+    if total_earned_headers_commission_share != 100 {
+        err!(ValidationError::UnitError {
+            err: "sum of earned_headers_commission_share is not 100".to_owned(),
+        })
+    }
+
+    Ok(())
 }
 
 fn validate_hash_tree(

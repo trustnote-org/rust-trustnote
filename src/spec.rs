@@ -68,8 +68,8 @@ pub struct Payload {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HeaderCommissionShare {
-    address: String,
-    earned_headers_commission_share: u32,
+    pub address: String,
+    pub earned_headers_commission_share: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
