@@ -362,7 +362,6 @@ impl HubConn {
                         drop(g);
                         self.request_new_missing_joints(&db, &missing_units)?;
                     }
-                    ValidationError::TransientError { err } => bail!(err),
                 }
             }
         }

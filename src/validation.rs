@@ -66,8 +66,6 @@ pub enum ValidationError {
     NeedHashTree,
     #[fail(display = "Need Parent Units")]
     NeedParentUnits(Vec<String>),
-    #[fail(display = "TransientError: {}", err)]
-    TransientError { err: String },
 }
 
 #[derive(Debug)]
