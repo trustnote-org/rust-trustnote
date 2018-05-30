@@ -193,7 +193,10 @@ fn pause() {
 }
 
 fn main() -> Result<()> {
-    may::config().set_stack_size(0x2000);
+    may::config()
+        .set_stack_size(0x2000)
+        .set_io_workers(0)
+        .set_workers(1);
     signature::init_secp256k1()?;
     log_init();
     show_config()?;
