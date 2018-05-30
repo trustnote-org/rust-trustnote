@@ -353,15 +353,14 @@ impl HubConn {
                     ValidationError::NeedParentUnits(missing_units) => {
                         let info = format!("unresolved dependencies: {}", missing_units.join(", "));
                         self.send_info(json!({"unit": unit, "info": info}))?;
-                        unimplemented!()
-                        // TODO: need parent units
-                        // joint_storage::save_unhandled_joint_and_dependencies(
-                        //     &joint,
-                        //     &missing_units,
-                        //     self.get_peer(),
-                        // )?;
-                        // drop(g);
-                        // self.request_new_missing_joints(&missing_units)?
+                        joint_storage::save_unhandled_joint_and_dependencies(
+                            &db,
+                            &joint,
+                            &missing_units,
+                            self.get_peer(),
+                        )?;
+                        drop(g);
+                        self.request_new_missing_joints(&db, &missing_units)?;
                     }
                     ValidationError::TransientError { err } => bail!(err),
                 }
@@ -392,14 +391,43 @@ impl HubConn {
         unimplemented!()
     }
 
-    #[allow(dead_code)]
-    fn request_new_missing_joints(&self, units: &Vec<String>) -> Result<()> {
-        let _ = units;
-        unimplemented!()
+    fn request_new_missing_joints(&self, db: &Connection, units: &[String]) -> Result<()> {
+        let mut new_units = Vec::new();
+
+        for unit in units {
+            let g = UNIT_IN_WORK.try_lock(vec![unit.clone()]);
+            if g.is_none() {
+                continue;
+            }
+            if self.have_pending_joint_request(unit) {
+                info!("unit {} was already requested", unit);
+                continue;
+            }
+
+            use joint_storage::CheckNewResult;
+            match joint_storage::check_new_unit(db, unit)? {
+                CheckNewResult::New => {
+                    new_units.push(unit.clone());
+                }
+                _ => info!("unit {} is already known", unit),
+            }
+        }
+        // TODO: need to re-check if unit is on processing #85
+        if !new_units.is_empty() {
+            self.request_joints(&new_units)?;
+        }
+        Ok(())
     }
+
     #[allow(dead_code)]
     fn notify_watchers(&self, joint: &Joint) -> Result<()> {
         let _ = joint;
+        unimplemented!()
+    }
+
+    #[allow(dead_code)]
+    fn have_pending_joint_request(&self, unit: &String) -> bool {
+        let _ = unit;
         unimplemented!()
     }
 }
@@ -449,9 +477,15 @@ impl HubConn {
     }
 
     // remove self from global
-    pub fn close(&self) {
+    fn close(&self) {
         info!("close connection: {}", self.get_peer());
         WSS.close(self);
+    }
+
+    fn request_joints(&self, units: &[String]) -> Result<()> {
+        // TODO: #83
+        let _ = units;
+        unimplemented!()
     }
 }
 

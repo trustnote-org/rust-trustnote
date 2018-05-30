@@ -57,3 +57,14 @@ pub fn check_new_joint(db: &Connection, joint: &Joint) -> Result<CheckNewResult>
     }
     Ok(ret)
 }
+
+pub fn save_unhandled_joint_and_dependencies(
+    db: &Connection,
+    joint: &Joint,
+    missing_parent_units: &[String],
+    peer: &String,
+) -> Result<()> {
+    // TODO: #84
+    let _ = (db, joint, missing_parent_units, peer);
+    unimplemented!()
+}

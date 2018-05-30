@@ -109,7 +109,8 @@ impl<T> Sender for WsConnection<T> {
 }
 
 impl<T> WsConnection<T> {
-    pub fn get_peer(&self) -> &str {
+    // use &String instead of &str for db
+    pub fn get_peer(&self) -> &String {
         &self.peer
     }
 
