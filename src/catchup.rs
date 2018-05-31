@@ -49,7 +49,8 @@ pub fn prepare_catchup_chain(db: &Connection, catchup_req: CatchupReq) -> Result
          WHERE is_on_main_chain=1 AND main_chain_index=?",
     )?;
 
-    let rows = stmt.query_map(&[&last_known_mci], |row| row.get::<_, u32>(0))?
+    let rows = stmt
+        .query_map(&[&last_known_mci], |row| row.get::<_, u32>(0))?
         .collect::<Vec<_>>();
     if rows.len() == 0 || rows[0].as_ref().unwrap() == &0 {
         return Ok(CatchupChain {
@@ -395,9 +396,8 @@ pub fn process_hash_tree(balls: Vec<BallProps>) -> Result<()> {
             .join(", ");
 
         let add_ball = || -> Result<()> {
-            let mut stmt = tx.prepare_cached(
-                "INSERT OR IGNORE INTO hash_tree_balls (ball, unit) VALUES(?,?)",
-            )?;
+            let mut stmt = tx
+                .prepare_cached("INSERT OR IGNORE INTO hash_tree_balls (ball, unit) VALUES(?,?)")?;
             stmt.insert(&[ball, &ball_prop.unit])?;
             Ok(())
         };

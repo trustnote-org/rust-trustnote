@@ -136,8 +136,10 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
                 err: "wrong content_hash length".to_owned(),
             });
         }
-        if unit.earned_headers_commission_recipients.len() > 0 || unit.headers_commission.is_some()
-            || unit.payload_commission.is_some() || unit.main_chain_index.is_some()
+        if unit.earned_headers_commission_recipients.len() > 0
+            || unit.headers_commission.is_some()
+            || unit.payload_commission.is_some()
+            || unit.main_chain_index.is_some()
             || !unit.messages.is_empty()
         {
             err!(ValidationError::UnitError {
@@ -343,7 +345,8 @@ fn validate_hash_tree(
         });
     }
 
-    let parent_units = unit.parent_units
+    let parent_units = unit
+        .parent_units
         .iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
@@ -357,7 +360,8 @@ fn validate_hash_tree(
         parent_units, parent_units
     );
     let mut stmt = tx.prepare(&sql)?;
-    let parent_balls = stmt.query_map(&[], |row| row.get(0))?
+    let parent_balls = stmt
+        .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if parent_balls.len() != unit.parent_units.len() {
         err!(ValidationError::JointError {
@@ -400,7 +404,8 @@ fn validate_hash_tree(
     );
 
     let mut stmt = tx.prepare(&sql)?;
-    let skiplist_balls = stmt.query_map(&[], |row| row.get(0))?
+    let skiplist_balls = stmt
+        .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if skiplist_balls.len() != joint.skiplist_units.len() {
         err!(ValidationError::JointError {
@@ -418,7 +423,8 @@ fn validate_parents(
 ) -> Result<()> {
     let unit = &joint.unit;
     let unit_hash = unit.unit.as_ref().unwrap();
-    let parent_units = unit.parent_units
+    let parent_units = unit
+        .parent_units
         .iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
@@ -468,17 +474,18 @@ fn validate_parents(
             feild, join
         );
         let mut stmt = tx.prepare_cached(&sql)?;
-        let mut rows = stmt.query_map(&[parent_unit], |row| UnitProps {
-            unit_props: graph::UnitProps {
-                unit: row.get("unit"),
-                level: row.get("level"),
-                latest_included_mc_index: row.get("latest_included_mc_index"),
-                main_chain_index: row.get("main_chain_index"),
-                is_on_main_chain: row.get("is_on_main_chain"),
-                is_free: row.get("is_free"),
-            },
-            ball: row.get_checked("ball").unwrap_or(None),
-        })?
+        let mut rows = stmt
+            .query_map(&[parent_unit], |row| UnitProps {
+                unit_props: graph::UnitProps {
+                    unit: row.get("unit"),
+                    level: row.get("level"),
+                    latest_included_mc_index: row.get("latest_included_mc_index"),
+                    main_chain_index: row.get("main_chain_index"),
+                    is_on_main_chain: row.get("is_on_main_chain"),
+                    is_free: row.get("is_free"),
+                },
+                ball: row.get_checked("ball").unwrap_or(None),
+            })?
             .collect::<::std::result::Result<Vec<UnitProps>, _>>()?;
         if rows.is_empty() {
             missing_parent_units.push(parent_unit.clone());
@@ -541,13 +548,14 @@ fn validate_parents(
         ball: Option<String>,
         max_known_mci: u32,
     }
-    let mut rows = stmt.query_map(&[last_ball_unit], |row| LastBallUnitProps {
-        is_stable: row.get(0),
-        is_on_main_chain: row.get(1),
-        main_chain_index: row.get(2),
-        ball: row.get(3),
-        max_known_mci: row.get(4),
-    })?
+    let mut rows = stmt
+        .query_map(&[last_ball_unit], |row| LastBallUnitProps {
+            is_stable: row.get(0),
+            is_on_main_chain: row.get(1),
+            main_chain_index: row.get(2),
+            ball: row.get(3),
+            max_known_mci: row.get(4),
+        })?
         .collect::<::std::result::Result<Vec<LastBallUnitProps>, _>>()?;
 
     if rows.len() != 1 {
@@ -597,7 +605,8 @@ fn validate_parents(
             parent_units
         );
         let mut stmt = tx.prepare(&sql)?;
-        let max_parent_last_ball_mci = stmt.query_map(&[], |row| row.get(0))?
+        let max_parent_last_ball_mci = stmt
+            .query_map(&[], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<u32>, _>>()?;
         if max_parent_last_ball_mci[0] > validate_state.last_ball_mci {
             err!(ValidationError::JointError {
@@ -666,7 +675,8 @@ fn validate_parents(
     }
 
     let mut stmt = tx.prepare_cached("SELECT ball FROM balls WHERE unit=?")?;
-    let balls = stmt.query_map(&[unit_hash], |row| row.get(0))?
+    let balls = stmt
+        .query_map(&[unit_hash], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if balls.is_empty() {
         err!(create_err(format!(

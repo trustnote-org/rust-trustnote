@@ -87,9 +87,8 @@ impl Joint {
         let unit_hash = self.get_unit_hash();
 
         for parent in &unit.parent_units {
-            let mut stmt = tx.prepare_cached(
-                "INSERT INTO parenthoods (child_unit, parent_unit) VALUES (?, ?)",
-            )?;
+            let mut stmt = tx
+                .prepare_cached("INSERT INTO parenthoods (child_unit, parent_unit) VALUES (?, ?)")?;
             stmt.insert(&[unit_hash, parent])?;
         }
 
@@ -105,7 +104,8 @@ impl Joint {
                 stmt.execute(&[unit_hash])?;
             }
         } else {
-            let parents_set = unit.parent_units
+            let parents_set = unit
+                .parent_units
                 .iter()
                 .map(|s| format!("'{}'", s))
                 .collect::<Vec<_>>()
@@ -232,7 +232,8 @@ impl Joint {
 
     fn update_best_parent(&self, tx: &Transaction) -> Result<String> {
         let unit = &self.unit;
-        let parents_set = unit.parent_units
+        let parents_set = unit
+            .parent_units
             .iter()
             .map(|s| format!("'{}'", s))
             .collect::<Vec<_>>()
@@ -259,7 +260,8 @@ impl Joint {
     }
 
     fn update_level(&self, tx: &Transaction) -> Result<()> {
-        let parents_set = self.unit
+        let parents_set = self
+            .unit
             .parent_units
             .iter()
             .map(|s| format!("'{}'", s))
@@ -512,7 +514,9 @@ impl Joint {
     pub fn get_joint_hash(&self) -> String {
         use base64;
         use sha2::{Digest, Sha256};
-        base64::encode(&Sha256::digest(&serde_json::to_vec(self).expect("joint to json failed")))
+        base64::encode(&Sha256::digest(
+            &serde_json::to_vec(self).expect("joint to json failed"),
+        ))
     }
 }
 

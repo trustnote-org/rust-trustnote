@@ -8,7 +8,8 @@ use spec::*;
 
 // global data that store unit info
 lazy_static! {
-    static ref CACHED_UNIT: RwLock<HashMap<String, StaticUnitProperty>> = RwLock::new(HashMap::new());
+    static ref CACHED_UNIT: RwLock<HashMap<String, StaticUnitProperty>> =
+        RwLock::new(HashMap::new());
     static ref KNOWN_UNIT: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
 }
 
@@ -246,6 +247,11 @@ pub fn read_joint_with_ball(db: &Connection, unit: &String) -> Result<Joint> {
     }
 
     Ok(joint)
+}
+
+#[inline]
+pub fn read_joint(db: &Connection, unit: &String) -> Result<Joint> {
+    read_joint_directly(db, unit)
 }
 
 pub fn read_joint_directly(_db: &Connection, _unit: &String) -> Result<Joint> {

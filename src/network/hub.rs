@@ -103,6 +103,25 @@ impl WsConnections {
         g.clear();
     }
 
+    fn get_ws(&self, conn: &HubConn) -> Arc<HubConn> {
+        let g = self.outbound.read().unwrap();
+        for i in 0..g.len() {
+            if g[i].conn_eq(&conn) {
+                return g[i].clone();
+            }
+        }
+        drop(g);
+
+        let g = self.inbound.read().unwrap();
+        for i in 0..g.len() {
+            if g[i].conn_eq(&conn) {
+                return g[i].clone();
+            }
+        }
+
+        unreachable!("can't find a ws connection from global wss!")
+    }
+
     pub fn close(&self, conn: &HubConn) {
         // find out the actor and remove it
         let mut g = self.outbound.write().unwrap();
@@ -112,6 +131,7 @@ impl WsConnections {
                 return;
             }
         }
+        drop(g);
 
         let mut g = self.inbound.write().unwrap();
         for i in 0..g.len() {
@@ -165,6 +185,7 @@ impl Server<HubData> for HubData {
         let response = match command.as_str() {
             "heartbeat" => ws.on_heartbeat(params)?,
             "subscribe" => ws.on_subscribe(params)?,
+            "get_joint" => ws.on_get_joint(params)?,
             command => bail!("on_request unkown command: {}", command),
         };
         Ok(response)
@@ -231,6 +252,18 @@ impl HubConn {
         // for next login and match
         info!("peer is a hub, challenge = {}", param);
         Ok(())
+    }
+
+    fn on_get_joint(&self, param: Value) -> Result<Value> {
+        let unit = serde_json::from_value(param)?;
+        let db = db::DB_POOL.get_connection();
+        match storage::read_joint(&db, &unit) {
+            Ok(joint) => Ok(serde_json::to_value(joint)?),
+            Err(e) => {
+                error!("read joint {} failed, err={}", unit, e);
+                Ok(json!({ "joint_not_found": unit }))
+            }
+        }
     }
 
     fn on_joint(&self, param: Value) -> Result<()> {
@@ -482,9 +515,41 @@ impl HubConn {
     }
 
     fn request_joints(&self, units: &[String]) -> Result<()> {
-        // TODO: #83
-        let _ = units;
-        unimplemented!()
+        fn request_joint(ws: Arc<HubConn>, unit: String) -> Result<()> {
+            let mut v = ws.send_request("get_joint", json!(unit))?;
+            if v["joint_not_found"].as_str() == Some(&unit) {
+                // TODO: if self connection failed to request jonit, should
+                // let available ws to try a again here. see #72
+                bail!(
+                    "unit {} not found with the connection: {}",
+                    unit,
+                    ws.get_peer()
+                );
+            }
+
+            let joint: Joint = serde_json::from_value(v["joint"].take())?;
+            info!("receive a joint: {:?}", joint);
+            match &joint.unit.unit {
+                None => bail!("no unit"),
+                Some(unit_hash) => {
+                    if unit_hash != &unit {
+                        let err = format!("I didn't request this unit from you: {}", unit_hash);
+                        return ws.send_error(json!(err));
+                    }
+                }
+            }
+
+            let mut db = db::DB_POOL.get_connection();
+            ws.handle_online_joint(joint, &mut db)
+        }
+
+        for unit in units {
+            let unit = unit.clone();
+            let ws = WSS.get_ws(self);
+            go!(move || request_joint(ws, unit)
+                .unwrap_or_else(|e| error!("request_joint err={}", e)));
+        }
+        Ok(())
     }
 }
 
