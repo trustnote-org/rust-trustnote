@@ -36,6 +36,7 @@ lazy_static! {
     pub static ref WSS: WsConnections = WsConnections::new();
     // maybe this is too heavy, could use an optimized hashset<AtomicBool>
     static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
+    static ref JOINT_IN_REQ: MapLock<String> = MapLock::new();
 }
 
 fn init_connection(ws: &Arc<HubConn>) {
@@ -431,10 +432,6 @@ impl HubConn {
             if g.is_none() {
                 continue;
             }
-            if self.have_pending_joint_request(unit) {
-                info!("unit {} was already requested", unit);
-                continue;
-            }
 
             use joint_storage::CheckNewResult;
             match joint_storage::check_new_unit(db, unit)? {
@@ -444,7 +441,7 @@ impl HubConn {
                 _ => info!("unit {} is already known", unit),
             }
         }
-        // TODO: need to re-check if unit is on processing #85
+
         if !new_units.is_empty() {
             self.request_joints(&new_units)?;
         }
@@ -454,12 +451,6 @@ impl HubConn {
     #[allow(dead_code)]
     fn notify_watchers(&self, joint: &Joint) -> Result<()> {
         let _ = joint;
-        unimplemented!()
-    }
-
-    #[allow(dead_code)]
-    fn have_pending_joint_request(&self, unit: &String) -> bool {
-        let _ = unit;
         unimplemented!()
     }
 }
@@ -516,6 +507,12 @@ impl HubConn {
 
     fn request_joints(&self, units: &[String]) -> Result<()> {
         fn request_joint(ws: Arc<HubConn>, unit: String) -> Result<()> {
+            // if the joint is in request, just ignore
+            let g = JOINT_IN_REQ.try_lock(vec![unit.clone()]);
+            if g.is_none() {
+                return Ok(());
+            }
+
             let mut v = ws.send_request("get_joint", json!(unit))?;
             if v["joint_not_found"].as_str() == Some(&unit) {
                 // TODO: if self connection failed to request jonit, should
@@ -539,8 +536,7 @@ impl HubConn {
                 }
             }
 
-            let mut db = db::DB_POOL.get_connection();
-            ws.handle_online_joint(joint, &mut db)
+            ws.handle_online_joint(joint, &mut db::DB_POOL.get_connection())
         }
 
         for unit in units {
