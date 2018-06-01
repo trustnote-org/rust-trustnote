@@ -388,7 +388,7 @@ impl HubConn {
                         let info = format!("unresolved dependencies: {}", missing_units.join(", "));
                         self.send_info(json!({"unit": unit, "info": info}))?;
                         joint_storage::save_unhandled_joint_and_dependencies(
-                            &db,
+                            db,
                             &joint,
                             &missing_units,
                             self.get_peer(),
@@ -510,6 +510,10 @@ impl HubConn {
             // if the joint is in request, just ignore
             let g = JOINT_IN_REQ.try_lock(vec![unit.clone()]);
             if g.is_none() {
+                println!(
+                    "\n\nrequest_joint lock failed!!!!!!!!!!!!!!!!!: {}\n\n",
+                    unit
+                );
                 return Ok(());
             }
 
@@ -525,7 +529,7 @@ impl HubConn {
             }
 
             let joint: Joint = serde_json::from_value(v["joint"].take())?;
-            info!("receive a joint: {:?}", joint);
+            info!("receive a requested joint: {:?}", joint);
             match &joint.unit.unit {
                 None => bail!("no unit"),
                 Some(unit_hash) => {
@@ -542,8 +546,11 @@ impl HubConn {
         for unit in units {
             let unit = unit.clone();
             let ws = WSS.get_ws(self);
-            go!(move || request_joint(ws, unit)
-                .unwrap_or_else(|e| error!("request_joint err={}", e)));
+            go!(move || request_joint(ws, unit).unwrap_or_else(|e| error!(
+                "request_joint err={}, back_trace={}",
+                e,
+                e.backtrace()
+            )));
         }
         Ok(())
     }

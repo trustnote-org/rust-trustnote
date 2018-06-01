@@ -1,6 +1,7 @@
 use error::Result;
 use joint::Joint;
 use rusqlite::Connection;
+use serde_json;
 use storage;
 // use spec::Unit;
 
@@ -59,12 +60,26 @@ pub fn check_new_joint(db: &Connection, joint: &Joint) -> Result<CheckNewResult>
 }
 
 pub fn save_unhandled_joint_and_dependencies(
-    db: &Connection,
+    db: &mut Connection,
     joint: &Joint,
     missing_parent_units: &[String],
     peer: &String,
 ) -> Result<()> {
-    // TODO: #84
-    let _ = (db, joint, missing_parent_units, peer);
-    unimplemented!()
+    let unit = joint.unit.unit.as_ref().unwrap();
+    let tx = db.transaction()?;
+    let mut stmt =
+        tx.prepare_cached("INSERT INTO unhandled_joints (unit, json, peer) VALUES (?, ?, ?)")?;
+    stmt.insert(&[unit, &serde_json::to_string(joint)?, peer])?;
+    let missing_units = missing_parent_units
+        .iter()
+        .map(|parent| format!("('{}', '{}')", unit, parent))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "INSERT OR IGNORE INTO dependencies (unit, depends_on_unit) VALUES {}",
+        missing_units
+    );
+    let mut stmt = tx.prepare(&sql)?;
+    stmt.execute(&[])?;
+    Ok(())
 }
