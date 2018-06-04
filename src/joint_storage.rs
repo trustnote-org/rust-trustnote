@@ -83,3 +83,22 @@ pub fn save_unhandled_joint_and_dependencies(
     stmt.execute(&[])?;
     Ok(())
 }
+
+pub fn find_lost_joints(db: &Connection) -> Result<Vec<String>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT DISTINCT depends_on_unit \
+		FROM dependencies \
+		LEFT JOIN unhandled_joints ON depends_on_unit=unhandled_joints.unit \
+		LEFT JOIN units ON depends_on_unit=units.unit \
+		WHERE unhandled_joints.unit IS NULL AND units.unit IS NULL AND dependencies.creation_date < \'NOW() + INTERVAL -8 SECOND\'"
+        )?;
+
+    let rows = stmt.query_map(&[], |row| row.get(0))?;
+
+    let mut names = Vec::new();
+    for depend_result in rows {
+        names.push(depend_result?);
+    }
+
+    Ok(names)
+}
