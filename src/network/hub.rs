@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::network::{Sender, Server, WsConnection};
+use catchup;
 use config;
 use db;
 use error::Result;
@@ -12,7 +13,7 @@ use joint_storage;
 use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
-use may::sync::RwLock;
+use may::sync::{Mutex, RwLock};
 use rusqlite::Connection;
 use serde_json::{self, Value};
 use storage;
@@ -37,7 +38,10 @@ lazy_static! {
     // maybe this is too heavy, could use an optimized hashset<AtomicBool>
     static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
     static ref JOINT_IN_REQ: MapLock<String> = MapLock::new();
+    static ref CATCH_UP_CHAIN_LOCK: Mutex<()> = Mutex::new(());
 }
+
+static IS_CACTCHING_UP: AtomicBool = AtomicBool::new(false);
 
 fn init_connection(ws: &Arc<HubConn>) {
     use rand::{thread_rng, Rng};
@@ -187,6 +191,8 @@ impl Server<HubData> for HubData {
             "heartbeat" => ws.on_heartbeat(params)?,
             "subscribe" => ws.on_subscribe(params)?,
             "get_joint" => ws.on_get_joint(params)?,
+            "catchup" => ws.on_catchup(params)?,
+            "get_hash_tree" => ws.on_get_hash_tree(params)?,
             command => bail!("on_request unkown command: {}", command),
         };
         Ok(response)
@@ -282,6 +288,20 @@ impl HubConn {
             }
         }
         self.handle_online_joint(joint, &mut db)
+    }
+
+    fn on_catchup(&self, param: Value) -> Result<Value> {
+        let catchup_req: catchup::CatchupReq = serde_json::from_value(param)?;
+        let db = db::DB_POOL.get_connection();
+        let catchup_chain = catchup::prepare_catchup_chain(&db, catchup_req)?;
+        Ok(serde_json::to_value(catchup_chain)?)
+    }
+
+    fn on_get_hash_tree(&self, param: Value) -> Result<Value> {
+        let hash_tree_req: catchup::HashTreeReq = serde_json::from_value(param)?;
+        let db = db::DB_POOL.get_connection();
+        let hash_tree = catchup::read_hash_tree(&db, hash_tree_req)?;
+        Ok(json!({ "balls": hash_tree }))
     }
 }
 
@@ -379,10 +399,10 @@ impl HubConn {
                         if joint.unsigned == Some(true) {
                             bail!("need hash tree unsigned");
                         }
-                        unimplemented!()
-                        // if !bCatchingUp && !bWaitingForCatchupChain {
-                        //     self.request_catchup()?;
-                        // }
+                        // we are not saving the joint so that in case requestCatchup() fails,
+                        // the joint will be requested again via findLostJoints,
+                        // which will trigger another attempt to request catchup
+                        self.request_catchup(db)?;
                     }
                     ValidationError::NeedParentUnits(missing_units) => {
                         let info = format!("unresolved dependencies: {}", missing_units.join(", "));
@@ -419,9 +439,72 @@ impl HubConn {
         unimplemented!()
     }
 
-    #[allow(dead_code)]
-    fn request_catchup(&self) -> Result<()> {
-        unimplemented!()
+    fn request_catchup(&self, db: &Connection) -> Result<()> {
+        if IS_CACTCHING_UP.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
+        info!("will request catchup from {}", self.get_peer());
+        catchup::purge_handled_balls_from_hash_tree(db)?;
+        let mut stmt = db.prepare_cached(
+            "SELECT hash_tree_balls.unit FROM hash_tree_balls LEFT JOIN units USING(unit) \
+             WHERE units.unit IS NULL ORDER BY ball_index",
+        )?;
+        let tree_rows = stmt
+            .query_map(&[], |row| row.get(0))?
+            .collect::<::std::result::Result<Vec<String>, _>>()?;
+        if !tree_rows.is_empty() {
+            IS_CACTCHING_UP.store(true, Ordering::Release);
+            info!("will request balls found in hash tree");
+            // this is just a start indiction, we still have work need to be done
+            self.request_new_missing_joints(db, &tree_rows)?;
+            // self.wait_till_hash_tree_fully_processed_and_request_next()?;
+            return Ok(());
+        }
+
+        let mut stmt = db.prepare_cached("SELECT 1 FROM catchup_chain_balls LIMIT 1")?;
+        if stmt.exists(&[])? {
+            IS_CACTCHING_UP.store(true, Ordering::Release);
+            self.request_next_hash_tree(db)?;
+            return Ok(());
+        }
+
+        let ws = WSS.get_ws(self);
+
+        // spawn a new coroutine to tack the request catchup
+        try_go!(move || {
+            let g = match CATCH_UP_CHAIN_LOCK.try_lock() {
+                Ok(g) => g,
+                _ => return Ok(()),
+            };
+
+            let db = ::db::DB_POOL.get_connection();
+            let last_stable_mci = storage::read_last_stable_mc_index(&db)?;
+            let last_known_mci = storage::read_last_main_chain_index(&db)?;
+            let witnesses: &[String] = &::my_witness::MY_WITNESSES;
+            let param = json!({
+                "witnesses": witnesses,
+                "last_stable_mci": last_stable_mci,
+                "last_known_mci": last_known_mci
+            });
+
+            let ret = ws.send_request("catchup", param).unwrap();
+            if !ret["error"].is_null() {
+                bail!("catchup request got error response: {:?}", ret["error"]);
+            }
+
+            let catchup_chain: catchup::CatchupChain = serde_json::from_value(ret).unwrap();
+            let catchup_ret = catchup::process_catchup_chain(&db, catchup_chain);
+            drop(g); // TODO: should remove this safely
+            match catchup_ret {
+                Err(e) => ws.send_error(json!(e.to_string()))?,
+                Ok(true) => ws.request_next_hash_tree(&db)?,
+                Ok(false) => {}
+            }
+            Ok(())
+        });
+
+        Ok(())
     }
 
     fn request_new_missing_joints(&self, db: &Connection, units: &[String]) -> Result<()> {
@@ -446,6 +529,10 @@ impl HubConn {
             self.request_joints(&new_units)?;
         }
         Ok(())
+    }
+
+    fn request_next_hash_tree(&self, _db: &Connection) -> Result<()> {
+        unimplemented!()
     }
 
     #[allow(dead_code)]
@@ -546,11 +633,7 @@ impl HubConn {
         for unit in units {
             let unit = unit.clone();
             let ws = WSS.get_ws(self);
-            go!(move || request_joint(ws, unit).unwrap_or_else(|e| error!(
-                "request_joint err={}, back_trace={}",
-                e,
-                e.backtrace()
-            )));
+            try_go!(move || request_joint(ws, unit));
         }
         Ok(())
     }

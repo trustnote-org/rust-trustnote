@@ -46,6 +46,24 @@ macro_rules! t {
     };
 }
 
+// this is a special go macro that can return Result and print the error and backtrace
+macro_rules! try_go {
+    ($func:expr) => {{
+        fn _go_check<F, E>(f: F) -> F
+        where
+            F: FnOnce() -> ::std::result::Result<(), E> + Send + 'static,
+            E: Send + 'static,
+        {
+            f
+        }
+        let f = _go_check($func);
+        go!(move || if let Err(e) = f() {
+            error!("coroutine error: {}", e);
+            error!("back_trace={}", e.backtrace());
+        })
+    }};
+}
+
 pub mod config;
 pub mod db;
 #[macro_use]
