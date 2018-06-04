@@ -533,7 +533,48 @@ impl HubConn {
         Ok(())
     }
 
-    fn request_next_hash_tree(&self, _db: &Connection) -> Result<()> {
+    fn request_next_hash_tree(&self, db: &Connection) -> Result<()> {
+        let mut stmt = db
+            .prepare_cached("SELECT ball FROM catchup_chain_balls ORDER BY member_index LIMIT 2")?;
+        let balls = stmt
+            .query_map(&[], |row| row.get(0))?
+            .collect::<::std::result::Result<Vec<String>, _>>()?;
+        let len = balls.len();
+        if len == 0 {
+            return self.come_on_line();
+        }
+        if len == 1 {
+            let mut stmt = db.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
+            stmt.execute(&[&balls[0]])?;
+            return self.come_on_line();
+        }
+        let from_ball = &balls[0];
+        let to_ball = &balls[1];
+
+        // TODO: need reroute if failed to send
+        let hash_tree = self.send_request(
+            "get_hash_tree",
+            json!({
+                "from_ball": from_ball,
+                "to_ball": to_ball,
+            }),
+        )?;
+
+        if !hash_tree["error"].is_null() {
+            error!("get_hash_tree got error response: {}", hash_tree["error"]);
+            //self.wait_till_hash_tree_fully_processed_and_request_next()?;
+            return Ok(());
+        }
+
+        let balls: Vec<catchup::BallProps> = serde_json::from_value(hash_tree)?;
+        let units: Vec<String> = balls.iter().map(|b| b.unit.clone()).collect();
+        catchup::process_hash_tree(balls)?;
+        self.request_new_missing_joints(db, &units)?;
+        //self.wait_till_hash_tree_fully_processed_and_request_next()?;
+        Ok(())
+    }
+
+    fn come_on_line(&self) -> Result<()> {
         unimplemented!()
     }
 

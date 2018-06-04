@@ -236,7 +236,7 @@ pub struct HashTreeReq {
 
 #[derive(Serialize, Deserialize)]
 pub struct BallProps {
-    unit: String,
+    pub unit: String,
     ball: Option<String>, // this should not be an option
     #[serde(skip_serializing_if = "Option::is_none")]
     content_hash: Option<String>,
