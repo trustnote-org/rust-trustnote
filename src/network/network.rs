@@ -29,7 +29,6 @@ macro_rules! t_c {
 
 // the server part trait
 pub trait Server<T> {
-    fn new() -> T;
     fn on_message(ws: Arc<WsConnection<T>>, subject: String, body: Value) -> Result<()>;
     fn on_request(ws: Arc<WsConnection<T>>, command: String, params: Value) -> Result<Value>;
 }
@@ -302,7 +301,7 @@ impl<T> WsServer<T> {
     where
         A: ToSocketAddrs,
         F: Fn(Arc<WsConnection<T>>) + Send + 'static,
-        T: Server<T> + Send + Sync + 'static,
+        T: Server<T> + Default + Send + Sync + 'static,
     {
         let address = address
             .to_socket_addrs()
@@ -319,7 +318,7 @@ impl<T> WsServer<T> {
                     Err(_) => "unknown peer".to_owned(),
                 };
                 let ws = t_c!(accept(stream));
-                let ws = t_c!(WsConnection::new(ws, T::new(), peer, Role::Server));
+                let ws = t_c!(WsConnection::new(ws, T::default(), peer, Role::Server));
                 f(ws);
             }
         })

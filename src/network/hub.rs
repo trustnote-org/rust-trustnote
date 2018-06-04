@@ -164,14 +164,16 @@ impl WsConnections {
     }
 }
 
-impl Server<HubData> for HubData {
-    fn new() -> HubData {
+impl Default for HubData {
+    fn default() -> Self {
         HubData {
             is_subscribed: AtomicBool::new(false),
             is_source: AtomicBool::new(false),
         }
     }
+}
 
+impl Server<HubData> for HubData {
     fn on_message(ws: Arc<HubConn>, subject: String, body: Value) -> Result<()> {
         match subject.as_str() {
             "version" => ws.on_version(body)?,
@@ -649,7 +651,7 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<HubConn>
     let req = Request::from(url);
     let (conn, _) = client(req, stream)?;
     // let ws
-    let ws = WsConnection::new(conn, HubData::new(), peer, Role::Client)?;
+    let ws = WsConnection::new(conn, HubData::default(), peer, Role::Client)?;
 
     WSS.add_outbound(ws.clone());
     Ok(ws)
