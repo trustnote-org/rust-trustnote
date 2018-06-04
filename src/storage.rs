@@ -275,7 +275,6 @@ pub fn read_definition_by_address(
 
 pub fn write_events(db: &Connection, event: &String, host: &String) -> Result<()> {
     if event.contains("invalid") || event.contains("nonserial") {
-        //let column: &String = "count_" + event + "_joints";
         let column = format!("count_{}_joints", event);
         let sql = format!(
             "UPDATE peer_host SET {}={}+1 WHERE peer_host=?",

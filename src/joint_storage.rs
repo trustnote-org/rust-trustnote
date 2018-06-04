@@ -100,9 +100,5 @@ pub fn find_lost_joints(db: &Connection) -> Result<Vec<String>> {
         names.push(depend_result?);
     }
 
-    //if names.len() == 0 {
-    // return Err(format_err!("No lost joints found"));
-    //}
-
     Ok(names)
 }
