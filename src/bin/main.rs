@@ -86,6 +86,8 @@ fn test_json() -> Result<()> {
 fn test_db() -> Result<()> {
     let db = db::DB_POOL.get_connection();
 
+    db.create_database_if_necessary()?;
+
     let names = db.get_my_witnesses()?;
 
     for name in names {

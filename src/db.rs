@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::*;
+
 use std::ops::{Deref, DerefMut};
 
 use num_cpus;
@@ -7,6 +10,16 @@ use may;
 use may::sync::mpmc::{self, Receiver, Sender};
 
 use error::Result;
+
+use app_dirs::*;
+
+const APP_INFO: AppInfo = AppInfo {
+    name: "CoolApp",
+    author: "SuperDev",
+};
+
+const INITIAL_DB_NAME: &'static str = "initial.sqlite";
+const DB_NAME: &'static str = "trustnote.sqlite";
 
 lazy_static! {
     pub static ref DB_POOL: DatabasePool = DatabasePool::new();
@@ -95,5 +108,29 @@ impl Database {
     // TODO:
     pub fn insert_witnesses(&self) -> Result<()> {
         unimplemented!();
+    }
+
+    pub fn create_database_if_necessary(&self) -> Result<()> {
+        let path_buf: PathBuf = get_app_root(AppDataType::UserData, &APP_INFO)?;
+
+        let mut initial_db_path_buf: PathBuf = path_buf.clone();
+        initial_db_path_buf.push(INITIAL_DB_NAME);
+
+        let initial_db_path: &Path = initial_db_path_buf.as_path();
+
+        let mut db_path_buf: PathBuf = path_buf.clone();
+        db_path_buf.push(DB_NAME);
+        let db_path: &Path = db_path_buf.as_path();
+
+        let cur_path: &Path = path_buf.as_path();
+        let parent_dir: &Path = cur_path.parent().unwrap();
+        if db_path.exists() == false {
+            fs::create_dir(parent_dir)?;
+            fs::create_dir(cur_path)?;
+            fs::File::create(db_path)?;
+            fs::copy(db_path, initial_db_path)?;
+        }
+
+        Ok(())
     }
 }
