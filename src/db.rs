@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::*;
+
 use std::ops::{Deref, DerefMut};
 
 use num_cpus;
@@ -8,8 +11,37 @@ use may::sync::mpmc::{self, Receiver, Sender};
 
 use error::Result;
 
+use app_dirs::*;
+
+const APP_INFO: AppInfo = AppInfo {
+    name: "rust-trustnote",
+    author: "trustnote-hub",
+};
+
+const INITIAL_DB_NAME: &'static str = "initial.sqlite";
+const DB_NAME: &'static str = "trustnote.sqlite";
+
 lazy_static! {
     pub static ref DB_POOL: DatabasePool = DatabasePool::new();
+}
+
+pub fn create_database_if_necessary() -> Result<()> {
+    let mut path_buf: PathBuf = get_app_root(AppDataType::UserData, &APP_INFO)?;
+
+    let mut initial_db_path_buf: PathBuf = path_buf.clone();
+    initial_db_path_buf.push(INITIAL_DB_NAME);
+    let initial_db_path: &Path = initial_db_path_buf.as_path();
+
+    path_buf.push(DB_NAME);
+    let db_path: &Path = path_buf.as_path();
+
+    if !db_path.exists() {
+        fs::create_dir_all(db_path)?;
+        fs::copy(initial_db_path, db_path)?;
+    }
+
+    info!("create_database_if_necessary done: {:?}", db_path.display());
+    Ok(())
 }
 
 pub struct DatabasePool {

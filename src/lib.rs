@@ -16,6 +16,7 @@ extern crate failure;
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
+extern crate app_dirs;
 extern crate base32;
 extern crate base64;
 extern crate bit_vec;
