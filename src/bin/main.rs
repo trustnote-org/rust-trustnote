@@ -182,6 +182,7 @@ fn network_clean() {
 
 // the main test logic that run in coroutine context
 fn main_run() -> Result<()> {
+    network::hub::start_purge_jonk_joints_timer();
     test_json()?;
     test_db()?;
     test_signature()?;

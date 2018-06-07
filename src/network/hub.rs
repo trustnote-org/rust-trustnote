@@ -40,6 +40,7 @@ lazy_static! {
     static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
     static ref JOINT_IN_REQ: MapLock<String> = MapLock::new();
     static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
+    static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now());
 }
 
 fn init_connection(ws: &Arc<HubConn>) {
@@ -663,6 +664,35 @@ fn check_catchup_leftover(db: &Connection) -> Result<bool> {
     Ok(false)
 }
 
+fn puerge_junk_unhandled_joints() -> Result<()> {
+    let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
+    if diff < 3600 * 1000 || IS_CACTCHING_UP.is_locked() {
+        return Ok(());
+    }
+
+    let db = db::DB_POOL.get_connection();
+    let mut stmt = db.prepare_cached(
+        "DELETE FROM unhandled_joints WHERE creation_date < datatime('now', '-1 HOUR')",
+    )?;
+    stmt.execute(&[])?;
+
+    let mut stmt = db.prepare_cached(
+        "DELETE FROM dependencies WHERE NOT EXISTS \
+         (SELECT * FROM unhandled_joints WHERE unhandled_joints.unit=dependencies.unit)",
+    )?;
+    stmt.execute(&[])?;
+    Ok(())
+}
+
+// FIXME: move into a timer module?
+// this should be run in a single thread to remove those junk joints
+pub fn start_purge_jonk_joints_timer() {
+    go!(|| loop {
+        t!(puerge_junk_unhandled_joints());
+        coroutine::sleep(Duration::from_secs(30 * 60));
+    });
+}
+
 // this is a back ground thread that focuse on the catchup logic
 pub fn start_catchup() -> Result<()> {
     // if we already in catchup mode, just return
@@ -721,6 +751,7 @@ pub fn start_catchup() -> Result<()> {
     }
 
     // now we are done the catchup
+    COMING_ONLINE_TIME.store(::time::now(), Ordering::Relaxed);
     WSS.request_free_joints();
 
     Ok(())
