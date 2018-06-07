@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::network::{Sender, Server, WsConnection};
+use atomic_lock::AtomicLock;
 use catchup;
 use config;
 use db;
@@ -13,7 +14,7 @@ use joint_storage;
 use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
-use may::sync::{Mutex, RwLock};
+use may::sync::RwLock;
 use rusqlite::Connection;
 use serde_json::{self, Value};
 use storage;
@@ -38,10 +39,8 @@ lazy_static! {
     // maybe this is too heavy, could use an optimized hashset<AtomicBool>
     static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
     static ref JOINT_IN_REQ: MapLock<String> = MapLock::new();
-    static ref CATCH_UP_CHAIN_LOCK: Mutex<()> = Mutex::new(());
+    static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
 }
-
-static IS_CACTCHING_UP: AtomicBool = AtomicBool::new(false);
 
 fn init_connection(ws: &Arc<HubConn>) {
     use rand::{thread_rng, Rng};
@@ -404,7 +403,7 @@ impl HubConn {
                         // we are not saving the joint so that in case requestCatchup() fails,
                         // the joint will be requested again via findLostJoints,
                         // which will trigger another attempt to request catchup
-                        self.request_catchup(db)?;
+                        try_go!(move || start_catchup());
                     }
                     ValidationError::NeedParentUnits(missing_units) => {
                         let info = format!("unresolved dependencies: {}", missing_units.join(", "));
@@ -442,69 +441,25 @@ impl HubConn {
     }
 
     fn request_catchup(&self, db: &Connection) -> Result<()> {
-        if IS_CACTCHING_UP.load(Ordering::Acquire) {
-            return Ok(());
-        }
-
         info!("will request catchup from {}", self.get_peer());
-        catchup::purge_handled_balls_from_hash_tree(db)?;
-        let mut stmt = db.prepare_cached(
-            "SELECT hash_tree_balls.unit FROM hash_tree_balls LEFT JOIN units USING(unit) \
-             WHERE units.unit IS NULL ORDER BY ball_index",
-        )?;
-        let tree_rows = stmt
-            .query_map(&[], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
-        if !tree_rows.is_empty() {
-            IS_CACTCHING_UP.store(true, Ordering::Release);
-            info!("will request balls found in hash tree");
-            // this is just a start indiction, we still have work need to be done
-            self.request_new_missing_joints(db, &tree_rows)?;
-            // self.wait_till_hash_tree_fully_processed_and_request_next()?;
-            return Ok(());
-        }
 
-        let mut stmt = db.prepare_cached("SELECT 1 FROM catchup_chain_balls LIMIT 1")?;
-        if stmt.exists(&[])? {
-            IS_CACTCHING_UP.store(true, Ordering::Release);
-            self.request_next_hash_tree(db)?;
-            return Ok(());
-        }
-
-        let ws = WSS.get_ws(self);
-
-        // spawn a new coroutine to tack the request catchup
-        try_go!(move || {
-            let g = match CATCH_UP_CHAIN_LOCK.try_lock() {
-                Ok(g) => g,
-                _ => return Ok(()),
-            };
-
-            let db = ::db::DB_POOL.get_connection();
-            let last_stable_mci = storage::read_last_stable_mc_index(&db)?;
-            let last_known_mci = storage::read_last_main_chain_index(&db)?;
-            let witnesses: &[String] = &::my_witness::MY_WITNESSES;
-            let param = json!({
+        // here we send out the real catchup request
+        let last_stable_mci = storage::read_last_stable_mc_index(db)?;
+        let last_known_mci = storage::read_last_main_chain_index(db)?;
+        let witnesses: &[String] = &::my_witness::MY_WITNESSES;
+        let param = json!({
                 "witnesses": witnesses,
                 "last_stable_mci": last_stable_mci,
                 "last_known_mci": last_known_mci
             });
 
-            let ret = ws.send_request("catchup", param).unwrap();
-            if !ret["error"].is_null() {
-                bail!("catchup request got error response: {:?}", ret["error"]);
-            }
+        let ret = self.send_request("catchup", param).unwrap();
+        if !ret["error"].is_null() {
+            bail!("catchup request got error response: {:?}", ret["error"]);
+        }
 
-            let catchup_chain: catchup::CatchupChain = serde_json::from_value(ret).unwrap();
-            let catchup_ret = catchup::process_catchup_chain(&db, catchup_chain);
-            drop(g); // TODO: should remove this safely
-            match catchup_ret {
-                Err(e) => ws.send_error(json!(e.to_string()))?,
-                Ok(true) => ws.request_next_hash_tree(&db)?,
-                Ok(false) => {}
-            }
-            Ok(())
-        });
+        let catchup_chain: catchup::CatchupChain = serde_json::from_value(ret).unwrap();
+        catchup::process_catchup_chain(&db, catchup_chain)?;
 
         Ok(())
     }
@@ -533,24 +488,12 @@ impl HubConn {
         Ok(())
     }
 
-    fn request_next_hash_tree(&self, db: &Connection) -> Result<()> {
-        let mut stmt = db
-            .prepare_cached("SELECT ball FROM catchup_chain_balls ORDER BY member_index LIMIT 2")?;
-        let balls = stmt
-            .query_map(&[], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
-        let len = balls.len();
-        if len == 0 {
-            return self.come_on_line();
-        }
-        if len == 1 {
-            let mut stmt = db.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
-            stmt.execute(&[&balls[0]])?;
-            return self.come_on_line();
-        }
-        let from_ball = &balls[0];
-        let to_ball = &balls[1];
-
+    fn request_next_hash_tree(
+        &self,
+        db: &Connection,
+        from_ball: &str,
+        to_ball: &str,
+    ) -> Result<()> {
         // TODO: need reroute if failed to send
         let hash_tree = self.send_request(
             "get_hash_tree",
@@ -562,7 +505,6 @@ impl HubConn {
 
         if !hash_tree["error"].is_null() {
             error!("get_hash_tree got error response: {}", hash_tree["error"]);
-            //self.wait_till_hash_tree_fully_processed_and_request_next()?;
             return Ok(());
         }
 
@@ -570,12 +512,7 @@ impl HubConn {
         let units: Vec<String> = balls.iter().map(|b| b.unit.clone()).collect();
         catchup::process_hash_tree(balls)?;
         self.request_new_missing_joints(db, &units)?;
-        //self.wait_till_hash_tree_fully_processed_and_request_next()?;
         Ok(())
-    }
-
-    fn come_on_line(&self) -> Result<()> {
-        unimplemented!()
     }
 
     #[allow(dead_code)]
@@ -696,4 +633,88 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<HubConn>
 
     WSS.add_outbound(ws.clone());
     Ok(ws)
+}
+
+fn check_catchup_leftover(db: &Connection) -> Result<bool> {
+    catchup::purge_handled_balls_from_hash_tree(db)?;
+
+    // check leftover 1
+    let mut stmt = db.prepare_cached(
+        "SELECT hash_tree_balls.unit FROM hash_tree_balls LEFT JOIN units USING(unit) \
+         WHERE units.unit IS NULL ORDER BY ball_index",
+    )?;
+    if stmt.exists(&[])? {
+        return Ok(true);
+    }
+
+    // check leftover 2
+    let mut stmt = db.prepare_cached("SELECT 1 FROM catchup_chain_balls LIMIT 1")?;
+    if stmt.exists(&[])? {
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+// this is a back ground thread that focuse on the catchup logic
+pub fn start_catchup() -> Result<()> {
+    // if we already in catchup mode, just return
+    let _g = match IS_CACTCHING_UP.try_lock() {
+        Some(g) => g,
+        None => return Ok(()),
+    };
+
+    let db = db::DB_POOL.get_connection();
+
+    let mut is_left_over = check_catchup_leftover(&db)?;
+
+    let mut ws = WSS.get_next_outbound();
+    if !is_left_over {
+        ws.request_catchup(&db)?;
+    }
+
+    loop {
+        // if there is no more work, start a new batch
+        let mut stmt = db.prepare_cached(
+            "SELECT 1 FROM hash_tree_balls LEFT JOIN units USING(unit) \
+             WHERE units.unit IS NULL LIMIT 1",
+        )?;
+        if stmt.exists(&[])? {
+            if is_left_over {
+                // skip sleep if is_left_over is true
+                is_left_over = false;
+            } else {
+                // every one second check again
+                coroutine::sleep(Duration::from_secs(1));
+                continue;
+            }
+        }
+
+        // try to start a new batch
+        let mut stmt = db
+            .prepare_cached("SELECT ball FROM catchup_chain_balls ORDER BY member_index LIMIT 2")?;
+        let balls = stmt
+            .query_map(&[], |row| row.get(0))?
+            .collect::<::std::result::Result<Vec<String>, _>>()?;
+        let len = balls.len();
+        if len == 0 {
+            break;
+        }
+        if len == 1 {
+            let mut stmt = db.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
+            stmt.execute(&[&balls[0]])?;
+            break;
+        }
+
+        if let Err(e) = ws.request_next_hash_tree(&db, &balls[0], &balls[1]) {
+            error!("request_next_hash_tree err={}", e);
+            // we try with a different connection
+            ws = WSS.get_next_outbound();
+        }
+    }
+
+    // now we are done the catchup
+    // TODO: #98 update coming online time
+    // TODO: #99 request free joints from outboud connections when idle?
+    Ok(())
 }
