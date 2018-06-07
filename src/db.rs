@@ -18,7 +18,8 @@ const APP_INFO: AppInfo = AppInfo {
     author: "trustnote-hub",
 };
 
-const INITIAL_DB_NAME: &'static str = "initial.sqlite";
+const DB_RELATIVE_PATH: &'static str = "db";
+const INITIAL_DB_NAME: &'static str = "initial.trustnote.sqlite";
 const DB_NAME: &'static str = "trustnote.sqlite";
 
 lazy_static! {
@@ -29,6 +30,7 @@ pub fn create_database_if_necessary() -> Result<()> {
     let mut path_buf: PathBuf = get_app_root(AppDataType::UserData, &APP_INFO)?;
 
     let mut initial_db_path_buf: PathBuf = path_buf.clone();
+    initial_db_path_buf.push(DB_RELATIVE_PATH);
     initial_db_path_buf.push(INITIAL_DB_NAME);
     let initial_db_path: &Path = initial_db_path_buf.as_path();
 
@@ -36,11 +38,15 @@ pub fn create_database_if_necessary() -> Result<()> {
     let db_path: &Path = path_buf.as_path();
 
     if !db_path.exists() {
-        fs::create_dir_all(db_path)?;
+        fs::File::create(path_buf.as_path())?;
         fs::copy(initial_db_path, db_path)?;
+        info!(
+            "create_database_if_necessary. db_path: {:?}, initial db path: {:?}",
+            db_path.display(),
+            initial_db_path.display()
+        );
     }
 
-    info!("create_database_if_necessary done: {:?}", db_path.display());
     Ok(())
 }
 
@@ -51,13 +57,20 @@ pub struct DatabasePool {
 
 impl DatabasePool {
     pub fn new() -> Self {
+        // database path
+        let mut path_buf: PathBuf =
+            get_app_root(AppDataType::UserData, &APP_INFO).expect("not found db");
+        path_buf.push(DB_NAME);
+        let db_path: &Path = path_buf.as_path();
+
         // create the connection pool
         let (db_tx, db_rx) = mpmc::channel();
+
         may::coroutine::scope(|s| {
             for _ in 0..(num_cpus::get() * 4) {
                 go!(s, || {
                     let conn = match Connection::open_with_flags(
-                        "db/trustnote.sqlite",
+                        db_path,
                         OpenFlags::SQLITE_OPEN_READ_WRITE,
                     ) {
                         Ok(conn) => conn,
