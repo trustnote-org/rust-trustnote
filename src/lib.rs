@@ -69,6 +69,7 @@ pub mod config;
 pub mod db;
 #[macro_use]
 pub mod error;
+pub mod atomic_lock;
 pub mod graph;
 pub mod header_commissions;
 pub mod map_lock;
