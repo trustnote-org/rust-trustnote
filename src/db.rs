@@ -38,7 +38,7 @@ pub fn create_database_if_necessary() -> Result<()> {
     let db_path: &Path = path_buf.as_path();
 
     if !db_path.exists() {
-        fs::File::create(path_buf.as_path())?;
+        fs::File::create(db_path)?;
         fs::copy(initial_db_path, db_path)?;
         info!(
             "create_database_if_necessary. db_path: {:?}, initial db path: {:?}",
