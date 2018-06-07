@@ -161,6 +161,13 @@ impl WsConnections {
         let idx = self.next_outbound.fetch_add(1, Ordering::Relaxed) % len;
         g[idx].clone()
     }
+
+    fn request_free_joints(&self) {
+        let g = self.outbound.read().unwrap();
+        for ws in g.iter() {
+            t!(ws.send_just_saying("refresh", Value::Null));
+        }
+    }
 }
 
 impl Default for HubData {
@@ -714,7 +721,7 @@ pub fn start_catchup() -> Result<()> {
     }
 
     // now we are done the catchup
-    // TODO: #98 update coming online time
-    // TODO: #99 request free joints from outboud connections when idle?
+    WSS.request_free_joints();
+
     Ok(())
 }
