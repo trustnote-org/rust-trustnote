@@ -38,8 +38,6 @@ pub fn create_database_if_necessary() -> Result<()> {
 
     if !db_path.exists() {
         fs::create_dir_all(app_path_buf.as_path())?;
-        fs::File::create(db_path)?;
-
         fs::copy(initial_db_path, db_path)?;
         info!(
             "create_database_if_necessary done: db_path: {:?}, initial db path: {:?}",
@@ -58,6 +56,8 @@ pub struct DatabasePool {
 
 impl DatabasePool {
     pub fn new() -> Self {
+        create_database_if_necessary().expect("create database error");
+
         // database path
         let mut path_buf: PathBuf =
             get_app_root(AppDataType::UserData, &APP_INFO).expect("not found db");
