@@ -18,8 +18,7 @@ const APP_INFO: AppInfo = AppInfo {
     author: "trustnote-hub",
 };
 
-const DB_RELATIVE_PATH: &'static str = "db";
-const INITIAL_DB_NAME: &'static str = "initial.trustnote.sqlite";
+const INITIAL_DB_NAME: &'static str = "db/initial.trustnote.sqlite";
 const DB_NAME: &'static str = "trustnote.sqlite";
 
 lazy_static! {
@@ -27,21 +26,23 @@ lazy_static! {
 }
 
 pub fn create_database_if_necessary() -> Result<()> {
-    let mut path_buf: PathBuf = get_app_root(AppDataType::UserData, &APP_INFO)?;
+    let app_path_buf: PathBuf = get_app_root(AppDataType::UserData, &APP_INFO)?;
 
-    let mut initial_db_path_buf: PathBuf = path_buf.clone();
-    initial_db_path_buf.push(DB_RELATIVE_PATH);
+    let mut initial_db_path_buf: PathBuf = PathBuf::new();
     initial_db_path_buf.push(INITIAL_DB_NAME);
     let initial_db_path: &Path = initial_db_path_buf.as_path();
 
-    path_buf.push(DB_NAME);
-    let db_path: &Path = path_buf.as_path();
+    let mut db_path_buf: PathBuf = app_path_buf.clone();
+    db_path_buf.push(DB_NAME);
+    let db_path: &Path = db_path_buf.as_path();
 
     if !db_path.exists() {
+        fs::create_dir_all(app_path_buf.as_path())?;
         fs::File::create(db_path)?;
+
         fs::copy(initial_db_path, db_path)?;
         info!(
-            "create_database_if_necessary. db_path: {:?}, initial db path: {:?}",
+            "create_database_if_necessary done: db_path: {:?}, initial db path: {:?}",
             db_path.display(),
             initial_db_path.display()
         );
