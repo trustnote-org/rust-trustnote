@@ -214,16 +214,32 @@ pub struct LastStableMcUnitProps {
     pub main_chain_index: u32,
 }
 
-pub fn read_last_stable_mc_unit_props(db: &Connection) -> Result<LastStableMcUnitProps> {
-    // TODO:
-    let _ = db;
-    unimplemented!()
+pub fn read_last_stable_mc_unit_props(db: &Connection) -> Result<Option<LastStableMcUnitProps>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT units.*, ball FROM units LEFT JOIN balls USING(unit) \
+         WHERE is_on_main_chain=1 AND is_stable=1 ORDER BY main_chain_index DESC LIMIT 1",
+    )?;
+    let mut props = stmt
+        .query_map(&[], |row| LastStableMcUnitProps {
+            unit: row.get::<_, String>("unit"),
+            // FIXME: here ball may be empty
+            ball: row.get::<_, String>("ball"),
+            main_chain_index: row.get::<_, u32>("main_chain_index"),
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    if props.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(props.swap_remove(0)))
 }
 
 pub fn read_last_stable_mc_index(db: &Connection) -> Result<u32> {
-    // TODO:
-    let _ = db;
-    unimplemented!()
+    let ret = read_last_stable_mc_unit_props(db)?;
+    match ret {
+        Some(prop) => Ok(prop.main_chain_index),
+        _ => Ok(0),
+    }
 }
 
 pub fn determine_if_witness_and_address_definition_have_refs(
