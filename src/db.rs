@@ -18,7 +18,7 @@ const APP_INFO: AppInfo = AppInfo {
     author: "trustnote-hub",
 };
 
-const INITIAL_DB_NAME: &'static str = "initial.sqlite";
+const INITIAL_DB_NAME: &'static str = "db/initial.trustnote.sqlite";
 const DB_NAME: &'static str = "trustnote.sqlite";
 
 lazy_static! {
@@ -26,21 +26,26 @@ lazy_static! {
 }
 
 pub fn create_database_if_necessary() -> Result<()> {
-    let mut path_buf: PathBuf = get_app_root(AppDataType::UserData, &APP_INFO)?;
+    let app_path_buf: PathBuf = get_app_root(AppDataType::UserData, &APP_INFO)?;
 
-    let mut initial_db_path_buf: PathBuf = path_buf.clone();
+    let mut initial_db_path_buf: PathBuf = PathBuf::new();
     initial_db_path_buf.push(INITIAL_DB_NAME);
     let initial_db_path: &Path = initial_db_path_buf.as_path();
 
-    path_buf.push(DB_NAME);
-    let db_path: &Path = path_buf.as_path();
+    let mut db_path_buf: PathBuf = app_path_buf.clone();
+    db_path_buf.push(DB_NAME);
+    let db_path: &Path = db_path_buf.as_path();
 
     if !db_path.exists() {
-        fs::create_dir_all(db_path)?;
+        fs::create_dir_all(app_path_buf.as_path())?;
         fs::copy(initial_db_path, db_path)?;
+        info!(
+            "create_database_if_necessary done: db_path: {:?}, initial db path: {:?}",
+            db_path.display(),
+            initial_db_path.display()
+        );
     }
 
-    info!("create_database_if_necessary done: {:?}", db_path.display());
     Ok(())
 }
 
@@ -51,13 +56,22 @@ pub struct DatabasePool {
 
 impl DatabasePool {
     pub fn new() -> Self {
+        create_database_if_necessary().expect("create database error");
+
+        // database path
+        let mut path_buf: PathBuf =
+            get_app_root(AppDataType::UserData, &APP_INFO).expect("not found db");
+        path_buf.push(DB_NAME);
+        let db_path: &Path = path_buf.as_path();
+
         // create the connection pool
         let (db_tx, db_rx) = mpmc::channel();
+
         may::coroutine::scope(|s| {
             for _ in 0..(num_cpus::get() * 4) {
                 go!(s, || {
                     let conn = match Connection::open_with_flags(
-                        "db/trustnote.sqlite",
+                        db_path,
                         OpenFlags::SQLITE_OPEN_READ_WRITE,
                     ) {
                         Ok(conn) => conn,
