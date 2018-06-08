@@ -89,10 +89,10 @@ pub fn prepare_catchup_chain(db: &Connection, catchup_req: CatchupReq) -> Result
 }
 
 // return true if alreay current, or else flase
-pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Result<bool> {
+pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Result<()> {
     if let Some(s) = catchup_chain.status {
         if s.as_str() == "current" {
-            return Ok(true);
+            return Ok(());
         }
     }
 
@@ -170,7 +170,7 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
     let (is_stable, is_on_main_chain, main_chain_index) = match rows.next() {
         None => {
             if storage::is_genesis_ball(chain_balls[0]) {
-                return Ok(false);
+                return Ok(());
             }
             bail!("first chain ball {} is not known", chain_balls[0]);
         }
@@ -194,20 +194,20 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
         bail!("first chain ball {} mci is too large", chain_balls[0]);
     }
     if last_stable_mci == main_chain_index {
-        return Ok(false);
+        return Ok(());
     }
 
     // replace to avoid receiving duplicates
     chain_balls[0] = &last_stable_mc_unit_props.ball;
     if chain_balls.len() > 1 {
-        return Ok(false);
+        return Ok(());
     }
 
     let mut stmt =
         db.prepare_cached("SELECT is_stable FROM balls JOIN units USING(unit) WHERE ball=?")?;
     let mut rows = stmt.query_map(&[chain_balls[1]], |row| row.get::<_, u32>(0))?;
     let second_ball_is_stable = match rows.next() {
-        None => return Ok(false),
+        None => return Ok(()),
         Some(row) => row?,
     };
 
@@ -225,7 +225,7 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
         .join(", ");
     let sql = format!("INSERT INTO catchup_chain_balls (ball) VALUES {}", ball_str);
     db.execute(&sql, &[])?;
-    Ok(false)
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]

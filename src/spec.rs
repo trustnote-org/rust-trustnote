@@ -16,9 +16,19 @@ pub struct Author {
     pub definition: Value,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpendProof {
+    pub spend_proof: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+}
+
 // TODO: Input struct is from type
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Input {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+    pub amount: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_main_chain_index: Option<u32>,
     pub message_index: u32,
@@ -42,14 +52,15 @@ pub struct Message {
     pub payload_uri: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_uri_hash: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub spend_proofs: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
+    pub spend_proofs: Vec<SpendProof>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Output {
-    pub address: String,
-    pub amount: i64,
+    pub address: Option<String>,
+    pub amount: Option<i64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
