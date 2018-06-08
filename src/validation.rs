@@ -122,11 +122,11 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
                 err: "wrong ball length".to_owned()
             });
         }
-        if !joint.skiplist_units.is_empty() {
-            err!(ValidationError::JointError {
-                err: "empty skiplist array".to_owned(),
-            });
-        }
+        // if !joint.skiplist_units.is_empty() {
+        //     err!(ValidationError::JointError {
+        //         err: "empty skiplist array".to_owned(),
+        //     });
+        // }
     }
 
     if unit.content_hash.is_some() {

@@ -23,10 +23,10 @@ fn read_my_witnesses() -> Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
-    //use super::*;
+    use super::*;
 
     #[test]
     fn get_witnesses() {
-        //assert_eq!(MY_WITNESSES.len(), config::COUNT_WITNESSES);
+        assert_eq!(MY_WITNESSES.len(), config::COUNT_WITNESSES);
     }
 }

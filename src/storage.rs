@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
+use db;
 use error::Result;
 use joint::Joint;
 use may::sync::RwLock;
 use rusqlite::Connection;
 use serde_json::{self, Value};
 use spec::*;
-use db;
 
 // global data that store unit info
 lazy_static! {
@@ -15,11 +15,12 @@ lazy_static! {
     static ref KNOWN_UNIT: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
     static ref MIN_RETRIEVABLE_MCI: RwLock<u32> = RwLock::new({
         let db = db::DB_POOL.get_connection();
-        let mut stmt = db.prepare_cached(
-            "SELECT MAX(lb_units.main_chain_index) AS min_retrievable_mci \
-            FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
-            WHERE units.is_on_main_chain=1 AND units.is_stable=1",
-        ).expect("Initialzing MIN_RETRIEVABLE_MCI failed");
+        let mut stmt =
+            db.prepare_cached(
+                "SELECT MAX(lb_units.main_chain_index) AS min_retrievable_mci \
+                 FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
+                 WHERE units.is_on_main_chain=1 AND units.is_stable=1",
+            ).expect("Initialzing MIN_RETRIEVABLE_MCI failed");
 
         stmt.query_row(&[], |row| row.get::<_, u32>(0)).unwrap_or(0)
     });
@@ -516,21 +517,22 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             asset: Option<String>,
                         }
 
-                        let mut rows = stmt.query_map(&[unit_hash, &message_index], |row| InputTemp {
-                            kind: row.get(0),
-                            denomination: row.get(1),
-                            fixed_denominations: row.get(2),
-                            unit: row.get(3),
-                            message_index: row.get(4),
-                            output_index: row.get(5),
-                            from_main_chain_index: row.get(6),
-                            to_main_chain_index: row.get(7),
-                            //serial_number: row.get(8),
-                            amount: row.get(9),
-                            address: row.get(10),
-                            asset: row.get(11),
-                        })?
-                        .collect::<::std::result::Result<Vec<InputTemp>, _>>()?;
+                        let mut rows = stmt
+                            .query_map(&[unit_hash, &message_index], |row| InputTemp {
+                                kind: row.get(0),
+                                denomination: row.get(1),
+                                fixed_denominations: row.get(2),
+                                unit: row.get(3),
+                                message_index: row.get(4),
+                                output_index: row.get(5),
+                                from_main_chain_index: row.get(6),
+                                to_main_chain_index: row.get(7),
+                                //serial_number: row.get(8),
+                                amount: row.get(9),
+                                address: row.get(10),
+                                asset: row.get(11),
+                            })?
+                            .collect::<::std::result::Result<Vec<InputTemp>, _>>()?;
 
                         if rows.len() > 0 {
                             //Record the first one for later ones to check against
@@ -548,7 +550,10 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             for row in rows.iter_mut() {
                                 let mut input = row;
 
-                                ensure!(!input.address.is_none(), "readJoint: input address is NULL");
+                                ensure!(
+                                    !input.address.is_none(),
+                                    "readJoint: input address is NULL"
+                                );
 
                                 ensure!(prev_asset == input.asset, "different assets in inputs?");
                                 ensure!(
@@ -556,7 +561,8 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                     "different denomination in inputs?"
                                 );
 
-                                if input.kind == Some("transfer".to_string()) || authors.len() == 1 {
+                                if input.kind == Some("transfer".to_string()) || authors.len() == 1
+                                {
                                     input.address = None;
                                 }
 
@@ -580,7 +586,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                         //Read Outputs
                         let mut stmt = db.prepare_cached(
                             "SELECT address, amount, asset, denomination \
-                            FROM outputs WHERE unit=? AND message_index=? ORDER BY output_index",
+                             FROM outputs WHERE unit=? AND message_index=? ORDER BY output_index",
                         )?;
 
                         struct OutputTemp {
@@ -590,12 +596,13 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             denomination: Option<u32>,
                         }
 
-                        let mut rows = stmt.query_map(&[unit_hash, &message_index], |row| OutputTemp {
-                            address: row.get(0),
-                            amount: row.get(1),
-                            asset: row.get(2),
-                            denomination: row.get(3),
-                        })?;
+                        let mut rows =
+                            stmt.query_map(&[unit_hash, &message_index], |row| OutputTemp {
+                                address: row.get(0),
+                                amount: row.get(1),
+                                asset: row.get(2),
+                                denomination: row.get(3),
+                            })?;
 
                         for row in rows {
                             let output = row?;
@@ -684,7 +691,6 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
     };
 
     //TODO: Retry if the hash verification fails
-    
 
     Ok(joint)
 }
