@@ -2,18 +2,27 @@ use std::collections::{HashMap, HashSet};
 
 use error::Result;
 use joint::Joint;
-use may::sync::Mutex;
 use may::sync::RwLock;
 use rusqlite::Connection;
-use serde_json;
+use serde_json::{self, Value};
 use spec::*;
+use db;
 
 // global data that store unit info
 lazy_static! {
     static ref CACHED_UNIT: RwLock<HashMap<String, StaticUnitProperty>> =
         RwLock::new(HashMap::new());
     static ref KNOWN_UNIT: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
-    static ref MIN_RETRIEVABLE_MCI: Mutex<Option<u32>> = Mutex::new(None);
+    static ref MIN_RETRIEVABLE_MCI: RwLock<u32> = RwLock::new({
+        let db = db::DB_POOL.get_connection();
+        let mut stmt = db.prepare_cached(
+            "SELECT MAX(lb_units.main_chain_index) AS min_retrievable_mci \
+            FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
+            WHERE units.is_on_main_chain=1 AND units.is_stable=1",
+        ).expect("Initialzing MIN_RETRIEVABLE_MCI failed");
+
+        stmt.query_row(&[], |row| row.get::<_, u32>(0)).unwrap_or(0)
+    });
 }
 
 #[inline]
@@ -252,29 +261,16 @@ pub fn read_joint_with_ball(db: &Connection, unit: &String) -> Result<Joint> {
     Ok(joint)
 }
 
-fn initialize_min_retrievable_mci(db: &Connection) -> Result<(u32)> {
-    let mut stmt = db.prepare_cached(
-        "SELECT MAX(lb_units.main_chain_index) AS min_retrievable_mci \
-         FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
-         WHERE units.is_on_main_chain=1 AND units.is_stable=1",
-    )?;
-
-    let min_retrievable_mci = stmt.query_row(&[], |row| row.get(0)).unwrap_or(0);
-    Ok(min_retrievable_mci)
-}
-
 #[inline]
 pub fn read_joint(db: &Connection, unit: &String) -> Result<Joint> {
     read_joint_directly(db, unit)
 }
 
 pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint> {
-    //Read the global variable, initialize it if needed
-    let mut g_min_retrievable_mci = MIN_RETRIEVABLE_MCI.lock().unwrap();
-    if g_min_retrievable_mci.is_none() {
-        *g_min_retrievable_mci = Some(initialize_min_retrievable_mci(db)?);
-    }
-    let min_retrievable_mci = g_min_retrievable_mci.unwrap();
+    let min_retrievable_mci = {
+        let g = MIN_RETRIEVABLE_MCI.read().unwrap();
+        *g
+    };
 
     let mut stmt = db.prepare_cached(
         "SELECT units.unit, version, alt, witness_list_unit, last_ball_unit, \
@@ -406,7 +402,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         let row = row?;
         let address = row.address;
         let mut authentifiers = HashMap::new();
-        let mut definition = serde_json::from_str("")?;//Should use Option<Value>?
+        let mut definition = Value::Null;
 
         if !b_voided {
             let mut stmt = db.prepare_cached(
@@ -688,6 +684,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
     };
 
     //TODO: Retry if the hash verification fails
+    
 
     Ok(joint)
 }
