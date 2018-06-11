@@ -274,13 +274,17 @@ pub fn process_witness_proof(
                 assoc_definitions.get(&definition_chash).unwrap(),
             )?;
             for message in unit.messages.iter() {
-                let payload_address = message.payload.as_ref().and_then(|p| p.address.as_ref());
+                let payment = match message.payload.as_ref() {
+                    Some(Payload::Payment(ref p)) => Some(p),
+                    _ => None,
+                };
+                let payload_address = payment.and_then(|p| p.address.as_ref());
                 if message.app == "address_definition_change"
                     && (payload_address == Some(address)
                         || (unit.authors.len() == 1 && &unit.authors[0].address == address))
                 {
-                    let payload = message.payload.as_ref().unwrap();
-                    let chash = payload
+                    let payment = payment.unwrap();
+                    let chash = payment
                         .definition_chash
                         .as_ref()
                         .expect("no chash in payload")

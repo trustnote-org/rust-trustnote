@@ -22,10 +22,13 @@ pub struct CatchupChain {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub unstable_mc_joints: Vec<Joint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub stable_last_ball_joints: Vec<Joint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub witness_change_and_definition: Vec<Joint>,
 }
 

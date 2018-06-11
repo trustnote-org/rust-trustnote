@@ -100,7 +100,12 @@ pub struct WsConnection<T> {
 impl<T> Sender for WsConnection<T> {
     fn send_json(&self, value: Value) -> Result<()> {
         let msg = serde_json::to_string(&value)?;
-        debug!("SENDING to {}: {}", self.peer, msg);
+        if msg.len() < 1000 {
+            debug!("SENDING to {}: {}", self.peer, msg);
+        } else {
+            debug!("SENDING to {}: huge message", self.peer);
+        }
+
         let mut g = self.ws.write().unwrap();
         g.ws.write_message(Message::Text(msg))?;
         Ok(())
@@ -192,7 +197,12 @@ impl<T> WsConnection<T> {
                     Some(c) => c,
                     None => return,
                 };
-                debug!("RECV from {}: {}", ws.peer, msg);
+                if msg.len() < 1000 {
+                    debug!("RECV from {}: {}", ws.peer, msg);
+                } else {
+                    debug!("RECV from {}: huge message!", ws.peer);
+                }
+
                 ws.set_last_recv_tm(Instant::now());
 
                 match msg_type {

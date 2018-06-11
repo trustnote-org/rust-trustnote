@@ -663,14 +663,14 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
             messages.push(Message {
                 app: msg.app,
-                payload: Some(Payload {
+                payload: Some(Payload::Payment(Payment {
                     address: None,
                     asset: payload_asset,
                     definition_chash: None,
                     denomination: payload_denomination,
                     inputs: inputs,
                     outputs: outputs,
-                }),
+                })),
                 payload_hash: msg.payload_hash,
                 payload_location: msg.payload_location,
                 payload_uri: msg.payload_uri,
