@@ -170,6 +170,7 @@ fn log_init() {
 fn test_ws_client() -> Result<()> {
     use network::hub;
     hub::create_outbound_conn(("127.0.0.1", 6655))?;
+    hub::start_catchup()?;
     Ok(())
 }
 
