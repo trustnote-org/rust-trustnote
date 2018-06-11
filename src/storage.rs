@@ -717,12 +717,41 @@ pub fn read_definition(_db: &Connection, _definition_chash: &String) -> Result<S
 }
 
 pub fn read_definition_by_address(
-    _db: &Connection,
-    _address: &String,
-    _max_mci: Option<u32>,
-) -> Result<Option<String>> {
-    // TODO: #??
-    unimplemented!()
+    db: &Connection,
+    address: &String,
+    max_mci: Option<u32>,
+) -> Result<::std::result::Result<String, String>> {
+    let max_mci = max_mci.unwrap_or(::std::u32::MAX);
+    let mut stmt = db.prepare_cached(
+        "SELECT definition_chash FROM address_definition_changes CROSS JOIN units USING(unit) \
+         WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
+         ORDER BY level DESC LIMIT 1",
+    )?;
+    let rows = stmt
+        .query_map(&[address, &max_mci], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    let definition_chash = if rows.is_empty() { address } else { &rows[0] };
+    read_definition_at_mci(db, definition_chash, max_mci)
+}
+
+fn read_definition_at_mci(
+    db: &Connection,
+    definition_chash: &String,
+    max_mci: u32,
+) -> Result<::std::result::Result<String, String>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT definition FROM definitions \
+         CROSS JOIN unit_authors USING(definition_chash) CROSS JOIN units USING(unit) \
+         WHERE definition_chash=? AND is_stable=1 AND sequence='good' AND main_chain_index<=?",
+    )?;
+    let mut rows = stmt
+        .query_map(&[definition_chash, &max_mci], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    if rows.is_empty() {
+        Ok(Err(definition_chash.clone()))
+    } else {
+        Ok(Ok(rows.swap_remove(0)))
+    }
 }
 
 pub fn write_events(db: &Connection, event: &String, host: &String) -> Result<()> {
