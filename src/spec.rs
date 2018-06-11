@@ -31,20 +31,22 @@ pub struct Input {
     pub amount: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_main_chain_index: Option<u32>,
+    #[serde(default)]
     pub message_index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "type")]
     pub kind: Option<String>,
+    #[serde(default)]
     pub output_index: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to_main_chain_index: Option<u32>,
+    #[serde(default)]
     pub unit: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Message {
     pub app: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub payload: Option<Payload>,
     pub payload_hash: String,
     pub payload_location: String,
@@ -64,7 +66,15 @@ pub struct Output {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Payload {
+#[serde(untagged)]
+pub enum Payload {
+    Text(String),
+    Payment(Payment),
+    Other(Value),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Payment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -108,6 +118,7 @@ pub struct Unit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub main_chain_index: Option<u32>,
     pub messages: Vec<Message>,
+    #[serde(default)]
     pub parent_units: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_commission: Option<u32>, // default 0

@@ -1,12 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
+use db;
 use error::Result;
 use joint::Joint;
 use may::sync::RwLock;
 use rusqlite::Connection;
 use serde_json::{self, Value};
 use spec::*;
-use db;
 
 // global data that store unit info
 lazy_static! {
@@ -15,11 +15,12 @@ lazy_static! {
     static ref KNOWN_UNIT: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
     static ref MIN_RETRIEVABLE_MCI: RwLock<u32> = RwLock::new({
         let db = db::DB_POOL.get_connection();
-        let mut stmt = db.prepare_cached(
-            "SELECT MAX(lb_units.main_chain_index) AS min_retrievable_mci \
-            FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
-            WHERE units.is_on_main_chain=1 AND units.is_stable=1",
-        ).expect("Initialzing MIN_RETRIEVABLE_MCI failed");
+        let mut stmt =
+            db.prepare_cached(
+                "SELECT MAX(lb_units.main_chain_index) AS min_retrievable_mci \
+                 FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
+                 WHERE units.is_on_main_chain=1 AND units.is_stable=1",
+            ).expect("Initialzing MIN_RETRIEVABLE_MCI failed");
 
         stmt.query_row(&[], |row| row.get::<_, u32>(0)).unwrap_or(0)
     });
@@ -213,16 +214,32 @@ pub struct LastStableMcUnitProps {
     pub main_chain_index: u32,
 }
 
-pub fn read_last_stable_mc_unit_props(db: &Connection) -> Result<LastStableMcUnitProps> {
-    // TODO:
-    let _ = db;
-    unimplemented!()
+pub fn read_last_stable_mc_unit_props(db: &Connection) -> Result<Option<LastStableMcUnitProps>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT units.*, ball FROM units LEFT JOIN balls USING(unit) \
+         WHERE is_on_main_chain=1 AND is_stable=1 ORDER BY main_chain_index DESC LIMIT 1",
+    )?;
+    let mut props = stmt
+        .query_map(&[], |row| LastStableMcUnitProps {
+            unit: row.get::<_, String>("unit"),
+            // FIXME: here ball may be empty
+            ball: row.get::<_, String>("ball"),
+            main_chain_index: row.get::<_, u32>("main_chain_index"),
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    if props.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(props.swap_remove(0)))
 }
 
 pub fn read_last_stable_mc_index(db: &Connection) -> Result<u32> {
-    // TODO:
-    let _ = db;
-    unimplemented!()
+    let ret = read_last_stable_mc_unit_props(db)?;
+    match ret {
+        Some(prop) => Ok(prop.main_chain_index),
+        _ => Ok(0),
+    }
 }
 
 pub fn determine_if_witness_and_address_definition_have_refs(
@@ -516,21 +533,22 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             asset: Option<String>,
                         }
 
-                        let mut rows = stmt.query_map(&[unit_hash, &message_index], |row| InputTemp {
-                            kind: row.get(0),
-                            denomination: row.get(1),
-                            fixed_denominations: row.get(2),
-                            unit: row.get(3),
-                            message_index: row.get(4),
-                            output_index: row.get(5),
-                            from_main_chain_index: row.get(6),
-                            to_main_chain_index: row.get(7),
-                            //serial_number: row.get(8),
-                            amount: row.get(9),
-                            address: row.get(10),
-                            asset: row.get(11),
-                        })?
-                        .collect::<::std::result::Result<Vec<InputTemp>, _>>()?;
+                        let mut rows = stmt
+                            .query_map(&[unit_hash, &message_index], |row| InputTemp {
+                                kind: row.get(0),
+                                denomination: row.get(1),
+                                fixed_denominations: row.get(2),
+                                unit: row.get(3),
+                                message_index: row.get(4),
+                                output_index: row.get(5),
+                                from_main_chain_index: row.get(6),
+                                to_main_chain_index: row.get(7),
+                                //serial_number: row.get(8),
+                                amount: row.get(9),
+                                address: row.get(10),
+                                asset: row.get(11),
+                            })?
+                            .collect::<::std::result::Result<Vec<InputTemp>, _>>()?;
 
                         if rows.len() > 0 {
                             //Record the first one for later ones to check against
@@ -548,7 +566,10 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             for row in rows.iter_mut() {
                                 let mut input = row;
 
-                                ensure!(!input.address.is_none(), "readJoint: input address is NULL");
+                                ensure!(
+                                    !input.address.is_none(),
+                                    "readJoint: input address is NULL"
+                                );
 
                                 ensure!(prev_asset == input.asset, "different assets in inputs?");
                                 ensure!(
@@ -556,7 +577,8 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                     "different denomination in inputs?"
                                 );
 
-                                if input.kind == Some("transfer".to_string()) || authors.len() == 1 {
+                                if input.kind == Some("transfer".to_string()) || authors.len() == 1
+                                {
                                     input.address = None;
                                 }
 
@@ -580,7 +602,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                         //Read Outputs
                         let mut stmt = db.prepare_cached(
                             "SELECT address, amount, asset, denomination \
-                            FROM outputs WHERE unit=? AND message_index=? ORDER BY output_index",
+                             FROM outputs WHERE unit=? AND message_index=? ORDER BY output_index",
                         )?;
 
                         struct OutputTemp {
@@ -590,12 +612,13 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             denomination: Option<u32>,
                         }
 
-                        let mut rows = stmt.query_map(&[unit_hash, &message_index], |row| OutputTemp {
-                            address: row.get(0),
-                            amount: row.get(1),
-                            asset: row.get(2),
-                            denomination: row.get(3),
-                        })?;
+                        let mut rows =
+                            stmt.query_map(&[unit_hash, &message_index], |row| OutputTemp {
+                                address: row.get(0),
+                                amount: row.get(1),
+                                asset: row.get(2),
+                                denomination: row.get(3),
+                            })?;
 
                         for row in rows {
                             let output = row?;
@@ -640,14 +663,14 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
             messages.push(Message {
                 app: msg.app,
-                payload: Some(Payload {
+                payload: Some(Payload::Payment(Payment {
                     address: None,
                     asset: payload_asset,
                     definition_chash: None,
                     denomination: payload_denomination,
                     inputs: inputs,
                     outputs: outputs,
-                }),
+                })),
                 payload_hash: msg.payload_hash,
                 payload_location: msg.payload_location,
                 payload_uri: msg.payload_uri,
@@ -684,7 +707,6 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
     };
 
     //TODO: Retry if the hash verification fails
-    
 
     Ok(joint)
 }
@@ -695,12 +717,41 @@ pub fn read_definition(_db: &Connection, _definition_chash: &String) -> Result<S
 }
 
 pub fn read_definition_by_address(
-    _db: &Connection,
-    _address: &String,
-    _max_mci: Option<u32>,
-) -> Result<Option<String>> {
-    // TODO: #??
-    unimplemented!()
+    db: &Connection,
+    address: &String,
+    max_mci: Option<u32>,
+) -> Result<::std::result::Result<String, String>> {
+    let max_mci = max_mci.unwrap_or(::std::u32::MAX);
+    let mut stmt = db.prepare_cached(
+        "SELECT definition_chash FROM address_definition_changes CROSS JOIN units USING(unit) \
+         WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
+         ORDER BY level DESC LIMIT 1",
+    )?;
+    let rows = stmt
+        .query_map(&[address, &max_mci], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    let definition_chash = if rows.is_empty() { address } else { &rows[0] };
+    read_definition_at_mci(db, definition_chash, max_mci)
+}
+
+fn read_definition_at_mci(
+    db: &Connection,
+    definition_chash: &String,
+    max_mci: u32,
+) -> Result<::std::result::Result<String, String>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT definition FROM definitions \
+         CROSS JOIN unit_authors USING(definition_chash) CROSS JOIN units USING(unit) \
+         WHERE definition_chash=? AND is_stable=1 AND sequence='good' AND main_chain_index<=?",
+    )?;
+    let mut rows = stmt
+        .query_map(&[definition_chash, &max_mci], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    if rows.is_empty() {
+        Ok(Err(definition_chash.clone()))
+    } else {
+        Ok(Ok(rows.swap_remove(0)))
+    }
 }
 
 pub fn write_events(db: &Connection, event: &String, host: &String) -> Result<()> {

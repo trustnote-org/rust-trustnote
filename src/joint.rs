@@ -338,10 +338,14 @@ impl Joint {
                 continue;
             }
 
-            let payload = message.payload.as_ref().expect("no payload found");
-            let denomination = payload.denomination.unwrap_or(1);
+            // let payload = message.payload.as_ref().expect("no payload found");
+            let payment = match message.payload.as_ref().expect("no payload found") {
+                Payload::Payment(p) => p,
+                _ => panic!("mismatch payload found"),
+            };
+            let denomination = payment.denomination.unwrap_or(1);
 
-            for (j, input) in payload.inputs.iter().enumerate() {
+            for (j, input) in payment.inputs.iter().enumerate() {
                 let default_kind = String::from("transfer");
                 let kind = input.kind.as_ref().unwrap_or(&default_kind);
                 let src_unit = some_if!(kind == "transfer", input.unit.clone());
@@ -366,7 +370,7 @@ impl Joint {
                         "headers_commission" | "witnessing" | "issue" => unimplemented!(), //input.address.clone(),
                         _ => self.determine_input_address_from_output(
                             tx,
-                            payload.asset.as_ref().unwrap(),
+                            payment.asset.as_ref().unwrap(),
                             denomination,
                             &input,
                         )?,
@@ -396,7 +400,7 @@ impl Joint {
                     &src_output_index,
                     &from_main_chain_index,
                     &to_main_chain_index,
-                    &payload.asset,
+                    &payment.asset,
                     &is_unique,
                     &address,
                 ])?;
@@ -422,7 +426,7 @@ impl Joint {
                 }
             }
 
-            for (j, output) in payload.outputs.iter().enumerate() {
+            for (j, output) in payment.outputs.iter().enumerate() {
                 let mut stmt = tx.prepare_cached(
                     "INSERT INTO outputs \
                      (unit, message_index, output_index, address, \
@@ -435,7 +439,7 @@ impl Joint {
                     &(j as u32),
                     &output.address,
                     &output.amount,
-                    &payload.asset,
+                    &payment.asset,
                     &denomination,
                 ])?;
             }

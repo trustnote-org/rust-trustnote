@@ -22,10 +22,13 @@ pub struct CatchupChain {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub unstable_mc_joints: Vec<Joint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub stable_last_ball_joints: Vec<Joint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub witness_change_and_definition: Vec<Joint>,
 }
 
@@ -188,7 +191,8 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
         chain_balls[0]
     );
 
-    last_stable_mc_unit_props = storage::read_last_stable_mc_unit_props(db)?;
+    last_stable_mc_unit_props =
+        storage::read_last_stable_mc_unit_props(db)?.expect("can't read last stable mc unit props");
     let last_stable_mci = last_stable_mc_unit_props.main_chain_index;
     if main_chain_index > last_stable_mci {
         bail!("first chain ball {} mci is too large", chain_balls[0]);

@@ -53,6 +53,8 @@ fn init_connection(ws: &Arc<HubConn>) {
     let mut rng = thread_rng();
     let n: u64 = rng.gen_range(0, 1000);
     let ws = Arc::downgrade(ws);
+
+    // start the heartbeat timer for each connection
     go!(move || loop {
         coroutine::sleep(Duration::from_millis(3000 + n));
         let ws = match ws.upgrade() {
@@ -467,6 +469,17 @@ impl HubConn {
         }
 
         let catchup_chain: catchup::CatchupChain = serde_json::from_value(ret).unwrap();
+
+        // print out unsupported messages!
+        for j in catchup_chain.stable_last_ball_joints.iter() {
+            for m in j.unit.messages.iter() {
+                match &m.payload {
+                    Some(::spec::Payload::Other(v)) => error!("app = {}, v = {}", m.app, v),
+                    _ => {}
+                }
+            }
+        }
+
         catchup::process_catchup_chain(&db, catchup_chain)?;
 
         Ok(())
