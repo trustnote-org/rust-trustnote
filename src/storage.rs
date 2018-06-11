@@ -753,22 +753,3 @@ fn read_definition_at_mci(
         Ok(Ok(rows.swap_remove(0)))
     }
 }
-
-pub fn write_events(db: &Connection, event: &String, host: &String) -> Result<()> {
-    if event.contains("invalid") || event.contains("nonserial") {
-        let column = format!("count_{}_joints", event);
-        let sql = format!(
-            "UPDATE peer_host SET {}={}+1 WHERE peer_host=?",
-            column, column
-        );
-        let mut stmt = db.prepare_cached(&sql)?;
-        stmt.execute(&[host])?;
-
-        let sql = format!("INSERT INTO peer_events (peer_host, event) VALUES (?, ?)");
-
-        let mut stmt = db.prepare_cached(&sql)?;
-        stmt.execute(&[host, event])?;
-    }
-
-    Ok(())
-}

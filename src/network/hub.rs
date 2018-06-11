@@ -340,11 +340,11 @@ impl HubConn {
                     bail!("known unsigned");
                 }
                 self.send_result(json!({"unit": unit, "result": "known"}))?;
-                self.write_event("know_good")?;
+                self.write_event(db, "know_good")?;
             }
             CheckNewResult::KnownBad => {
                 self.send_result(json!({"unit": unit, "result": "known_bad"}))?;
-                self.write_event("know_bad")?;
+                self.write_event(db, "know_bad")?;
             }
 
             CheckNewResult::KnownUnverified => {
@@ -389,12 +389,12 @@ impl HubConn {
                         if !err.contains("authentifier verification failed")
                             && !err.contains("bad merkle proof at path")
                         {
-                            self.write_event("invalid")?;
+                            self.write_event(db, "invalid")?;
                         }
                     }
                     ValidationError::JointError { err } => {
                         self.send_error_result(unit, &err)?;
-                        self.write_event("invalid")?;
+                        self.write_event(db, "invalid")?;
                         // TODO: insert known_bad_jonts
                         unimplemented!()
                         // b.query(
@@ -435,9 +435,23 @@ impl HubConn {
     }
 
     // record peer event in database
-    fn write_event(&self, event: &str) -> Result<()> {
-        // TODO: write event to database to record if the peer is evil
-        let _ = event;
+    fn write_event(&self, db: &Connection, event: &str) -> Result<()> {
+        if event.contains("invalid") || event.contains("nonserial") {
+            let host = self.get_peer();
+            let event_string: String = event.to_string();
+            let column = format!("count_{}_joints", &event_string);
+            let sql = format!(
+                "UPDATE peer_host SET {}={}+1 WHERE peer_host=?",
+                column, column
+            );
+            let mut stmt = db.prepare_cached(&sql)?;
+            stmt.execute(&[host])?;
+
+            let sql = format!("INSERT INTO peer_events (peer_host, event) VALUES (?, ?)");
+            let mut stmt = db.prepare_cached(&sql)?;
+            stmt.execute(&[host, &event_string])?;
+        }
+
         Ok(())
     }
 
@@ -540,6 +554,27 @@ impl HubConn {
     fn notify_watchers(&self, joint: &Joint) -> Result<()> {
         let _ = joint;
         unimplemented!()
+    }
+
+    #[allow(dead_code)]
+    fn send_joint(&self, joint: Joint) -> Result<()> {
+        self.send_response("response", json!({ "joint": joint }))?;
+        //self.send_just_saying("joint", json!("joint": joint));
+
+        Ok(())
+    }
+
+    #[allow(dead_code)]
+    fn send_joints_since_mci(&self, db: &Connection, mci: u32) -> Result<()> {
+        let joints = joint_storage::read_joints_since_mci(db, mci)?;
+
+        for joint in joints {
+            self.send_joint(joint)?;
+            //self.send_just_saying("hub/challenge", json!(challenge))?;
+            //self.send_just_saying("free_joints_end", json!({ "joint": joint }))?;
+        }
+
+        Ok(())
     }
 }
 
