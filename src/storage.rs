@@ -711,6 +711,13 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
     Ok(joint)
 }
 
+pub fn update_min_retrievable_mci_after_stabilizing_mci(
+    _db: &Connection,
+    _last_stable_mci: u32,
+) -> Result<(u32)> {
+    unimplemented!()
+}
+
 pub fn read_definition(_db: &Connection, _definition_chash: &String) -> Result<String> {
     // TODO: #??
     unimplemented!()
