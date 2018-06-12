@@ -28,6 +28,7 @@ pub struct CatchupChain {
     #[serde(default)]
     pub stable_last_ball_joints: Vec<Joint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub witness_change_and_definition_joints: Vec<Joint>,
 }
 
@@ -365,7 +366,7 @@ pub fn process_hash_tree(balls: Vec<BallProps>) -> Result<()> {
     let last_ball = balls.last().as_ref().unwrap().ball.clone().unwrap();
     for ball_prop in balls {
         ensure!(ball_prop.ball.is_some(), "no ball");
-        if !storage::is_genesis_unit(&ball_prop.unit) {
+        if !::spec::is_genesis_unit(&ball_prop.unit) {
             if ball_prop.parent_balls.is_empty() {
                 bail!("no parents");
             }

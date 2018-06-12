@@ -67,7 +67,6 @@ pub fn prepare_witness_proof(
 
     // select the newest last ball unit
     if last_ball_units.is_empty() {
-        // TODO: should we return a typed Error other than a string error?
         bail!("your witness list might be too much off, too few witness authored units");
     }
 

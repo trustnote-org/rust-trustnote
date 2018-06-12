@@ -228,7 +228,7 @@ pub fn determine_if_included(
     earlier_unit: &String,
     later_units: &[String],
 ) -> Result<bool> {
-    if storage::is_genesis_unit(&earlier_unit) {
+    if ::spec::is_genesis_unit(&earlier_unit) {
         return Ok(true);
     }
 

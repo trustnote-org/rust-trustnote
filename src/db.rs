@@ -18,7 +18,7 @@ const APP_INFO: AppInfo = AppInfo {
     author: "trustnote-hub",
 };
 
-const INITIAL_DB_NAME: &str = "db/trustnote.sqlite";
+const INITIAL_DB_NAME: &str = "db/initial.trustnote.sqlite";
 const DB_NAME: &str = "trustnote.sqlite";
 
 lazy_static! {
