@@ -9,11 +9,28 @@ lazy_static! {
 fn read_my_witnesses() -> Result<Vec<String>> {
     // read from database
     let db = db::DB_POOL.get_connection();
-    let witnesses = db.get_my_witnesses()?;
+    let mut witnesses = db.get_my_witnesses()?;
 
     // if the data base is empty we should wait until
     if witnesses.len() == 0 {
-        // TODO: block until data available
+        witnesses = config::CONFIG.read()?.get::<Vec<String>>("witnesses")?;
+        ensure!(
+            witnesses.len() == config::COUNT_WITNESSES,
+            "attempting to insert wrong number of witnesses, check settings.json"
+        );
+        let witnesses_str = witnesses
+            .iter()
+            .map(|s| format!("('{}')", s))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "INSERT INTO my_witnesses (address) VALUES {}",
+            witnesses_str
+        );
+
+        println!("sql = {}", sql);
+        let mut stmt = db.prepare_cached(&sql)?;
+        stmt.execute(&[])?;
     } else {
         assert_eq!(witnesses.len(), config::COUNT_WITNESSES);
     }

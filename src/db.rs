@@ -1,48 +1,52 @@
-use std::fs;
-use std::path::*;
-
 use std::ops::{Deref, DerefMut};
 
-use num_cpus;
-use rusqlite::{Connection, OpenFlags};
-
+use app_dirs::*;
+use error::Result;
 use may;
 use may::sync::mpmc::{self, Receiver, Sender};
-
-use error::Result;
-
-use app_dirs::*;
+use num_cpus;
+use rusqlite::{Connection, OpenFlags};
 
 const APP_INFO: AppInfo = AppInfo {
     name: "rust-trustnote",
     author: "trustnote-hub",
 };
 
-const INITIAL_DB_NAME: &str = "db/trustnote.sqlite";
 const DB_NAME: &str = "trustnote.sqlite";
 
 lazy_static! {
     pub static ref DB_POOL: DatabasePool = DatabasePool::new();
 }
 
+fn get_initial_db_path() -> String {
+    let cfg = match ::config::CONFIG.read() {
+        Ok(c) => c,
+        Err(e) => {
+            error!("failed to read settings.json, err={}", e);
+            return "db/initial.trustnote.sqlite".to_owned();
+        }
+    };
+
+    cfg.get::<String>("initial_db_path")
+        .unwrap_or("db/initial.trustnote.sqlite".to_owned())
+}
+
 pub fn create_database_if_necessary() -> Result<()> {
-    let app_path_buf: PathBuf = get_app_root(AppDataType::UserData, &APP_INFO)?;
-
-    let mut initial_db_path_buf: PathBuf = PathBuf::new();
-    initial_db_path_buf.push(INITIAL_DB_NAME);
-    let initial_db_path: &Path = initial_db_path_buf.as_path();
-
-    let mut db_path_buf: PathBuf = app_path_buf.clone();
-    db_path_buf.push(DB_NAME);
-    let db_path: &Path = db_path_buf.as_path();
+    use std::fs;
+    let mut db_path = get_app_root(AppDataType::UserData, &APP_INFO)?;
+    if !db_path.exists() {
+        fs::create_dir_all(&db_path)?;
+    }
+    db_path.push(DB_NAME);
 
     if !db_path.exists() {
-        fs::create_dir_all(app_path_buf.as_path())?;
-        fs::copy(initial_db_path, db_path)?;
+        let initial_db_path = get_initial_db_path();
+        fs::copy(&initial_db_path, &db_path)?;
+
         info!(
-            "create_database_if_necessary done: db_path: {:?}, initial db path: {:?}",
+            "create_database_if_necessary done: db_path: {}, initial db path: {}",
             db_path.display(),
-            initial_db_path.display()
+            initial_db_path
         );
     }
 
@@ -59,11 +63,8 @@ impl DatabasePool {
         create_database_if_necessary().expect("create database error");
 
         // database path
-        let mut path_buf: PathBuf =
-            get_app_root(AppDataType::UserData, &APP_INFO).expect("not found db");
-        path_buf.push(DB_NAME);
-        let db_path: &Path = path_buf.as_path();
-
+        let mut db_path = get_app_root(AppDataType::UserData, &APP_INFO).expect("not found db");
+        db_path.push(DB_NAME);
         // create the connection pool
         let (db_tx, db_rx) = mpmc::channel();
 
@@ -71,7 +72,7 @@ impl DatabasePool {
             for _ in 0..(num_cpus::get() * 4) {
                 go!(s, || {
                     let conn = match Connection::open_with_flags(
-                        db_path,
+                        &db_path,
                         OpenFlags::SQLITE_OPEN_READ_WRITE,
                     ) {
                         Ok(conn) => conn,

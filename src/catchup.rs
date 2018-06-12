@@ -29,7 +29,7 @@ pub struct CatchupChain {
     pub stable_last_ball_joints: Vec<Joint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(default)]
-    pub witness_change_and_definition: Vec<Joint>,
+    pub witness_change_and_definition_joints: Vec<Joint>,
 }
 
 pub fn prepare_catchup_chain(db: &Connection, catchup_req: CatchupReq) -> Result<CatchupChain> {
@@ -61,7 +61,7 @@ pub fn prepare_catchup_chain(db: &Connection, catchup_req: CatchupReq) -> Result
             status: Some("current".to_owned()),
             unstable_mc_joints: Vec::new(),
             stable_last_ball_joints: Vec::new(),
-            witness_change_and_definition: Vec::new(),
+            witness_change_and_definition_joints: Vec::new(),
         });
     }
 
@@ -87,7 +87,7 @@ pub fn prepare_catchup_chain(db: &Connection, catchup_req: CatchupReq) -> Result
         status: None,
         stable_last_ball_joints,
         unstable_mc_joints: witness_proof.unstable_mc_joints,
-        witness_change_and_definition: witness_proof.witness_change_and_definition,
+        witness_change_and_definition_joints: witness_proof.witness_change_and_definition,
     })
 }
 
@@ -107,7 +107,7 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
     let witness_proof = witness_proof::process_witness_proof(
         db,
         catchup_chain.unstable_mc_joints,
-        catchup_chain.witness_change_and_definition,
+        catchup_chain.witness_change_and_definition_joints,
         true,
     )?;
 
@@ -366,7 +366,7 @@ pub fn process_hash_tree(balls: Vec<BallProps>) -> Result<()> {
     let last_ball = balls.last().as_ref().unwrap().ball.clone().unwrap();
     for ball_prop in balls {
         ensure!(ball_prop.ball.is_some(), "no ball");
-        if !storage::is_genesis_unit(&ball_prop.unit) {
+        if !::spec::is_genesis_unit(&ball_prop.unit) {
             if ball_prop.parent_balls.is_empty() {
                 bail!("no parents");
             }

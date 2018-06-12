@@ -135,7 +135,10 @@ fn test_signature() -> Result<()> {
 }
 
 fn show_config() -> Result<()> {
-    println!("debug = {}", config::CONFIG.read()?.get::<bool>("debug")?);
+    println!(
+        "witnesses = {:?}",
+        config::CONFIG.read()?.get::<Vec<String>>("witnesses")?
+    );
     Ok(())
 }
 

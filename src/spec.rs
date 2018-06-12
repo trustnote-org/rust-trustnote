@@ -155,10 +155,22 @@ pub struct UnitProps {
     pub is_stable: u32,
 }
 
+#[inline]
+pub fn is_genesis_unit(unit: &String) -> bool {
+    lazy_static! {
+        static ref GENESIS_UNIT: String = ::config::CONFIG
+            .read()
+            .expect("failed to read settings.json")
+            .get::<String>("genesis_unit")
+            .expect("failed to read genesis unit");
+    }
+    unit == &*GENESIS_UNIT
+}
+
 impl Unit {
     pub fn is_genesis_unit(&self) -> bool {
         match self.unit {
-            Some(ref hash) if hash == ::config::GENESIS_UNIT => true,
+            Some(ref hash) => is_genesis_unit(hash),
             _ => false,
         }
     }

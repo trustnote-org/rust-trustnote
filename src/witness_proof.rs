@@ -67,7 +67,6 @@ pub fn prepare_witness_proof(
 
     // select the newest last ball unit
     if last_ball_units.is_empty() {
-        // TODO: should we return a typed Error other than a string error?
         bail!("your witness list might be too much off, too few witness authored units");
     }
 
@@ -222,7 +221,7 @@ pub fn process_witness_proof(
     }
 
     for address in MY_WITNESSES.iter() {
-        match storage::read_definition_by_address(db, address, None)? {
+        match storage::read_definition_by_address(db, address, None) {
             // if found
             Ok(definition) => {
                 let definition_chash = object_hash::get_chash(&definition)?;
@@ -230,8 +229,9 @@ pub fn process_witness_proof(
                 assoc_definition_chashes.insert(address.clone(), definition_chash);
             }
             // if NotFound
-            Err(definition_chash) => {
-                assoc_definition_chashes.insert(address.clone(), definition_chash);
+            Err(e) => {
+                warn!("definition {} not found, err={}", address, e);
+                assoc_definition_chashes.insert(address.clone(), address.clone());
             }
         }
     }
@@ -241,6 +241,7 @@ pub fn process_witness_proof(
         for author in unit.authors.iter() {
             let address = &author.address;
             if !MY_WITNESSES.contains(address) {
+                // not a witness - skip it
                 continue;
             }
 
@@ -254,13 +255,15 @@ pub fn process_witness_proof(
                 chash.unwrap().clone()
             };
 
-            let chash = object_hash::get_chash(&author.definition)?;
-            ensure!(
-                chash == *definition_chash,
-                "definition doesn't hash to the expected value"
-            );
-            assoc_definitions.insert(definition_chash.clone(), author.definition.to_string());
-            b_found = true;
+            if !author.definition.is_null() {
+                let chash = object_hash::get_chash(&author.definition)?;
+                ensure!(
+                    chash == *definition_chash,
+                    "definition doesn't hash to the expected value"
+                );
+                assoc_definitions.insert(definition_chash.clone(), author.definition.to_string());
+                b_found = true;
+            }
 
             if assoc_definitions.get(&definition_chash).is_none() {
                 let definition = storage::read_definition(db, &definition_chash)?;

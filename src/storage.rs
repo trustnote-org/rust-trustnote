@@ -26,11 +26,6 @@ lazy_static! {
     });
 }
 
-#[inline]
-pub fn is_genesis_unit(unit: &String) -> bool {
-    unit == ::config::GENESIS_UNIT
-}
-
 pub fn is_genesis_ball(ball: &String) -> bool {
     let _ = ball;
     unimplemented!()
@@ -699,14 +694,20 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         witness_list_unit: None,
     };
 
+    //TODO: Retry if the hash verification fails
+    ensure!(
+        &unit.get_unit_hash() == unit_hash,
+        "unit hash verification failed, unit: {:?} unit hash {}",
+        unit,
+        unit_hash,
+    );
+
     let joint = Joint {
         unit: unit,
         ball: ball,
         skiplist_units: skiplist_units,
         unsigned: None,
     };
-
-    //TODO: Retry if the hash verification fails
 
     Ok(joint)
 }
@@ -718,16 +719,18 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
     unimplemented!()
 }
 
-pub fn read_definition(_db: &Connection, _definition_chash: &String) -> Result<String> {
-    // TODO: #??
-    unimplemented!()
+pub fn read_definition(db: &Connection, definition_chash: &String) -> Result<String> {
+    let mut stmt =
+        db.prepare_cached("SELECT definition FROM definitions WHERE definition_chash=?")?;
+    let definition = stmt.query_row(&[definition_chash], |row| row.get(0))?;
+    Ok(definition)
 }
 
 pub fn read_definition_by_address(
     db: &Connection,
     address: &String,
     max_mci: Option<u32>,
-) -> Result<::std::result::Result<String, String>> {
+) -> Result<String> {
     let max_mci = max_mci.unwrap_or(::std::u32::MAX);
     let mut stmt = db.prepare_cached(
         "SELECT definition_chash FROM address_definition_changes CROSS JOIN units USING(unit) \
@@ -745,37 +748,12 @@ fn read_definition_at_mci(
     db: &Connection,
     definition_chash: &String,
     max_mci: u32,
-) -> Result<::std::result::Result<String, String>> {
+) -> Result<String> {
     let mut stmt = db.prepare_cached(
         "SELECT definition FROM definitions \
          CROSS JOIN unit_authors USING(definition_chash) CROSS JOIN units USING(unit) \
          WHERE definition_chash=? AND is_stable=1 AND sequence='good' AND main_chain_index<=?",
     )?;
-    let mut rows = stmt
-        .query_map(&[definition_chash, &max_mci], |row| row.get(0))?
-        .collect::<::std::result::Result<Vec<String>, _>>()?;
-    if rows.is_empty() {
-        Ok(Err(definition_chash.clone()))
-    } else {
-        Ok(Ok(rows.swap_remove(0)))
-    }
-}
-
-pub fn write_events(db: &Connection, event: &String, host: &String) -> Result<()> {
-    if event.contains("invalid") || event.contains("nonserial") {
-        let column = format!("count_{}_joints", event);
-        let sql = format!(
-            "UPDATE peer_host SET {}={}+1 WHERE peer_host=?",
-            column, column
-        );
-        let mut stmt = db.prepare_cached(&sql)?;
-        stmt.execute(&[host])?;
-
-        let sql = format!("INSERT INTO peer_events (peer_host, event) VALUES (?, ?)");
-
-        let mut stmt = db.prepare_cached(&sql)?;
-        stmt.execute(&[host, event])?;
-    }
-
-    Ok(())
+    let definition = stmt.query_row(&[definition_chash, &max_mci], |row| row.get(0))?;
+    Ok(definition)
 }
