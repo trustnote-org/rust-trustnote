@@ -254,13 +254,15 @@ pub fn process_witness_proof(
                 chash.unwrap().clone()
             };
 
-            let chash = object_hash::get_chash(&author.definition)?;
-            ensure!(
-                chash == *definition_chash,
-                "definition doesn't hash to the expected value"
-            );
-            assoc_definitions.insert(definition_chash.clone(), author.definition.to_string());
-            b_found = true;
+            if !author.definition.is_null() {
+                let chash = object_hash::get_chash(&author.definition)?;
+                ensure!(
+                    chash == *definition_chash,
+                    "definition doesn't hash to the expected value"
+                );
+                assoc_definitions.insert(definition_chash.clone(), author.definition.to_string());
+                b_found = true;
+            }
 
             if assoc_definitions.get(&definition_chash).is_none() {
                 let definition = storage::read_definition(db, &definition_chash)?;
