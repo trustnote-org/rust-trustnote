@@ -701,7 +701,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
     //TODO: Retry if the hash verification fails
     ensure!(
-        is_correct_hash(&unit, unit_hash)? == true,
+        &unit.get_unit_hash() == unit_hash,
         "unit hash verification failed, unit: {:?} unit hash {}",
         unit,
         unit_hash,
@@ -715,10 +715,6 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
     };
 
     Ok(joint)
-}
-
-fn is_correct_hash(unit: &Unit, unit_hash: &String) -> Result<bool> {
-    Ok(unit.get_unit_hash() == *unit_hash)
 }
 
 pub fn read_definition(_db: &Connection, _definition_chash: &String) -> Result<String> {
