@@ -115,8 +115,10 @@ pub fn read_joints_since_mci(db: &Connection, mci: u32) -> Result<Vec<Joint>> {
 
     let mut joints = Vec::new();
     for unit in ret {
-        let joint = storage::read_joint(db, &unit)?;
-        joints.push(joint);
+        match storage::read_joint(db, &unit) {
+            Ok(j) => joints.push(j),
+            Err(e) => error!("read_joint err={}", e),
+        }
     }
 
     Ok(joints)

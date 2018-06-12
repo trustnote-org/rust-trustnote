@@ -556,12 +556,9 @@ impl HubConn {
         unimplemented!()
     }
 
-    #[allow(dead_code)]
+    #[inline]
     fn send_joint(&self, joint: Joint) -> Result<()> {
-        self.send_response("response", json!({ "joint": joint }))?;
-        //self.send_just_saying("joint", json!("joint": joint));
-
-        Ok(())
+        self.send_just_saying("joint", json!({ "joint": joint }))
     }
 
     #[allow(dead_code)]
@@ -570,9 +567,8 @@ impl HubConn {
 
         for joint in joints {
             self.send_joint(joint)?;
-            //self.send_just_saying("hub/challenge", json!(challenge))?;
-            //self.send_just_saying("free_joints_end", json!({ "joint": joint }))?;
         }
+        self.send_just_saying("free_joints_end", Value::Null)?;
 
         Ok(())
     }
