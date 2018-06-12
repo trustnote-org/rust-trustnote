@@ -2,6 +2,7 @@ use error::Result;
 use rusqlite::Connection;
 use storage;
 
+#[derive(Debug, Clone)]
 pub struct UnitProps {
     pub unit: String,
     pub level: u32,
