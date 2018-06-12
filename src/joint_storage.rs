@@ -102,3 +102,24 @@ pub fn find_lost_joints(db: &Connection) -> Result<Vec<String>> {
 
     Ok(names)
 }
+
+pub fn read_joints_since_mci(db: &Connection, mci: u32) -> Result<Vec<Joint>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT units.unit FROM units LEFT JOIN archived_joints USING(unit) \
+		WHERE (is_stable=0 AND main_chain_index>=? OR main_chain_index IS NULL OR is_free=1) AND archived_joints.unit IS NULL \
+		ORDER BY +level")?;
+
+    let ret = stmt
+        .query_map(&[&mci], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    let mut joints = Vec::new();
+    for unit in ret {
+        match storage::read_joint(db, &unit) {
+            Ok(j) => joints.push(j),
+            Err(e) => error!("read_joint err={}", e),
+        }
+    }
+
+    Ok(joints)
+}
