@@ -242,6 +242,7 @@ pub fn process_witness_proof(
         for author in unit.authors.iter() {
             let address = &author.address;
             if !MY_WITNESSES.contains(address) {
+                // not a witness - skip it
                 continue;
             }
 
