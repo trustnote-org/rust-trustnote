@@ -699,14 +699,20 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         witness_list_unit: None,
     };
 
+    //TODO: Retry if the hash verification fails
+    ensure!(
+        &unit.get_unit_hash() == unit_hash,
+        "unit hash verification failed, unit: {:?} unit hash {}",
+        unit,
+        unit_hash,
+    );
+
     let joint = Joint {
         unit: unit,
         ball: ball,
         skiplist_units: skiplist_units,
         unsigned: None,
     };
-
-    //TODO: Retry if the hash verification fails
 
     Ok(joint)
 }
