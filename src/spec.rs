@@ -168,6 +168,14 @@ pub fn is_genesis_unit(unit: &String) -> bool {
     unit == &*GENESIS_UNIT
 }
 
+pub fn is_genesis_ball(ball: &String) -> bool {
+    use object_hash;
+    lazy_static! {
+        static ref GENESIS_BALL: String = object_hash::get_ball_hash(::config::GENESIS_UNIT);
+    }
+    ball == &*GENESIS_BALL
+}
+
 impl Unit {
     pub fn is_genesis_unit(&self) -> bool {
         match self.unit {
