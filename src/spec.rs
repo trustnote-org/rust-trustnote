@@ -157,21 +157,23 @@ pub struct UnitProps {
 }
 
 #[inline]
+lazy_static! {
+    static ref GENESIS_UNIT: String = ::config::CONFIG
+        .read()
+        .expect("failed to read settings.json")
+        .get::<String>("genesis_unit")
+        .expect("failed to read genesis unit");
+}
+
 pub fn is_genesis_unit(unit: &String) -> bool {
-    lazy_static! {
-        static ref GENESIS_UNIT: String = ::config::CONFIG
-            .read()
-            .expect("failed to read settings.json")
-            .get::<String>("genesis_unit")
-            .expect("failed to read genesis unit");
-    }
     unit == &*GENESIS_UNIT
 }
 
 pub fn is_genesis_ball(ball: &String) -> bool {
-    use object_hash;
     lazy_static! {
-        static ref GENESIS_BALL: String = object_hash::get_ball_hash(::config::GENESIS_UNIT);
+        //GENESIS_UNIT's parent and skiplist is null
+        static ref GENESIS_BALL: String =
+            ::object_hash::get_ball_hash(&GENESIS_UNIT, &Vec::new(), &Vec::new(), false);
     }
     ball == &*GENESIS_BALL
 }
