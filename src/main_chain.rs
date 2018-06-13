@@ -264,7 +264,7 @@ pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
         if skiplist_units.len() > 0 {
             let value_list = skiplist_units
                 .iter()
-                .map(|s| format!("'({},{})'", unit, s))
+                .map(|s| format!("('{}','{}')", unit, s))
                 .collect::<Vec<_>>()
                 .join(", ");
             let sql = format!(
