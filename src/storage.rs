@@ -712,6 +712,13 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
     Ok(joint)
 }
 
+pub fn update_min_retrievable_mci_after_stabilizing_mci(
+    _db: &Connection,
+    _last_stable_mci: u32,
+) -> Result<(u32)> {
+    unimplemented!()
+}
+
 pub fn read_definition(db: &Connection, definition_chash: &String) -> Result<String> {
     let mut stmt =
         db.prepare_cached("SELECT definition FROM definitions WHERE definition_chash=?")?;
