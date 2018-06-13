@@ -118,6 +118,7 @@ pub struct Unit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub main_chain_index: Option<u32>,
     pub messages: Vec<Message>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(default)]
     pub parent_units: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -200,24 +201,25 @@ impl Unit {
             return get_base64_hash(&self.get_naked_unit()).expect("get_unit_hash naked failed");
         }
 
-        #[derive(Debug, Serialize, Deserialize)]
+        #[derive(Debug, Serialize)]
         struct Address {
             address: String,
         }
 
-        #[derive(Debug, Serialize, Deserialize)]
+        #[derive(Debug, Serialize)]
         struct StrippedUnit {
             alt: String,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
             authors: Vec<Address>,
             content_hash: String,
             #[serde(skip_serializing_if = "Option::is_none")]
             last_ball: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             last_ball_unit: Option<String>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
             parent_units: Vec<String>,
             version: String,
             #[serde(skip_serializing_if = "Vec::is_empty")]
-            #[serde(default)]
             witnesses: Vec<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             witness_list_unit: Option<String>,
