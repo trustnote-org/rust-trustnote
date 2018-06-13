@@ -174,7 +174,7 @@ pub fn process_witness_proof(
         {
             let last_ball_unit = unit.last_ball_unit.as_ref().unwrap().clone();
             let last_ball = unit.last_ball.as_ref().unwrap().clone();
-            last_ball_units.push(last_ball.clone());
+            last_ball_units.push(last_ball_unit.clone());
             assoc_last_ball_by_last_ball_unit.insert(last_ball_unit, last_ball);
         }
     }

@@ -85,7 +85,8 @@ pub fn validate_author_signature_without_ref(
     _unit: &Unit,
     _definition: &String,
 ) -> Result<()> {
-    unimplemented!()
+    Ok(())
+    // TODO: unimplemented!() #37
 }
 
 pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
