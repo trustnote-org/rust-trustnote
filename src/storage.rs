@@ -795,13 +795,103 @@ fn generate_queries_to_archive_joint(
     Ok(())
 }
 
-fn generate_queries_to_remove_joint(_unit: Rc<String>, _queries: &mut db::DbQueries) {
-    unimplemented!()
+fn generate_queries_to_remove_joint(unit: Rc<String>, queries: &mut db::DbQueries) {
+    generate_queries_to_unspend_outputs_spent_in_archived_unit(unit.clone(), queries);
+    queries.add_query(move |db| {
+        let mut stmt =
+            db.prepare_cached("DELETE FROM witness_list_hashes WHERE witness_list_unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt =
+            db.prepare_cached("DELETE FROM earned_headers_commission_recipients WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM unit_witnesses WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("ELETE FROM authentifiers WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM unit_authors WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM parenthoods WHERE child_unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM address_definition_changes WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM inputs WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM outputs WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM spend_proofs WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM data_feeds WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM poll_choices WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM data_feeds WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM poll_choices WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM polls WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM votes WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM attestations WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM asset_denominations WHERE asset=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM asset_attestors WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM assets WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM messages WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM units WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+
+        Ok(())
+    });
 }
 
 fn generate_queries_to_void_joint(unit: Rc<String>, queries: &mut db::DbQueries) {
     generate_queries_to_unspend_outputs_spent_in_archived_unit(unit.clone(), queries);
-    // TODO:
+    queries.add_query(move |db| {
+        let mut stmt =
+            db.prepare_cached("DELETE FROM witness_list_hashes WHERE witness_list_unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt =
+            db.prepare_cached("DELETE FROM earned_headers_commission_recipients WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM authentifiers WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt =
+            db.prepare_cached("UPDATE unit_authors SET definition_chash=NULL WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM address_definition_changes WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM inputs WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM outputs WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM spend_proofs WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM data_feeds WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM poll_choices WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM polls WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM votes WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM attestations WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM asset_denominations WHERE asset=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM asset_attestors WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM assets WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+        let mut stmt = db.prepare_cached("DELETE FROM messages WHERE unit=?")?;
+        stmt.execute(&[&*unit])?;
+
+        Ok(())
+    });
 }
 
 fn generate_queries_to_unspend_outputs_spent_in_archived_unit(
