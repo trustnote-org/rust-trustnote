@@ -759,7 +759,7 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
         let joint = read_joint(db, unit)
             .map_err(|e| format_err!("bad unit not found: {}, err={}", unit, e))?;
 
-        generate_queries_to_archive_joint(&joint, "voided", &mut queries)?;
+        generate_queries_to_archive_joint(db, &joint, "voided", &mut queries)?;
     }
 
     queries.execute_all(db);
@@ -771,15 +771,16 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
 }
 
 fn generate_queries_to_archive_joint(
+    db: &Connection,
     joint: &Joint,
     reason: &str,
     queries: &mut db::DbQueries,
 ) -> Result<()> {
     let unit = Rc::new(joint.get_unit_hash().clone());
     if reason == "uncovered" {
-        generate_queries_to_remove_joint(unit.clone(), queries);
+        generate_queries_to_remove_joint(db, unit.clone(), queries)?;
     } else {
-        generate_queries_to_void_joint(unit.clone(), queries);
+        generate_queries_to_void_joint(db, unit.clone(), queries)?;
     }
 
     let reason = reason.to_owned();
@@ -795,8 +796,12 @@ fn generate_queries_to_archive_joint(
     Ok(())
 }
 
-fn generate_queries_to_remove_joint(unit: Rc<String>, queries: &mut db::DbQueries) {
-    generate_queries_to_unspend_outputs_spent_in_archived_unit(unit.clone(), queries);
+fn generate_queries_to_remove_joint(
+    db: &Connection,
+    unit: Rc<String>,
+    queries: &mut db::DbQueries,
+) -> Result<()> {
+    generate_queries_to_unspend_outputs_spent_in_archived_unit(db, unit.clone(), queries)?;
     queries.add_query(move |db| {
         let mut stmt =
             db.prepare_cached("DELETE FROM witness_list_hashes WHERE witness_list_unit=?")?;
@@ -847,10 +852,15 @@ fn generate_queries_to_remove_joint(unit: Rc<String>, queries: &mut db::DbQuerie
 
         Ok(())
     });
+    Ok(())
 }
 
-fn generate_queries_to_void_joint(unit: Rc<String>, queries: &mut db::DbQueries) {
-    generate_queries_to_unspend_outputs_spent_in_archived_unit(unit.clone(), queries);
+fn generate_queries_to_void_joint(
+    db: &Connection,
+    unit: Rc<String>,
+    queries: &mut db::DbQueries,
+) -> Result<()> {
+    generate_queries_to_unspend_outputs_spent_in_archived_unit(db, unit.clone(), queries)?;
     queries.add_query(move |db| {
         let mut stmt =
             db.prepare_cached("DELETE FROM witness_list_hashes WHERE witness_list_unit=?")?;
@@ -892,39 +902,165 @@ fn generate_queries_to_void_joint(unit: Rc<String>, queries: &mut db::DbQueries)
 
         Ok(())
     });
+    Ok(())
 }
 
 fn generate_queries_to_unspend_outputs_spent_in_archived_unit(
+    db: &Connection,
     unit: Rc<String>,
     queries: &mut db::DbQueries,
-) {
-    generate_queries_to_unspend_transfer_outputs_spent_in_archived_unit(unit.clone(), queries);
+) -> Result<()> {
+    generate_queries_to_unspend_transfer_outputs_spent_in_archived_unit(db, unit.clone(), queries)?;
     generate_queries_to_unspend_headers_commission_outputs_spent_in_archived_unit(
+        db,
         unit.clone(),
         queries,
-    );
-    generate_queries_to_unspend_witnessing_outputs_spent_in_archived_unit(unit, queries);
+    )?;
+    generate_queries_to_unspend_witnessing_outputs_spent_in_archived_unit(db, unit, queries)?;
+    Ok(())
 }
 
 fn generate_queries_to_unspend_transfer_outputs_spent_in_archived_unit(
+    db: &Connection,
     unit: Rc<String>,
     queries: &mut db::DbQueries,
-) {
-    unimplemented!()
+) -> Result<()> {
+    let mut stmt = db.prepare_cached(
+        "SELECT src_unit, src_message_index, src_output_index \
+         FROM inputs \
+         WHERE inputs.unit=? \
+         AND inputstype='transfer' \
+         AND NO EXISTS ( \
+         SELECT 1 FROM inputs AS alt_inputs \
+         WHERE inputs.src_unit=alt_inputs.src_unit \
+         AND inputs.src_message_index=alt_inputs.src_message_index \
+         AND inputs.src_output_index=alt_inputs.src_output_index \
+         AND alt_inputs.type='transfer' \
+         AND inputs.unit!=alt_inputs.unit \
+         )",
+    )?;
+    struct TempUintProp {
+        src_unit: String,
+        src_message_index: u32,
+        src_output_index: u32,
+    }
+    let unit_rows = stmt
+        .query_map(&[&*unit], |row| TempUintProp {
+            src_unit: row.get(0),
+            src_message_index: row.get(1),
+            src_output_index: row.get(2),
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    queries.add_query(move |db| {
+        for unit_row in unit_rows {
+            let mut stmt = db.prepare_cached(
+                "UPDATE outputs SET is_spent=0 WHERE unit=? AND message_index=? AND output_index=?",
+            )?;
+            stmt.execute(&[
+                &unit_row.src_unit,
+                &unit_row.src_message_index,
+                &unit_row.src_output_index,
+            ])?;
+        }
+        Ok(())
+    });
+
+    Ok(())
 }
 
 fn generate_queries_to_unspend_headers_commission_outputs_spent_in_archived_unit(
+    db: &Connection,
     unit: Rc<String>,
     queries: &mut db::DbQueries,
-) {
-    unimplemented!()
+) -> Result<()> {
+    let mut stmt = db.prepare_cached(
+        "SELECT headers_commission_outputs.address, headers_commission_outputs.main_chain_index \
+         FROM inputs \
+         CROSS JOIN headers_commission_outputs \
+         ON inputs.from_main_chain_index <= +headers_commission_outputs.main_chain_index \
+         AND inputs.to_main_chain_index >= +headers_commission_outputs.main_chain_index \
+         AND inputs.address = headers_commission_outputs.address \
+         WHERE inputs.unit=? \
+         AND inputs.type='headers_commission' \
+         AND NOT EXISTS ( \
+         SELECT 1 FROM inputs AS alt_inputs \
+         WHERE headers_commission_outputs.main_chain_index >= alt_inputs.from_main_chain_index \
+         AND headers_commission_outputs.main_chain_index <= alt_inputs.to_main_chain_index \
+         AND inputs.address=alt_inputs.address \
+         AND alt_inputs.type='headers_commission' \
+         AND inputs.unit!=alt_inputs.unit \
+         )",
+    )?;
+    struct TempUintProp {
+        address: String,
+        main_chain_index: u32,
+    }
+    let unit_rows = stmt
+        .query_map(&[&*unit], |row| TempUintProp {
+            address: row.get(0),
+            main_chain_index: row.get(1),
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    queries.add_query(move |db| {
+        for unit_row in unit_rows {
+            let mut stmt = db.prepare_cached(
+                "UPDATE headers_commission_outputs SET is_spent=0 WHERE address=? AND main_chain_index=?",
+            )?;
+            stmt.execute(&[&unit_row.address, &unit_row.main_chain_index])?;
+        }
+        Ok(())
+    });
+
+    Ok(())
 }
 
 fn generate_queries_to_unspend_witnessing_outputs_spent_in_archived_unit(
+    db: &Connection,
     unit: Rc<String>,
     queries: &mut db::DbQueries,
-) {
-    unimplemented!()
+) -> Result<()> {
+    let mut stmt = db.prepare_cached(
+        "SELECT witnessing_outputs.address, witnessing_outputs.main_chain_index \
+         FROM inputs \
+         CROSS JOIN witnessing_outputs \
+         ON inputs.from_main_chain_index <= +witnessing_outputs.main_chain_index \
+         AND inputs.to_main_chain_index >= +witnessing_outputs.main_chain_index \
+         AND inputs.address = witnessing_outputs.address \
+         WHERE inputs.unit=? \
+         AND inputs.type='witnessing' \
+         AND NOT EXISTS ( \
+         SELECT 1 FROM inputs AS alt_inputs \
+         WHERE witnessing_outputs.main_chain_index >= alt_inputs.from_main_chain_index \
+         AND witnessing_outputs.main_chain_index <= alt_inputs.to_main_chain_index \
+         AND inputs.address=alt_inputs.address \
+         AND alt_inputs.type='witnessing' \
+         AND inputs.unit!=alt_inputs.unit \
+         )",
+    )?;
+    struct TempUintProp {
+        address: String,
+        main_chain_index: u32,
+    }
+    let unit_rows = stmt
+        .query_map(&[&*unit], |row| TempUintProp {
+            address: row.get(0),
+            main_chain_index: row.get(1),
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    queries.add_query(move |db| {
+        for unit_row in unit_rows {
+            let mut stmt = db.prepare_cached(
+                "UPDATE witnessing_outputs SET is_spent=0 WHERE address=? AND main_chain_index=?",
+            )?;
+            stmt.execute(&[&unit_row.address, &unit_row.main_chain_index])?;
+        }
+        Ok(())
+    });
+
+    Ok(())
 }
 
 fn find_last_ball_mci_of_mci(db: &Connection, mci: u32) -> Result<u32> {
