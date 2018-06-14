@@ -144,3 +144,39 @@ impl Database {
         unimplemented!();
     }
 }
+
+pub trait FnQuery {
+    fn call_box(self: Box<Self>, &Connection) -> Result<()>;
+}
+
+impl<F: FnOnce(&Connection) -> Result<()>> FnQuery for F {
+    fn call_box(self: Box<Self>, db: &Connection) -> Result<()> {
+        (*self)(db)
+    }
+}
+
+pub struct DbQueries {
+    queries: Vec<Box<FnQuery>>,
+}
+
+impl DbQueries {
+    pub fn new() -> Self {
+        DbQueries {
+            queries: Vec::new(),
+        }
+    }
+
+    #[inline]
+    pub fn add_query<F>(&mut self, f: F)
+    where
+        F: FnOnce(&Connection) -> Result<()> + 'static,
+    {
+        self.queries.push(Box::new(f));
+    }
+
+    pub fn execute(self, db: &Connection) {
+        for query in self.queries {
+            t!(query.call_box(db));
+        }
+    }
+}
