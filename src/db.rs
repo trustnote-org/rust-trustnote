@@ -174,9 +174,18 @@ impl DbQueries {
         self.queries.push(Box::new(f));
     }
 
-    pub fn execute(self, db: &Connection) {
+    // execute all queries and ignore the error
+    pub fn execute_all(self, db: &Connection) {
         for query in self.queries {
             t!(query.call_box(db));
         }
+    }
+
+    // execute queries and return earlier if any failed
+    pub fn execute(self, db: &Connection) -> Result<()> {
+        for query in self.queries {
+            query.call_box(db)?;
+        }
+        Ok(())
     }
 }

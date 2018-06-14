@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 use db;
 use error::Result;
@@ -708,10 +709,164 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 }
 
 pub fn update_min_retrievable_mci_after_stabilizing_mci(
-    _db: &Connection,
-    _last_stable_mci: u32,
-) -> Result<(u32)> {
+    db: &Connection,
+    last_stable_mci: u32,
+) -> Result<u32> {
+    info!(
+        "updateMinRetrievableMciAfterStabilizingMci {}",
+        last_stable_mci
+    );
+
+    let last_ball_mci = find_last_ball_mci_of_mci(db, last_stable_mci)?;
+    let min_retrievable_mci = *MIN_RETRIEVABLE_MCI.read().unwrap();
+    if last_ball_mci <= min_retrievable_mci {
+        return Ok(min_retrievable_mci);
+    }
+    let prev_min_retrievable_mci = min_retrievable_mci;
+    let mut g = MIN_RETRIEVABLE_MCI.write().unwrap();
+    *g = last_ball_mci;
+
+    // strip content off units older than min_retrievable_mci
+    // 'JOIN messages' filters units that are not stripped yet
+    let mut stmt = db.prepare_cached(
+        "SELECT DISTINCT unit, content_hash FROM units JOIN messages USING(unit) \
+         WHERE main_chain_index<=? AND main_chain_index>=? AND sequence='final-bad'",
+    )?;
+
+    struct TempUintProp {
+        unit: String,
+        content_hash: Option<String>,
+    }
+
+    let unit_rows = stmt
+        .query_map(&[&min_retrievable_mci, &prev_min_retrievable_mci], |row| {
+            TempUintProp {
+                unit: row.get(0),
+                content_hash: row.get(1),
+            }
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    let mut queries = db::DbQueries::new();
+
+    for unit_row in unit_rows.iter() {
+        let unit = &unit_row.unit;
+        ensure!(
+            unit_row.content_hash.is_some(),
+            "no content hash in bad unit {}",
+            unit
+        );
+        let joint = read_joint(db, unit)
+            .map_err(|e| format_err!("bad unit not found: {}, err={}", unit, e))?;
+
+        generate_queries_to_archive_joint(&joint, "voided", &mut queries)?;
+    }
+
+    queries.execute_all(db);
+    for unit_row in unit_rows {
+        forget_unit(&unit_row.unit);
+    }
+
+    Ok(min_retrievable_mci)
+}
+
+fn generate_queries_to_archive_joint(
+    joint: &Joint,
+    reason: &str,
+    queries: &mut db::DbQueries,
+) -> Result<()> {
+    let unit = Rc::new(joint.get_unit_hash().clone());
+    if reason == "uncovered" {
+        generate_queries_to_remove_joint(unit.clone(), queries);
+    } else {
+        generate_queries_to_void_joint(unit.clone(), queries);
+    }
+
+    let reason = reason.to_owned();
+    let json = serde_json::to_string(joint)?;
+    queries.add_query(move |db| {
+        let mut stmt = db.prepare_cached(
+            "INSERT OR IGNORE INTO archived_joints (unit, reason, json) VALUES (?,?,?)",
+        )?;
+        stmt.execute(&[&*unit, &reason, &json])?;
+        Ok(())
+    });
+
+    Ok(())
+}
+
+fn generate_queries_to_remove_joint(_unit: Rc<String>, _queries: &mut db::DbQueries) {
     unimplemented!()
+}
+
+fn generate_queries_to_void_joint(unit: Rc<String>, queries: &mut db::DbQueries) {
+    generate_queries_to_unspend_outputs_spent_in_archived_unit(unit.clone(), queries);
+    // TODO:
+}
+
+fn generate_queries_to_unspend_outputs_spent_in_archived_unit(
+    unit: Rc<String>,
+    queries: &mut db::DbQueries,
+) {
+    generate_queries_to_unspend_transfer_outputs_spent_in_archived_unit(unit.clone(), queries);
+    generate_queries_to_unspend_headers_commission_outputs_spent_in_archived_unit(
+        unit.clone(),
+        queries,
+    );
+    generate_queries_to_unspend_witnessing_outputs_spent_in_archived_unit(unit, queries);
+}
+
+fn generate_queries_to_unspend_transfer_outputs_spent_in_archived_unit(
+    unit: Rc<String>,
+    queries: &mut db::DbQueries,
+) {
+    unimplemented!()
+}
+
+fn generate_queries_to_unspend_headers_commission_outputs_spent_in_archived_unit(
+    unit: Rc<String>,
+    queries: &mut db::DbQueries,
+) {
+    unimplemented!()
+}
+
+fn generate_queries_to_unspend_witnessing_outputs_spent_in_archived_unit(
+    unit: Rc<String>,
+    queries: &mut db::DbQueries,
+) {
+    unimplemented!()
+}
+
+fn find_last_ball_mci_of_mci(db: &Connection, mci: u32) -> Result<u32> {
+    ensure!(mci != 0, "find_last_ball_mci_of_mci called with mci=0");
+    let mut stmt = db.prepare_cached(
+        "SELECT lb_units.main_chain_index, lb_units.is_on_main_chain \
+         FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
+         WHERE units.is_on_main_chain=1 AND units.main_chain_index=?",
+    )?;
+
+    struct LbUnitProp {
+        main_chain_index: u32,
+        is_on_main_chain: u32,
+    }
+
+    let rows = stmt
+        .query_map(&[&mci], |row| LbUnitProp {
+            main_chain_index: row.get(0),
+            is_on_main_chain: row.get(1),
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    ensure!(
+        rows.len() == 1,
+        "last ball's mci count {} != 1, mci = {}",
+        rows.len(),
+        mci
+    );
+
+    ensure!(rows[0].is_on_main_chain == 1, "lb is not on mc?");
+
+    Ok(rows[0].main_chain_index)
 }
 
 pub fn read_definition(db: &Connection, definition_chash: &String) -> Result<String> {
