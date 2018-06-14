@@ -441,7 +441,7 @@ impl HubConn {
             let event_string: String = event.to_string();
             let column = format!("count_{}_joints", &event_string);
             let sql = format!(
-                "UPDATE peer_host SET {}={}+1 WHERE peer_host=?",
+                "UPDATE peer_hosts SET {}={}+1 WHERE peer_host=?",
                 column, column
             );
             let mut stmt = db.prepare_cached(&sql)?;
@@ -530,7 +530,7 @@ impl HubConn {
         to_ball: &str,
     ) -> Result<()> {
         // TODO: need reroute if failed to send
-        let hash_tree = self.send_request(
+        let mut hash_tree = self.send_request(
             "get_hash_tree",
             json!({
                 "from_ball": from_ball,
@@ -543,7 +543,7 @@ impl HubConn {
             return Ok(());
         }
 
-        let balls: Vec<catchup::BallProps> = serde_json::from_value(hash_tree)?;
+        let balls: Vec<catchup::BallProps> = serde_json::from_value(hash_tree["balls"].take())?;
         let units: Vec<String> = balls.iter().map(|b| b.unit.clone()).collect();
         catchup::process_hash_tree(balls)?;
         self.request_new_missing_joints(db, &units)?;

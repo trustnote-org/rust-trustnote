@@ -124,14 +124,13 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
         "first stable unit is not last ball unit of any unstable unit"
     );
 
-    let last_stable_mc_unit_props;
     let mut last_ball = &assoc_last_ball_by_last_ball_unit[last_ball_unit];
     ensure!(
         first_stable_joint.ball.as_ref() == Some(last_ball),
         "last ball and last ball unit do not match"
     );
 
-    let mut chain_balls = Vec::<&String>::new();
+    let mut chain_balls = Vec::<String>::new();
     for joint in catchup_chain.stable_last_ball_joints.iter() {
         ensure!(joint.ball.is_some(), "stable but no ball");
         ensure!(joint.has_valid_hashes(), "invalid hash");
@@ -148,7 +147,7 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
             last_ball_unit = unit.last_ball_unit.as_ref().unwrap();
         }
 
-        chain_balls.push(joint.ball.as_ref().unwrap());
+        chain_balls.push(joint.ball.as_ref().unwrap().clone());
     }
     // FIXME: use a dqueue to avoid reverse
     chain_balls.reverse();
@@ -159,68 +158,76 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
     ensure!(!stmt.exists(&[])?, "duplicate catchup_chain_balls");
 
     // adjust first chain ball if necessary and make sure it is the only stable unit in the entire chain
-    let mut stmt = db.prepare_cached(
-        "SELECT is_stable, is_on_main_chain, main_chain_index \
-         FROM balls JOIN units USING(unit) WHERE ball=?",
-    )?;
+    || -> Result<()> {
+        let mut stmt = db.prepare_cached(
+            "SELECT is_stable, is_on_main_chain, main_chain_index \
+             FROM balls JOIN units USING(unit) WHERE ball=?",
+        )?;
 
-    let mut rows = stmt.query_map(&[chain_balls[0]], |row| {
-        (
-            row.get::<_, u32>(0),
-            row.get::<_, u32>(1),
-            row.get::<_, u32>(2),
-        )
-    })?;
-    let (is_stable, is_on_main_chain, main_chain_index) = match rows.next() {
-        None => {
-            if spec::is_genesis_ball(chain_balls[0]) {
-                return Ok(());
+        let mut rows = stmt.query_map(&[&chain_balls[0]], |row| {
+            (
+                row.get::<_, u32>(0),
+                row.get::<_, u32>(1),
+                row.get::<_, u32>(2),
+            )
+        })?;
+
+        let (is_stable, is_on_main_chain, main_chain_index) = match rows.next() {
+            None => {
+                if spec::is_genesis_ball(&chain_balls[0]) {
+                    return Ok(());
+                }
+                bail!("first chain ball {} is not known", chain_balls[0]);
             }
-            bail!("first chain ball {} is not known", chain_balls[0]);
+            Some(row) => row?,
+        };
+
+        ensure!(
+            is_stable == 1,
+            "first chain ball {} is not stable",
+            chain_balls[0]
+        );
+        ensure!(
+            is_on_main_chain == 1,
+            "first chain ball {} is not on mc",
+            chain_balls[0]
+        );
+
+        let last_stable_mc_unit_props = storage::read_last_stable_mc_unit_props(db)?;
+        ensure!(
+            last_stable_mc_unit_props.is_some(),
+            "can't read last stable mc unit props"
+        );
+        let last_stable_mc_unit_props = last_stable_mc_unit_props.unwrap();
+        let last_stable_mci = last_stable_mc_unit_props.main_chain_index;
+        if main_chain_index > last_stable_mci {
+            bail!("first chain ball {} mci is too large", chain_balls[0]);
         }
-        Some(row) => row?,
-    };
+        if last_stable_mci == main_chain_index {
+            return Ok(());
+        }
 
-    ensure!(
-        is_stable == 1,
-        "first chain ball {} is not stable",
-        chain_balls[0]
-    );
-    ensure!(
-        is_on_main_chain == 1,
-        "first chain ball {} is not on mc",
-        chain_balls[0]
-    );
+        // replace to avoid receiving duplicates
+        chain_balls[0] = last_stable_mc_unit_props.ball.clone();
+        if chain_balls.len() > 1 {
+            return Ok(());
+        }
 
-    last_stable_mc_unit_props =
-        storage::read_last_stable_mc_unit_props(db)?.expect("can't read last stable mc unit props");
-    let last_stable_mci = last_stable_mc_unit_props.main_chain_index;
-    if main_chain_index > last_stable_mci {
-        bail!("first chain ball {} mci is too large", chain_balls[0]);
-    }
-    if last_stable_mci == main_chain_index {
-        return Ok(());
-    }
+        let mut stmt =
+            db.prepare_cached("SELECT is_stable FROM balls JOIN units USING(unit) WHERE ball=?")?;
+        let mut rows = stmt.query_map(&[&chain_balls[1]], |row| row.get::<_, u32>(0))?;
+        let second_ball_is_stable = match rows.next() {
+            None => return Ok(()),
+            Some(row) => row?,
+        };
 
-    // replace to avoid receiving duplicates
-    chain_balls[0] = &last_stable_mc_unit_props.ball;
-    if chain_balls.len() > 1 {
-        return Ok(());
-    }
-
-    let mut stmt =
-        db.prepare_cached("SELECT is_stable FROM balls JOIN units USING(unit) WHERE ball=?")?;
-    let mut rows = stmt.query_map(&[chain_balls[1]], |row| row.get::<_, u32>(0))?;
-    let second_ball_is_stable = match rows.next() {
-        None => return Ok(()),
-        Some(row) => row?,
-    };
-
-    ensure!(
-        second_ball_is_stable != 1,
-        "second chain ball {} must not be stable",
-        chain_balls[1]
-    );
+        ensure!(
+            second_ball_is_stable != 1,
+            "second chain ball {} must not be stable",
+            chain_balls[1]
+        );
+        Ok(())
+    }()?;
 
     // validation complete, now write the chain for future downloading of hash trees
     let ball_str = chain_balls
@@ -245,10 +252,13 @@ pub struct BallProps {
     ball: Option<String>, // this should not be an option
     #[serde(skip_serializing_if = "Option::is_none")]
     content_hash: Option<String>,
+    #[serde(default)]
     is_nonserial: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     parent_balls: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     skiplist_balls: Vec<String>,
 }
 
@@ -498,20 +508,19 @@ pub fn process_hash_tree(balls: Vec<BallProps>) -> Result<()> {
          ORDER BY member_index LIMIT 2",
     )?;
 
-    let rows = stmt.query_map(&[], |row| (row.get::<_, String>(0), row.get::<_, u32>(1)))?;
-    let mut rows_data = Vec::new();
-    for row in rows {
-        rows_data.push(row?);
-    }
+    let rows_data: Vec<String> = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
     if rows_data.len() != 2 {
         bail!("expecting to have 2 elements in the chain");
     }
-    if rows_data[1].0 != last_ball {
+    if rows_data[1] != last_ball {
         bail!("tree root doesn't match second chain element");
     }
 
     let mut stmt = tx.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
-    stmt.execute(&[&rows_data[0].0])?;
+    stmt.execute(&[&rows_data[0]])?;
     purge_handled_balls_from_hash_tree(&tx)?;
 
     Ok(())
