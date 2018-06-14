@@ -2,6 +2,7 @@ use error::Result;
 use joint::Joint;
 use may::sync::Mutex;
 use rusqlite::Connection;
+use spec;
 use storage;
 use witness_proof;
 
@@ -172,7 +173,7 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
     })?;
     let (is_stable, is_on_main_chain, main_chain_index) = match rows.next() {
         None => {
-            if storage::is_genesis_ball(chain_balls[0]) {
+            if spec::is_genesis_ball(chain_balls[0]) {
                 return Ok(());
             }
             bail!("first chain ball {} is not known", chain_balls[0]);

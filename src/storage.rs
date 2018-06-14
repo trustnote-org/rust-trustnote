@@ -26,11 +26,6 @@ lazy_static! {
     });
 }
 
-pub fn is_genesis_ball(ball: &String) -> bool {
-    let _ = ball;
-    unimplemented!()
-}
-
 pub fn is_known_unit(unit: &String) -> bool {
     {
         let g = CACHED_UNIT.read().unwrap();
