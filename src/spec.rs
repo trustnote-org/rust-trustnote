@@ -31,17 +31,19 @@ pub struct Input {
     pub amount: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_main_chain_index: Option<u32>,
-    #[serde(default)]
-    pub message_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub serial_number: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_index: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "type")]
     pub kind: Option<String>,
-    #[serde(default)]
-    pub output_index: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_index: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to_main_chain_index: Option<u32>,
-    #[serde(default)]
-    pub unit: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -188,7 +188,8 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     fn serialize_str(self, v: &str) -> Result<()> {
         self.output.push("s".to_string());
         self.output.push(v.to_string());
-        self.size += v.len();
+        // we use unicode characters len
+        self.size += v.chars().count();
         Ok(())
     }
 

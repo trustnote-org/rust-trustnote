@@ -579,13 +579,14 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
                                 inputs.push(Input {
                                     kind: input.kind.clone(),
-                                    unit: input.unit.clone(),
-                                    message_index: input.message_index,
-                                    output_index: input.output_index,
+                                    unit: Some(input.unit.clone()),
+                                    message_index: Some(input.message_index),
+                                    output_index: Some(input.output_index),
                                     from_main_chain_index: input.from_main_chain_index,
                                     to_main_chain_index: input.to_main_chain_index,
                                     amount: input.amount,
                                     address: input.address.clone(),
+                                    serial_number: None,
                                 });
                             }
                         }
