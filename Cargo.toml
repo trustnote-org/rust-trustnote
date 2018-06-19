@@ -36,3 +36,6 @@ features = ["bundled"]
 
 [patch.crates-io]
 rand = { git = "https://github.com/Xudong-Huang/rand.git" }
+
+[profile.dev]
+# panic = "abort"

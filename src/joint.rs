@@ -110,7 +110,6 @@ impl Joint {
                 .map(|s| format!("'{}'", s))
                 .collect::<Vec<_>>()
                 .join(", ");
-            // TODO: how to pass a set parameter?
             let sql = format!("UPDATE units SET is_free=0 WHERE unit IN ({})", parents_set);
             let rows = tx.execute(&sql, &[])?;
             info!("{} free units consumed", rows);
@@ -165,7 +164,13 @@ impl Joint {
         let unit_hash = self.get_unit_hash();
         for (i, message) in self.unit.messages.iter().enumerate() {
             let text_payload = match message.app.as_str() {
-                "text" => unimplemented!(),
+                "text" => match &message.payload {
+                    Some(Payload::Text(ref s)) => Some(s.to_owned()),
+                    _ => {
+                        error!("no text found in text payload!");
+                        None
+                    }
+                },
                 "data" | "profile" | "attestation" | "definition_template" => {
                     let payload = serde_json::to_string(&message.payload)?;
                     Some(payload)
@@ -192,23 +197,25 @@ impl Joint {
 
             if message.payload_location.as_str() == "inline" {
                 match message.app.as_str() {
-                    "payment" => {}
+                    "payment" | "text" => {}
                     _ => unimplemented!(),
                 }
             }
 
-            // TODO: add spend_proofs
-            /*
-            if ("spend_proofs" in message){
-					for (var j=0; j<message.spend_proofs.length; j++){
-						var objSpendProof = message.spend_proofs[j];
-						conn.addQuery(arrQueries, 
-							"INSERT INTO spend_proofs (unit, message_index, spend_proof_index, spend_proof, address) VALUES(?,?,?,?,?)", 
-							[objUnit.unit, i, j, objSpendProof.spend_proof, objSpendProof.address || arrAuthorAddresses[0] ]);
-					}
-				}
-            */
-            // we dont't have spend_proofs now
+            // TODO: add spend_proofs, we dont't have spend_proofs now
+            // for (j, spend_proof) in message.spend_proofs.iter().enumerate() {
+            //     let mut stmt = tx.prepare_cached(
+            //         "INSERT INTO spend_proofs (unit, message_index, spend_proof_index, spend_proof, address) \
+            //         VALUES(?,?,?,?,?)")?;
+            //     let address = spend_proof.address.as_ref().unwrap_or(&author_addresses[0]);
+            //     stmt.insert(&[
+            //         unit_hash,
+            //         &(i as u32),
+            //         &(j as u32),
+            //         &spend_proof.spend_proof,
+            //         address,
+            //     ])?;
+            // }
         }
         Ok(())
     }
@@ -328,6 +335,7 @@ impl Joint {
     }
 
     fn save_inline_payment(&self, tx: &Transaction) -> Result<()> {
+        let unit_hash = self.get_unit_hash();
         let mut author_addresses = vec![];
         for author in &self.unit.authors {
             author_addresses.push(&author.address);
@@ -349,25 +357,24 @@ impl Joint {
                 let default_kind = String::from("transfer");
                 let kind = input.kind.as_ref().unwrap_or(&default_kind);
                 let src_unit = some_if!(kind == "transfer", input.unit.clone());
-                let src_message_index = some_if!(kind == "transfer", input.message_index);
-                let src_output_index = some_if!(kind == "transfer", input.output_index);
-                let from_main_chain_index = if kind == "witnessing" || kind == "headers_commission"
-                {
+                let src_message_index = some_if_option!(kind == "transfer", input.message_index);
+                let src_output_index = some_if_option!(kind == "transfer", input.output_index);
+                let from_main_chain_index = some_if_option!(
+                    kind == "witnessing" || kind == "headers_commission",
                     input.from_main_chain_index
-                } else {
-                    None
-                };
-                let to_main_chain_index = if kind == "witnessing" || kind == "headers_commission" {
+                );
+                let to_main_chain_index = some_if_option!(
+                    kind == "witnessing" || kind == "headers_commission",
                     input.to_main_chain_index
-                } else {
-                    None
-                };
+                );
 
                 let address = if author_addresses.len() == 1 {
                     author_addresses[0].clone()
                 } else {
                     match kind.as_str() {
-                        "headers_commission" | "witnessing" | "issue" => unimplemented!(), //input.address.clone(),
+                        "headers_commission" | "witnessing" | "issue" => {
+                            input.address.as_ref().expect("no input address").clone()
+                        }
                         _ => self.determine_input_address_from_output(
                             tx,
                             payment.asset.as_ref().unwrap(),
@@ -378,7 +385,7 @@ impl Joint {
                 };
 
                 // TODO: objValidationState.arrDoubleSpendInputs.some(...)
-                // here we give it a unique as default
+                // here we give it a unique as default, but we should check the ValidationState
                 let is_unique = 1;
 
                 let mut stmt = tx.prepare_cached(
@@ -391,7 +398,7 @@ impl Joint {
                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 )?;
                 stmt.insert(&[
-                    self.get_unit_hash(),
+                    unit_hash,
                     &(i as u32),
                     &(j as u32),
                     kind,
@@ -400,6 +407,9 @@ impl Joint {
                     &src_output_index,
                     &from_main_chain_index,
                     &to_main_chain_index,
+                    &denomination,
+                    &input.amount,
+                    &input.serial_number,
                     &payment.asset,
                     &is_unique,
                     &address,
@@ -482,8 +492,6 @@ impl Joint {
         let mut db = db::DB_POOL.get_connection();
         let tx = db.transaction()?;
 
-        self.save_inline_payment(&tx)?;
-
         // TODO: add validation, default is good
         let sequence = String::from("good");
 
@@ -493,6 +501,7 @@ impl Joint {
         self.save_authors(&tx)?;
         self.save_messages(&tx)?;
         self.save_header_earnings(&tx)?;
+        self.save_inline_payment(&tx)?;
         let best_parent_unit = self.update_best_parent(&tx)?;
         self.update_level(&tx)?;
         self.update_witness_level(&tx, best_parent_unit)?;
