@@ -314,7 +314,7 @@ impl Joint {
             }
 
             // search next best parent
-            best_parent_unit = props.best_parent_unit;
+            best_parent_unit = props.best_parent_unit.unwrap();
         }
     }
 

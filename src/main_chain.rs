@@ -1,10 +1,10 @@
-use rusqlite::Connection;
-// use spec::*;
 use error::Result;
 use graph;
 use headers_commission;
 use object_hash;
 use paid_witnessing;
+use rusqlite::Connection;
+use spec::*;
 use storage;
 
 pub fn determin_if_stable_in_laster_units_and_update_stable_mc_flag(
@@ -292,24 +292,54 @@ fn read_last_stable_mc_unit(_db: &Connection) -> Result<String> {
     unimplemented!();
 }
 
-fn find_next_up_main_chain_unit(_db: &Connection, _unit: &String) -> Result<String> {
-    unimplemented!();
+fn find_next_up_main_chain_unit(db: &Connection, unit: Option<&String>) -> Result<String> {
+    let unit_props = if unit.is_some() {
+        storage::read_static_unit_property(db, unit.unwrap())?
+    } else {
+        // if unit is None, read free balls
+        let mut stmt = db.prepare_cached(
+            "SELECT unit AS best_parent_unit, witnessed_level \
+             FROM units WHERE is_free=1 \
+             ORDER BY witnessed_level DESC, level-witnessed_level ASC, unit ASC LIMIT 1",
+        )?;
+
+        let mut row = stmt.query_row(&[], |row| StaticUnitProperty {
+            level: 0, //Not queried
+            witnessed_level: row.get(1),
+            best_parent_unit: row.get(0),
+            witness_list_unit: String::new(),
+        });
+        ensure!(row.is_ok(), "no free units?");
+
+        row.unwrap()
+    };
+
+    //Handle unit props
+    ensure!(unit_props.best_parent_unit.is_some(), "best parent is null");
+    let best_parent_unit = unit_props.best_parent_unit.unwrap();
+
+    info!(
+        "unit {:?}, best parent {}, wlevel {}",
+        unit, best_parent_unit, unit_props.witnessed_level
+    );
+
+    Ok(best_parent_unit)
 }
 
-pub fn update_main_chain(db: &Connection, last_unit: &String) -> Result<()> {
+pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<()> {
     info!("Will Update MC");
 
     //Go up from unit to find the last main chain unit and its index
-    let mut unit = last_unit.clone();
-    let mut last_main_chain_index;
-    let mut last_main_chain_unit;
+    let last_main_chain_index;
+    let last_main_chain_unit;
+    let mut unit = last_unit.cloned();
     loop {
-        if ::spec::is_genesis_unit(&unit) {
+        if unit.is_some() && ::spec::is_genesis_unit(unit.as_ref().unwrap()) {
             last_main_chain_index = 0;
-            last_main_chain_unit = unit;
+            last_main_chain_unit = unit.as_ref().unwrap().clone();
             break;
         } else {
-            let best_parent_unit = find_next_up_main_chain_unit(db, &unit)?;
+            let best_parent_unit = find_next_up_main_chain_unit(db, unit.as_ref())?;
             let best_parent_unit_props = storage::read_unit_props(db, &best_parent_unit)?;
 
             if best_parent_unit_props.is_on_main_chain == 1 {
@@ -323,20 +353,22 @@ pub fn update_main_chain(db: &Connection, last_unit: &String) -> Result<()> {
             )?;
             stmt.execute(&[&best_parent_unit])?;
 
-            unit = best_parent_unit;
+            unit = Some(best_parent_unit);
         }
     }
 
-    //if unit.is_some() {
+    if unit.is_some() {
+        //let unit = unit.unwrap();
         //Check whether it is rebuilding stable main chain
-        info!("checkNotRebuildingStableMainChainAndGoDown {}", last_unit);
+        info!("checkNotRebuildingStableMainChainAndGoDown {:?}", last_unit);
         let mut stmt = db.prepare_cached(
             "SELECT unit FROM units \
-            WHERE is_on_main_chain=1 AND main_chain_index>? AND is_stable=1 LIMIT 1")?;
+             WHERE is_on_main_chain=1 AND main_chain_index>? AND is_stable=1 LIMIT 1",
+        )?;
         let row = stmt.query_row(&[&last_main_chain_index], |row| row.get::<_, String>(0));
 
         ensure!(
-            row.is_ok(),
+            row.is_err(),
             "removing stable witnessed unit {} from main chain",
             row.unwrap()
         );
@@ -401,13 +433,91 @@ pub fn update_main_chain(db: &Connection, last_unit: &String) -> Result<()> {
             }
         }
         info!("goDownAndUpdateMainChainIndex done");
-    //}
+    }
 
     //Update latest included mc index
+    info!("Update latest included mc index {}", last_main_chain_index);
+    let mut stmt = db.prepare_cached(
+        "UPDATE units SET latest_included_mc_index=NULL \
+        WHERE main_chain_index>? OR main_chain_index IS NULL",
+    )?;
+    let affected_rows = stmt.execute(&[&last_main_chain_index])?;
+
+    info!("Update LIMCI=NULL done, matched rows: {}", affected_rows);
+
+    // if these units have other parents, they cannot include later MC units (otherwise, the parents would've been redundant).
+    // the 2nd condition in WHERE is the same that was used 1 query ago to NULL limcis.
+    let mut stmt = db.prepare_cached(
+        "SELECT chunits.unit, punits.main_chain_index \
+         FROM units AS punits \
+         JOIN parenthoods ON punits.unit=parent_unit \
+         JOIN units AS chunits ON child_unit=chunits.unit \
+         WHERE punits.is_on_main_chain=1 \
+         AND (chunits.main_chain_index > ? OR chunits.main_chain_index IS NULL) \
+         AND chunits.latest_included_mc_index IS NULL",
+    )?;
+    let rows = stmt
+        .query_map(&[&last_main_chain_index], |row| (row.get(0), row.get(1)))?
+        .collect::<::std::result::Result<Vec<(String, u32)>, _>>()?;
+
+    info!("{} rows", rows.len());
+
+    ensure!(
+        rows.len() != 0,
+        "no latest_included_mc_index updated, last_mci={}, affected={}",
+        last_main_chain_index,
+        affected_rows
+    );
+
+    for row in rows.iter() {
+        info!("{} {}", row.1, row.0);
+
+        let mut stmt =
+            db.prepare_cached("UPDATE units SET latest_included_mc_index=? WHERE unit=?")?;
+        stmt.execute(&[&row.1, &row.0])?;
+    }
 
     //Propagate latest included mc index
+    loop {
+        info!("Propagate latest included mc index");
+        let mut stmt = db.prepare_cached(
+            "SELECT punits.latest_included_mc_index, chunits.unit \
+            FROM units AS punits \
+            JOIN parenthoods ON punits.unit=parent_unit \
+            JOIN units AS chunits ON child_unit=chunits.unit \
+            WHERE (chunits.main_chain_index > ? OR chunits.main_chain_index IS NULL) \
+                AND (chunits.latest_included_mc_index IS NULL OR chunits.latest_included_mc_index < punits.latest_included_mc_index)",
+        )?;
+        let rows = stmt
+            .query_map(&[&last_main_chain_index], |row| (row.get(0), row.get(1)))?
+            .collect::<::std::result::Result<Vec<(u32, String)>, _>>()?;
+
+        if rows.len() == 0 {
+            break;
+        }
+
+        for row in rows.iter() {
+            let mut stmt =
+                db.prepare_cached("UPDATE units SET latest_included_mc_index=? WHERE unit=?")?;
+            stmt.execute(&[&row.0, &row.1])?;
+        }
+    }
 
     //Check all latest include mc indexes are set
+    let mut stmt = db.prepare_cached(
+        "SELECT unit FROM units \
+         WHERE latest_included_mc_index IS NULL AND level!=0",
+    )?;
+    let rows = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    ensure!(
+        rows.len() == 0,
+        "{} units have latest_included_mc_index=NULL, e.g. unit {}",
+        rows.len(),
+        rows[0]
+    );
 
     //Update stable mc flag
     loop {
@@ -420,7 +530,7 @@ pub fn update_main_chain(db: &Connection, last_unit: &String) -> Result<()> {
         //Query witness level
 
         //mark_mc_index_stable(db, first_unstable_mc_index);
-        
+
         break;
     }
 
