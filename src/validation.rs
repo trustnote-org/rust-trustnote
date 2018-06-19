@@ -85,8 +85,10 @@ pub fn validate_author_signature_without_ref(
     _unit: &Unit,
     _definition: &String,
 ) -> Result<()> {
-    Ok(())
+    // Ok(())
     // TODO: unimplemented!() #37
+    println!("validate_author_signature_without_ref");
+    ::std::process::abort();
 }
 
 pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
@@ -703,7 +705,8 @@ fn validate_witnesses(
     _unit: &Unit,
     _validate_state: &mut ValidationState,
 ) -> Result<()> {
-    unimplemented!()
+    Ok(())
+    // unimplemented!()
 }
 
 fn validate_authors(
@@ -711,7 +714,8 @@ fn validate_authors(
     _unit: &Unit,
     _validate_state: &mut ValidationState,
 ) -> Result<()> {
-    unimplemented!()
+    Ok(())
+    // unimplemented!()
 }
 
 fn validate_messages(
@@ -719,5 +723,6 @@ fn validate_messages(
     _unit: &Unit,
     _validate_state: &mut ValidationState,
 ) -> Result<()> {
-    unimplemented!()
+    Ok(())
+    // unimplemented!()
 }

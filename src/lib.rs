@@ -36,6 +36,15 @@ macro_rules! some_if {
     }};
 }
 
+macro_rules! some_if_option {
+    ($condition:expr, $some:expr) => {{
+        match $condition {
+            true => $some,
+            _ => None,
+        }
+    }};
+}
+
 macro_rules! t {
     ($e:expr) => {
         match $e {
