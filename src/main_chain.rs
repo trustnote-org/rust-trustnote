@@ -395,16 +395,16 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
         for row in rows.iter() {
             main_chain_index += 1;
             let mut children_units = Vec::new();
+            let mut units = Vec::new();
             children_units.push(row.clone());
+            let mut children_units_list = children_units
+                .iter()
+                .map(|s| format!("'{}'", s))
+                .collect::<Vec<_>>()
+                .join(",");
 
             //Go up
             loop {
-                let children_units_list = children_units
-                    .iter()
-                    .map(|s| format!("'{}'", s))
-                    .collect::<Vec<_>>()
-                    .join(",");
-
                 let sql = format!(
                     "SELECT unit \n\
                      FROM parenthoods JOIN units ON parent_unit=unit \n\
@@ -417,21 +417,32 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
                     .collect::<::std::result::Result<Vec<String>, _>>()?;
 
                 if children_rows.len() == 0 {
-                    //Update Mc and then break
-                    let sql = format!(
-                        "UPDATE units SET main_chain_index={} WHERE unit IN({})",
-                        main_chain_index, children_units_list
-                    );
-                    let mut stmt = db.prepare_cached(&sql)?;
-                    stmt.execute(&[])?;
-
                     break;
                 } else {
-                    //Append children units and continue
-                    children_units.append(children_rows.as_mut());
+                    children_units_list = children_rows
+                        .iter()
+                        .map(|s| format!("'{}'", s))
+                        .collect::<Vec<_>>()
+                        .join(",");
+
+                    units.append(children_rows.as_mut());
                 }
             }
+
+            //Update main chain index
+            let unit_list = units
+                .iter()
+                .map(|s| format!("'{}'", s))
+                .collect::<Vec<_>>()
+                .join(",");
+            let sql = format!(
+                "UPDATE units SET main_chain_index={} WHERE unit IN({})",
+                main_chain_index, unit_list
+            );
+            let mut stmt = db.prepare_cached(&sql)?;
+            stmt.execute(&[])?;
         }
+
         info!("goDownAndUpdateMainChainIndex done");
     }
 
@@ -439,7 +450,7 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
     info!("Update latest included mc index {}", last_main_chain_index);
     let mut stmt = db.prepare_cached(
         "UPDATE units SET latest_included_mc_index=NULL \
-        WHERE main_chain_index>? OR main_chain_index IS NULL",
+         WHERE main_chain_index>? OR main_chain_index IS NULL",
     )?;
     let affected_rows = stmt.execute(&[&last_main_chain_index])?;
 
