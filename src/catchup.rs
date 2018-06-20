@@ -361,15 +361,13 @@ pub fn read_hash_tree(db: &Connection, hash_tree_req: HashTreeReq) -> Result<Vec
 }
 
 // this function take a new db connection
-pub fn process_hash_tree(balls: Vec<BallProps>) -> Result<()> {
-    use db::DB_POOL;
+pub fn process_hash_tree(db: &mut Connection, balls: Vec<BallProps>) -> Result<()> {
     use object_hash;
 
     if balls.is_empty() {
         return Ok(());
     }
 
-    let mut db = DB_POOL.get_connection();
     let _g = HASHTREE_MUTEX.lock().unwrap();
     let tx = db.transaction()?;
 
@@ -501,27 +499,30 @@ pub fn process_hash_tree(balls: Vec<BallProps>) -> Result<()> {
 
         check_skiplist_ball_exist()?;
     }
+    {
+        let mut stmt = tx.prepare_cached(
+            "SELECT ball, main_chain_index \
+             FROM catchup_chain_balls LEFT JOIN balls USING(ball) LEFT JOIN units USING(unit) \
+             ORDER BY member_index LIMIT 2",
+        )?;
 
-    let mut stmt = tx.prepare_cached(
-        "SELECT ball, main_chain_index \
-         FROM catchup_chain_balls LEFT JOIN balls USING(ball) LEFT JOIN units USING(unit) \
-         ORDER BY member_index LIMIT 2",
-    )?;
+        let rows_data: Vec<String> = stmt
+            .query_map(&[], |row| row.get(0))?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
 
-    let rows_data: Vec<String> = stmt
-        .query_map(&[], |row| row.get(0))?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        if rows_data.len() != 2 {
+            bail!("expecting to have 2 elements in the chain");
+        }
+        if rows_data[1] != last_ball {
+            bail!("tree root doesn't match second chain element");
+        }
 
-    if rows_data.len() != 2 {
-        bail!("expecting to have 2 elements in the chain");
+        let mut stmt = tx.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
+        stmt.execute(&[&rows_data[0]])?;
+        purge_handled_balls_from_hash_tree(&tx)?;
     }
-    if rows_data[1] != last_ball {
-        bail!("tree root doesn't match second chain element");
-    }
 
-    let mut stmt = tx.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
-    stmt.execute(&[&rows_data[0]])?;
-    purge_handled_balls_from_hash_tree(&tx)?;
+    tx.commit()?;
 
     Ok(())
 }

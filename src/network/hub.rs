@@ -525,7 +525,7 @@ impl HubConn {
 
     fn request_next_hash_tree(
         &self,
-        db: &Connection,
+        db: &mut Connection,
         from_ball: &str,
         to_ball: &str,
     ) -> Result<()> {
@@ -545,7 +545,7 @@ impl HubConn {
 
         let balls: Vec<catchup::BallProps> = serde_json::from_value(hash_tree["balls"].take())?;
         let units: Vec<String> = balls.iter().map(|b| b.unit.clone()).collect();
-        catchup::process_hash_tree(balls)?;
+        catchup::process_hash_tree(db, balls)?;
         self.request_new_missing_joints(db, &units)?;
         Ok(())
     }
@@ -745,7 +745,7 @@ pub fn start_catchup() -> Result<()> {
         None => return Ok(()),
     };
 
-    let db = db::DB_POOL.get_connection();
+    let mut db = db::DB_POOL.get_connection();
 
     let mut is_left_over = check_catchup_leftover(&db)?;
 
@@ -756,38 +756,43 @@ pub fn start_catchup() -> Result<()> {
 
     loop {
         // if there is no more work, start a new batch
-        let mut stmt = db.prepare_cached(
-            "SELECT 1 FROM hash_tree_balls LEFT JOIN units USING(unit) \
-             WHERE units.unit IS NULL LIMIT 1",
-        )?;
-        if stmt.exists(&[])? {
-            if is_left_over {
-                // skip sleep if is_left_over is true
-                is_left_over = false;
-            } else {
-                // every one second check again
-                coroutine::sleep(Duration::from_secs(1));
-                continue;
+        let balls = {
+            let mut stmt = db.prepare_cached(
+                "SELECT 1 FROM hash_tree_balls LEFT JOIN units USING(unit) \
+                 WHERE units.unit IS NULL LIMIT 1",
+            )?;
+            if stmt.exists(&[])? {
+                if is_left_over {
+                    // skip sleep if is_left_over is true
+                    is_left_over = false;
+                } else {
+                    // every one second check again
+                    coroutine::sleep(Duration::from_secs(1));
+                    continue;
+                }
             }
-        }
 
-        // try to start a new batch
-        let mut stmt = db
-            .prepare_cached("SELECT ball FROM catchup_chain_balls ORDER BY member_index LIMIT 2")?;
-        let balls = stmt
-            .query_map(&[], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
-        let len = balls.len();
-        if len == 0 {
-            break;
-        }
-        if len == 1 {
-            let mut stmt = db.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
-            stmt.execute(&[&balls[0]])?;
-            break;
-        }
+            // try to start a new batch
+            let mut stmt = db.prepare_cached(
+                "SELECT ball FROM catchup_chain_balls ORDER BY member_index LIMIT 2",
+            )?;
+            let balls = stmt
+                .query_map(&[], |row| row.get(0))?
+                .collect::<::std::result::Result<Vec<String>, _>>()?;
+            let len = balls.len();
+            if len == 0 {
+                break;
+            }
+            if len == 1 {
+                let mut stmt = db.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
+                stmt.execute(&[&balls[0]])?;
+                break;
+            }
 
-        if let Err(e) = ws.request_next_hash_tree(&db, &balls[0], &balls[1]) {
+            balls
+        };
+
+        if let Err(e) = ws.request_next_hash_tree(&mut db, &balls[0], &balls[1]) {
             error!("request_next_hash_tree err={}", e);
             // we try with a different connection
             ws = WSS.get_next_outbound();
