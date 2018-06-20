@@ -5,6 +5,7 @@ use may::sync::RwLock;
 
 pub const WS_PORT: u16 = 8080;
 pub const COUNT_WITNESSES: usize = 12;
+pub const MAX_WITNESS_LIST_MUTATIONS: usize = 1;
 pub const MAJORITY_OF_WITNESSES: usize = 7;
 pub const VERSION: &str = "1.0";
 pub const ALT: &str = "1";
