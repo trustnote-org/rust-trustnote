@@ -27,6 +27,16 @@ lazy_static! {
     });
 }
 
+pub fn is_genesis_unit(unit: &String) -> bool {
+    unit == ::config::GENESIS_UNIT
+    // exports.GENESIS_UNIT = 'rg1RzwKwnfRHjBojGol3gZaC5w7kR++rOR6O61JRsrQ=';
+}
+
+pub fn is_genesis_ball(ball: &String) -> bool {
+    let _ = ball;
+    unimplemented!()
+}
+
 pub fn is_known_unit(unit: &String) -> bool {
     {
         let g = CACHED_UNIT.read().unwrap();
@@ -55,6 +65,13 @@ pub fn forget_unit(unit: &String) {
     }
 
     unimplemented!()
+}
+
+pub fn read_witnesses(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
+    let mut stmt = db.prepare_cached("SELECT witness_list_unit FROM units WHERE unit=?")?;
+    let rows = stmt.query_map(&[unit_hash], |row| row.get(0))?;
+
+    read_witness_list(db, rows[0].witness_list_unit)
 }
 
 // TODO: need to cache in memory
