@@ -2,6 +2,7 @@ use config;
 use error::Result;
 use graph;
 use headers_commission;
+use joint::WRITER_MUTEX;
 use object_hash;
 use paid_witnessing;
 use rusqlite::Connection;
@@ -126,20 +127,40 @@ pub fn determin_if_stable_in_laster_units_and_update_stable_mc_flag(
     db: &Connection,
     earlier_unit: &String,
     later_units: &[String],
-    is_stable_in_db: u32, // this should be bool, but read from db
+    is_stable_in_db: bool, // this should be bool, but read from db
 ) -> Result<bool> {
-    let _ = (db, earlier_unit, later_units, is_stable_in_db);
-    unimplemented!()
-    // let stable_in_later_units = determin_if_stable_in_laster_units(db, arlier_unit, later_units)?;
-    // if !stable_in_later_units {
-    //     return Ok(false);
-    // }
+    let is_stable = determin_if_stable_in_laster_units(db, earlier_unit, later_units)?;
+    info!(
+        "determineIfStableInLaterUnits {}, {:?}, {}",
+        earlier_unit, later_units, is_stable
+    );
+    if !is_stable {
+        return Ok(false);
+    }
 
-    // if stable_in_later_units && is_stable_in_db {
-    //     return Ok(true);
-    // }
+    if is_stable && is_stable_in_db {
+        return Ok(true);
+    }
 
-    // info!("stable in parents, will wait for write lock");
+    info!("stable in parents, will wait for write lock");
+    let _g = WRITER_MUTEX.lock()?;
+    info!("stable in parents, got write lock");
+    let last_stable_mci = storage::read_last_stable_mc_index(db)?;
+    let prop = storage::read_unit_props(db, earlier_unit)?;
+    let new_last_stable_mci = prop.main_chain_index;
+    ensure!(
+        new_last_stable_mci > last_stable_mci,
+        "new last stable mci expected to be higher than existing"
+    );
+
+    let mut mci = last_stable_mci;
+
+    while mci <= new_last_stable_mci {
+        mci += 1;
+        mark_mc_index_stable(db, mci)?;
+    }
+
+    Ok(is_stable)
 }
 
 pub fn read_best_parent_and_its_witnesses(

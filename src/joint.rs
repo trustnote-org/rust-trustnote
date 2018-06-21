@@ -11,7 +11,7 @@ use serde_json;
 use spec::*;
 
 lazy_static! {
-    static ref WRITER_MUTEX: Mutex<()> = Mutex::new(());
+    pub static ref WRITER_MUTEX: Mutex<()> = Mutex::new(());
 }
 
 #[derive(Debug, Serialize, Deserialize)]

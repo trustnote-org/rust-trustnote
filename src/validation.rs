@@ -660,7 +660,7 @@ fn validate_parents(
         tx,
         last_ball_unit,
         &unit.parent_units,
-        last_ball_unit_props.is_stable,
+        last_ball_unit_props.is_stable == 1,
     )?;
 
     if !is_stable && last_ball_unit_props.is_stable == 1 {
