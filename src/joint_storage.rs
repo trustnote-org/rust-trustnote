@@ -152,7 +152,6 @@ where
     }
 
     let mut queries = db::DbQueries::new();
-    storage::generate_queries_to_archive_joint(&tx, &joint, "voided", &mut queries)?;
 
     collet_queries_to_purge_dependent_joints(&mut tx, rc_unit, &mut queries, err, f)?;
 
@@ -164,7 +163,7 @@ where
 
 fn collet_queries_to_purge_dependent_joints<F>(
     db: &Connection,
-    unit: Rc<String>,
+    mut unit: Rc<String>,
     queries: &mut db::DbQueries,
     err: &str,
     f: F,
@@ -179,44 +178,48 @@ where
         unit: String,
         peer: String,
     }
-    let unit_rows = stmt
-        .query_map(&[&*unit], |row| TempUnitProp {
-            unit: row.get(0),
-            peer: row.get(1),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+    loop {
+        let unit_rows = stmt
+            .query_map(&[&*unit], |row| TempUnitProp {
+                unit: row.get(0),
+                peer: row.get(1),
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
 
-    if unit_rows.is_empty() {
-        return Ok(());
-    }
-    let units_str = unit_rows
-        .iter()
-        .map(|s| format!("'{}'", s.unit))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let err_str = err.to_owned();
-
-    queries.add_query(move |db| {
-        let sql = format!(
-            "INSERT OR IGNORE INTO known_bad_joints (unit, json, error) \
-             SELECT unit, json, ? FROM unhandled_joints WHERE unit IN({})",
-            units_str
-        );
-        let mut stmt = db.prepare(&sql)?;
-        stmt.execute(&[&err_str])?;
-
-        let sql = format!("DELETE FROM unhandled_joints WHERE unit IN({})", units_str);
-        let mut stmt = db.prepare(&sql)?;
-        stmt.execute(&[])?;
-
-        let sql = format!("DELETE FROM dependencies WHERE unit IN({})", units_str);
-        let mut stmt = db.prepare(&sql)?;
-        stmt.execute(&[])?;
-
-        for unit_row in unit_rows {
-            f(&unit_row.unit, &unit_row.peer);
+        if unit_rows.is_empty() {
+            break;
         }
-        Ok(())
-    });
+
+        let units_str = unit_rows
+            .iter()
+            .map(|s| format!("'{}'", s.unit))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let err_str = err.to_owned();
+
+        queries.add_query(move |db| {
+            let sql = format!(
+                "INSERT OR IGNORE INTO known_bad_joints (unit, json, error) \
+                 SELECT unit, json, ? FROM unhandled_joints WHERE unit IN({})",
+                units_str
+            );
+            let mut stmt = db.prepare(&sql)?;
+            stmt.execute(&[&err_str])?;
+
+            let sql = format!("DELETE FROM unhandled_joints WHERE unit IN({})", units_str);
+            let mut stmt = db.prepare(&sql)?;
+            stmt.execute(&[])?;
+
+            let sql = format!("DELETE FROM dependencies WHERE unit IN({})", units_str);
+            let mut stmt = db.prepare(&sql)?;
+            stmt.execute(&[])?;
+
+            Ok(())
+        });
+
+        let prop = unit_rows.into_iter().nth(0).unwrap();
+        unit = Rc::new(prop.unit);
+        f(&unit, &prop.peer);
+    }
     Ok(())
 }
