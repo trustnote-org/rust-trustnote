@@ -1,4 +1,5 @@
 use std::net::ToSocketAddrs;
+// use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -385,7 +386,7 @@ impl HubConn {
                     ValidationError::UnitError { err } => {
                         warn!("{} validation failed: {}", unit, err);
                         self.send_error_result(unit, &err)?;
-                        self.purge_joint_and_dependencies_and_notify_peers(&joint, &err)?;
+                        self.purge_joint_and_dependencies_and_notify_peers(db, &joint, &err)?;
                         if !err.contains("authentifier verification failed")
                             && !err.contains("bad merkle proof at path")
                         {
@@ -457,11 +458,18 @@ impl HubConn {
 
     fn purge_joint_and_dependencies_and_notify_peers(
         &self,
+        db: &mut Connection,
         joint: &Joint,
         err: &str,
     ) -> Result<()> {
-        let _ = (joint, err);
-        unimplemented!()
+        if err.contains("is not stable in view of your parents") {
+            return Ok(());
+        }
+        joint_storage::purge_joint_and_dependencies(db, joint, err, |_unit, _peer| {
+            unimplemented!()
+            // WSS.get_connection_by_name(peer).map(|ws| ws.send_error(....).ok());
+        })?;
+        Ok(())
     }
 
     fn request_catchup(&self, db: &Connection) -> Result<()> {
