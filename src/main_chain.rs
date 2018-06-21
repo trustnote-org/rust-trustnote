@@ -1,3 +1,4 @@
+use config;
 use error::Result;
 use graph;
 use headers_commission;
@@ -6,7 +7,6 @@ use paid_witnessing;
 use rusqlite::Connection;
 use spec::*;
 use storage;
-use config;
 
 pub fn determin_if_stable_in_laster_units_and_update_stable_mc_flag(
     db: &Connection,
@@ -303,8 +303,58 @@ fn read_last_stable_mc_unit(db: &Connection) -> Result<String> {
     Ok(row.unwrap())
 }
 
-fn create_list_of_best_children(_db: &Connection, _parent_units: Vec<&String>) -> Result<String> {
-    unimplemented!()
+fn create_list_of_best_children(db: &Connection, parent_units: Vec<String>) -> Result<Vec<String>> {
+    let mut best_children = parent_units.clone();
+
+    if parent_units.len() > 0 {
+        //Go down and collect best children
+        let mut units_list = parent_units
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(",");
+        loop {
+            let sql = format!(
+                "SELECT unit, is_free FROM units WHERE best_parent_unit IN({})",
+                units_list
+            );
+            let mut stmt = db.prepare(&sql)?;
+
+            struct UnitTemp {
+                unit: String,
+                is_free: u32,
+            };
+
+            let rows = stmt
+                .query_map(&[], |row| UnitTemp {
+                    unit: row.get(0),
+                    is_free: row.get(1),
+                })?
+                .collect::<::std::result::Result<Vec<UnitTemp>, _>>()?;
+
+            let mut next_units = Vec::new();
+            for row in rows.iter() {
+                best_children.push(row.unit.clone());
+
+                //It has children, push it to the query of next round
+                if row.is_free != 1 {
+                    next_units.push(row.unit.clone());
+                }
+            }
+
+            if next_units.len() == 0 {
+                break;
+            } else {
+                units_list = next_units
+                    .iter()
+                    .map(|s| format!("'{}'", s))
+                    .collect::<Vec<_>>()
+                    .join(",");
+            }
+        }
+    }
+
+    Ok(best_children)
 }
 
 fn find_next_up_main_chain_unit(db: &Connection, unit: Option<&String>) -> Result<String> {
@@ -341,126 +391,11 @@ fn find_next_up_main_chain_unit(db: &Connection, unit: Option<&String>) -> Resul
     Ok(best_parent_unit)
 }
 
-pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<()> {
-    info!("Will Update MC");
-
-    //Go up from unit to find the last main chain unit and its index
-    let last_main_chain_index;
-    //let last_main_chain_unit;
-    let mut unit = last_unit.cloned();
-    loop {
-        if unit.is_some() && ::spec::is_genesis_unit(unit.as_ref().unwrap()) {
-            last_main_chain_index = 0;
-            //last_main_chain_unit = unit.as_ref().unwrap().clone();
-            break;
-        } else {
-            let best_parent_unit = find_next_up_main_chain_unit(db, unit.as_ref())?;
-            let best_parent_unit_props = storage::read_unit_props(db, &best_parent_unit)?;
-
-            if best_parent_unit_props.is_on_main_chain == 1 {
-                last_main_chain_index = best_parent_unit_props.main_chain_index;
-                //last_main_chain_unit = best_parent_unit;
-                break;
-            }
-
-            let mut stmt = db.prepare_cached(
-                "UPDATE units SET is_on_main_chain=1, main_chain_index=NULL WHERE unit=?",
-            )?;
-            stmt.execute(&[&best_parent_unit])?;
-
-            unit = Some(best_parent_unit);
-        }
-    }
-
-    if unit.is_some() {
-        //Check whether it is rebuilding stable main chain
-        info!("checkNotRebuildingStableMainChainAndGoDown {:?}", last_unit);
-        let mut stmt = db.prepare_cached(
-            "SELECT unit FROM units \
-             WHERE is_on_main_chain=1 AND main_chain_index>? AND is_stable=1 LIMIT 1",
-        )?;
-        let row = stmt.query_row(&[&last_main_chain_index], |row| row.get::<_, String>(0));
-
-        ensure!(
-            row.is_err(),
-            "removing stable witnessed unit {} from main chain",
-            row.unwrap()
-        );
-
-        //Go down and update main chain index
-        let mut stmt = db.prepare_cached(
-            "UPDATE units SET is_on_main_chain=0, main_chain_index=NULL WHERE main_chain_index>?",
-        )?;
-        stmt.execute(&[&last_main_chain_index])?;
-
-        let mut main_chain_index = last_main_chain_index;
-        //let main_chain_unit = last_main_chain_unit;
-
-        let mut stmt = db.prepare_cached(
-            "SELECT unit FROM units \
-             WHERE is_on_main_chain=1 AND main_chain_index IS NULL ORDER BY level",
-        )?;
-        let rows = stmt
-            .query_map(&[], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
-
-        ensure!(rows.len() > 0, "no unindexed MC units?");
-
-        for row in rows.iter() {
-            main_chain_index += 1;
-            let mut children_units = Vec::new();
-            let mut units = Vec::new();
-            children_units.push(row.clone());
-            let mut children_units_list = children_units
-                .iter()
-                .map(|s| format!("'{}'", s))
-                .collect::<Vec<_>>()
-                .join(",");
-
-            //Go up
-            loop {
-                let sql = format!(
-                    "SELECT unit \
-                     FROM parenthoods JOIN units ON parent_unit=unit \
-                     WHERE child_unit IN({}) AND main_chain_index IS NULL",
-                    children_units_list
-                );
-                let mut stmt = db.prepare(&sql)?;
-                let mut children_rows = stmt
-                    .query_map(&[], |row| row.get(0))?
-                    .collect::<::std::result::Result<Vec<String>, _>>()?;
-
-                if children_rows.len() == 0 {
-                    break;
-                } else {
-                    children_units_list = children_rows
-                        .iter()
-                        .map(|s| format!("'{}'", s))
-                        .collect::<Vec<_>>()
-                        .join(",");
-
-                    units.append(children_rows.as_mut());
-                }
-            }
-
-            //Update main chain index
-            let unit_list = units
-                .iter()
-                .map(|s| format!("'{}'", s))
-                .collect::<Vec<_>>()
-                .join(",");
-            let sql = format!(
-                "UPDATE units SET main_chain_index={} WHERE unit IN({})",
-                main_chain_index, unit_list
-            );
-            let mut stmt = db.prepare_cached(&sql)?;
-            stmt.execute(&[])?;
-        }
-
-        info!("goDownAndUpdateMainChainIndex done");
-    }
-
-    //Update latest included mc index
+fn update_latest_included_mc_index(
+    db: &Connection,
+    last_main_chain_index: u32,
+    rebuild_mc: bool,
+) -> Result<()> {
     info!("Update latest included mc index {}", last_main_chain_index);
     let mut stmt = db.prepare_cached(
         "UPDATE units SET latest_included_mc_index=NULL \
@@ -488,7 +423,7 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
     info!("{} rows", rows.len());
 
     ensure!(
-        rows.len() != 0,
+        rows.len() != 0 || !rebuild_mc,
         "no latest_included_mc_index updated, last_mci={}, affected={}",
         last_main_chain_index,
         affected_rows
@@ -544,7 +479,10 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
         rows[0]
     );
 
-    //Update stable mc flag
+    Ok(())
+}
+
+fn update_mc_flag(db: &Connection) -> Result<()> {
     loop {
         info!("Update stable mc flag");
 
@@ -587,6 +525,7 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
             last_stable_mc_unit
         );
 
+        //Current main chain
         let mc_child: Vec<TempUnitProp> = best_children
             .iter()
             .filter(|r| r.is_on_main_chain == 1)
@@ -596,32 +535,32 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
         ensure!(mc_child.len() == 1, "not a single MC child?");
         //let first_unstable_mc_unit = mc_child[0].unit.clone();
         let first_unstable_mc_index = mc_child[0].main_chain_index;
-        //let first_unstable_mc_level = mc_child[0].level;
+        let first_unstable_mc_level = mc_child[0].level;
 
         let alt_children: Vec<TempUnitProp> = best_children
             .into_iter()
             .filter(|r| r.is_on_main_chain == 0)
             .collect();
 
-        let alt_branch_root_units: Vec<&String> =
-            alt_children.iter().map(|row| &row.unit).collect();
+        //The alternative branch
+        let alt_branch_root_units: Vec<String> =
+            alt_children.iter().map(|row| row.unit.clone()).collect();
 
-        //Query witness level
-        let mc_end_witnessed_level = {
-            let mut stmt = db.prepare_cached(
-                "SELECT witnessed_level FROM units WHERE is_free=1 AND is_on_main_chain=1",
-            )?;
-            let rows = stmt
-                .query_map(&[], |row| row.get(0))?
-                .collect::<::std::result::Result<Vec<u32>, _>>()?;
-
-            ensure!(rows.len() == 1, "not a single mc wl");
-
-            // this is the level when we collect 7 witnesses if walking up the MC from its end
-            rows[0]
-        };
-
+        //Query main chain witness level
         let min_mc_wl = {
+            let mc_end_witnessed_level = {
+                let mut stmt = db.prepare_cached(
+                    "SELECT witnessed_level FROM units WHERE is_free=1 AND is_on_main_chain=1",
+                )?;
+                let rows = stmt
+                    .query_map(&[], |row| row.get(0))?
+                    .collect::<::std::result::Result<Vec<u32>, _>>()?;
+
+                ensure!(rows.len() == 1, "not a single mc wl");
+
+                // this is the level when we collect 7 witnesses if walking up the MC from its end
+                rows[0]
+            };
             let sql = format!(
                 "SELECT MIN(witnessed_level) AS min_mc_wl FROM units \
                  LEFT JOIN unit_authors USING(unit) \
@@ -638,10 +577,20 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
             rows[0]
         };
 
-        if alt_branch_root_units.len() > 0 {
+        let mut stable = false;
+        if alt_branch_root_units.len() == 0 {
+            // no alt branches
+            if min_mc_wl >= first_unstable_mc_level {
+                stable = true;;
+            }
+        } else {
             let max_alt_level = {
                 let alt_best_children_list =
-                    create_list_of_best_children(db, alt_branch_root_units)?;
+                    create_list_of_best_children(db, alt_branch_root_units)?
+                        .iter()
+                        .map(|s| format!("'{}'", s))
+                        .collect::<Vec<_>>()
+                        .join(",");
 
                 // Compose a set S of units that increase WL, that is their own WL is greater than that of every parent.
                 // In this set, find max L. Alt WL will never reach it. If min_mc_wl > L, next MC unit is stable.
@@ -669,18 +618,160 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
                 rows[0]
             };
 
-            if min_mc_wl <= max_alt_level {
-                break;
-            }
-        } else {
-            if min_mc_wl < first_unstable_mc_index {
-                break;
+            if min_mc_wl > max_alt_level {
+                stable = true;
             }
         }
 
-        //Advanced last stable Mc unit and try next
-        mark_mc_index_stable(db, first_unstable_mc_index)?;
+        if stable {
+            //Advanced last stable Mc unit and try next
+            mark_mc_index_stable(db, first_unstable_mc_index)?;
+        } else {
+            break;
+        }
     }
+
+    Ok(())
+}
+
+fn go_down_and_update_main_chain_index(db: &Connection, last_main_chain_index: u32) -> Result<()> {
+    info!("goDownAndUpdateMainChainIndex start");
+
+    let mut stmt = db.prepare_cached(
+        "UPDATE units SET is_on_main_chain=0, main_chain_index=NULL WHERE main_chain_index>?",
+    )?;
+    stmt.execute(&[&last_main_chain_index])?;
+
+    let mut main_chain_index = last_main_chain_index;
+
+    let mut stmt = db.prepare_cached(
+        "SELECT unit FROM units \
+         WHERE is_on_main_chain=1 AND main_chain_index IS NULL ORDER BY level",
+    )?;
+    let rows = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    ensure!(rows.len() > 0, "no unindexed MC units?");
+
+    for row in rows.iter() {
+        main_chain_index += 1;
+        let mut children_units = Vec::new();
+        let mut units = Vec::new();
+        children_units.push(row.clone());
+        let mut children_units_list = children_units
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        //Go up
+        loop {
+            let sql = format!(
+                "SELECT unit \
+                 FROM parenthoods JOIN units ON parent_unit=unit \
+                 WHERE child_unit IN({}) AND main_chain_index IS NULL",
+                children_units_list
+            );
+            let mut stmt = db.prepare(&sql)?;
+            let mut children_rows = stmt
+                .query_map(&[], |row| row.get(0))?
+                .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+            if children_rows.len() == 0 {
+                break;
+            } else {
+                children_units_list = children_rows
+                    .iter()
+                    .map(|s| format!("'{}'", s))
+                    .collect::<Vec<_>>()
+                    .join(",");
+
+                units.append(children_rows.as_mut());
+            }
+        }
+
+        //Update main chain index
+        let unit_list = units
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "UPDATE units SET main_chain_index={} WHERE unit IN({})",
+            main_chain_index, unit_list
+        );
+        let mut stmt = db.prepare_cached(&sql)?;
+        stmt.execute(&[])?;
+    }
+
+    info!("goDownAndUpdateMainChainIndex done");
+
+    Ok(())
+}
+
+fn check_not_rebuild_stable_main_chain(db: &Connection, last_main_chain_index: u32) -> Result<()> {
+    let mut stmt = db.prepare_cached(
+        "SELECT unit FROM units \
+            WHERE is_on_main_chain=1 AND main_chain_index>? AND is_stable=1 LIMIT 1",
+    )?;
+    let row = stmt.query_row(&[&last_main_chain_index], |row| row.get::<_, String>(0));
+
+    ensure!(
+        row.is_err(),
+        "removing stable witnessed unit {} from main chain",
+        row.unwrap()
+    );
+
+    Ok(())
+}
+
+fn go_up_from_unit(db: &Connection, unit: Option<&String>) -> Result<(Option<String>, u32)> {
+    let mut unit = unit.cloned();
+    let last_main_chain_index;
+    loop {
+        if unit.is_some() && ::spec::is_genesis_unit(unit.as_ref().unwrap()) {
+            last_main_chain_index = 0;
+            break;
+        } else {
+            let best_parent_unit = find_next_up_main_chain_unit(db, unit.as_ref())?;
+            let best_parent_unit_props = storage::read_unit_props(db, &best_parent_unit)?;
+
+            if best_parent_unit_props.is_on_main_chain == 1 {
+                last_main_chain_index = best_parent_unit_props.main_chain_index;
+                break;
+            }
+
+            let mut stmt = db.prepare_cached(
+                "UPDATE units SET is_on_main_chain=1, main_chain_index=NULL WHERE unit=?",
+            )?;
+            stmt.execute(&[&best_parent_unit])?;
+
+            unit = Some(best_parent_unit);
+        }
+    }
+
+    Ok((unit, last_main_chain_index))
+}
+
+pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<()> {
+    info!("Will Update MC");
+
+    //Go up to find the first unit not in main chain and its best_parent's main chain index
+    let (unit, last_main_chain_index) = go_up_from_unit(db, last_unit)?;
+
+    if unit.is_some() {
+        info!("checkNotRebuildingStableMainChainAndGoDown {:?}", last_unit);
+        check_not_rebuild_stable_main_chain(db, last_main_chain_index)?;
+        go_down_and_update_main_chain_index(db, last_main_chain_index)?;
+    }
+
+    //Update latest included mc index
+    let rebuild_mc = unit.is_some();
+    update_latest_included_mc_index(db, last_main_chain_index, rebuild_mc)?;
+
+    //Update stable mc flag
+    update_mc_flag(db)?;
 
     //Finish
     info!("Done Update MC");
