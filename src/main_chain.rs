@@ -6,7 +6,6 @@ use graph;
 use headers_commission;
 use object_hash;
 use paid_witnessing;
-use spec;
 use storage;
 
 pub fn determin_if_stable_in_laster_units(
@@ -18,9 +17,6 @@ pub fn determin_if_stable_in_laster_units(
         return Ok(true);
     }
 
-    //let mut hash_list = later_units.clone();
-    let hash_list = later_units.join(",");
-
     let (earlier_unit_props, later_units_props) =
         storage::read_props_of_units(db, earlier_unit, later_units)?;
 
@@ -28,17 +24,21 @@ pub fn determin_if_stable_in_laster_units(
         return Ok(false);
     }
 
-    ensure!(!later_units_props.is_empty(), "later_units_props is empty!");
-
     let max_later_limci = later_units_props
         .iter()
-        .max_by_key(|props| props.latest_included_mc_index)
-        .unwrap()
-        .latest_included_mc_index;
+        .map(|prop| prop.latest_included_mc_index)
+        .max()
+        .unwrap_or(0);
 
     let (best_parent_unit, arr_witnesses) = read_best_parent_and_its_witnesses(db, earlier_unit)?;
 
-    let stmt = db.prepare_cached(
+    let witnesses_set = arr_witnesses
+        .into_iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let mut stmt = db.prepare_cached(
         "SELECT unit, is_on_main_chain, main_chain_index, level \
          FROM units WHERE best_parent_unit=?",
     )?;
@@ -73,51 +73,53 @@ pub fn determin_if_stable_in_laster_units(
         .collect();
 
     ensure!(mc_rows.len() == 1, "not a single MC child");
+    let mc_unit_prop = mc_rows.into_iter().nth(0).unwrap();
 
-    let first_unstable_mc_unit = mc_rows[0].unit;
+    let first_unstable_mc_unit = mc_unit_prop.unit;
     ensure!(
         first_unstable_mc_unit == *earlier_unit,
         "first unstable MC unit is not our input unit"
     );
 
-    let first_unstable_mc_index = mc_rows[0].main_chain_index;
-    let first_unstable_mc_level = mc_rows[0].level;
-    let alt_branch_root_units: Vec<&String> = alt_rows.iter().map(|row| &row.unit).collect();
+    let first_unstable_mc_level = mc_unit_prop.level;
+    let alt_branch_root_units: Vec<String> = alt_rows.into_iter().map(|row| row.unit).collect();
 
-    let min_mc_wl = find_min_mc_witnessed_level(arr_witnesses, later_units)?;
-    let mut has_alt_branches = determine_if_has_alt_branches(arr_alt_branch_root_units);
-
-    if has_alt_branches {
-        let mut arr_alt_best_children = create_list_of_best_children_included_by_later_units(
-            arr_alt_branch_root_units,
-            max_later_limci,
-        );
-
-        let stmt = db.prepare_cached(
-            "SELECT MAX(units.level) AS max_alt_level FROM units \
-             LEFT JOIN parenthoods ON units.unit=child_unit \
-             LEFT JOIN units AS punits ON parent_unit=punits.unit \
-             AND punits.witnessed_level >= units.witnessed_level \
-             WHERE units.unit IN(?) AND punits.unit IS NULL AND ( \
-             SELECT COUNT(*) FROM unit_witnesses \
-             WHERE unit_witnesses.unit IN(units.unit, units.witness_list_unit) \
-             AND unit_witnesses.address IN(?)) >= ?",
-        )?;
-
-        let rows = stmt.query_map(
-            &[
-                arr_alt_best_children,
-                arr_witnesses,
-                config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS,
-            ],
-            |row| row.get(0),
-        )?;
-
-        ensure!(rows.len() != 1, "not a single max alt level");
-        first_unstable_mc_level = rows[0].max_alt_level;
+    let min_mc_wl = find_min_mc_witnessed_level(db, &witnesses_set, later_units)?;
+    if !determine_if_has_alt_branches(db, later_units, &alt_branch_root_units)? {
+        return Ok(min_mc_wl >= first_unstable_mc_level);
     }
 
-    Ok(min_mc_wl >= first_unstable_mc_level)
+    let alt_best_children = create_list_of_best_children_included_by_later_units(
+        db,
+        later_units,
+        &alt_branch_root_units,
+        max_later_limci,
+    )?.into_iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let sql = format!(
+        "SELECT MAX(units.level) AS max_alt_level FROM units \
+         LEFT JOIN parenthoods ON units.unit=child_unit \
+         LEFT JOIN units AS punits ON parent_unit=punits.unit \
+         AND punits.witnessed_level >= units.witnessed_level \
+         WHERE units.unit IN({}) AND punits.unit IS NULL AND ( \
+         SELECT COUNT(*) FROM unit_witnesses \
+         WHERE unit_witnesses.unit IN(units.unit, units.witness_list_unit) \
+         AND unit_witnesses.address IN({})) >= {}",
+        alt_best_children,
+        witnesses_set,
+        config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS,
+    );
+
+    let mut stmt = db.prepare(&sql)?;
+    let rows: Vec<u32> = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    ensure!(rows.len() == 1, "not a single max alt level");
+    Ok(min_mc_wl >= rows[0])
 }
 
 pub fn determin_if_stable_in_laster_units_and_update_stable_mc_flag(
@@ -126,18 +128,18 @@ pub fn determin_if_stable_in_laster_units_and_update_stable_mc_flag(
     later_units: &[String],
     is_stable_in_db: u32, // this should be bool, but read from db
 ) -> Result<bool> {
-    //let _ = (db, earlier_unit, later_units, is_stable_in_db);
-    //unimplemented!()
-    let stable_in_later_units = determin_if_stable_in_laster_units(db, arlier_unit, later_units)?;
-    if !stable_in_later_units {
-        return Ok(false);
-    }
+    let _ = (db, earlier_unit, later_units, is_stable_in_db);
+    unimplemented!()
+    // let stable_in_later_units = determin_if_stable_in_laster_units(db, arlier_unit, later_units)?;
+    // if !stable_in_later_units {
+    //     return Ok(false);
+    // }
 
-    if stable_in_later_units && is_stable_in_db {
-        return Ok(true);
-    }
+    // if stable_in_later_units && is_stable_in_db {
+    //     return Ok(true);
+    // }
 
-    info!("stable in parents, will wait for write lock");
+    // info!("stable in parents, will wait for write lock");
 }
 
 pub fn read_best_parent_and_its_witnesses(
@@ -147,28 +149,22 @@ pub fn read_best_parent_and_its_witnesses(
     let prop = storage::read_static_unit_property(db, unit_hash)?;
     let arr_witnesses = storage::read_witnesses(db, &prop.best_parent_unit)?;
 
-    Ok((&prop.best_parent_unit, arr_witnesses))
+    Ok((prop.best_parent_unit, arr_witnesses))
 }
 
 fn find_min_mc_witnessed_level(
     db: &Connection,
-    witnesses: &[String],
+    witnesses_set: &str,
     later_units: &[String],
 ) -> Result<u32> {
     let mut min_mc_wl = ::std::u32::MAX;
-    let count = 0;
+    let mut count = 0;
 
     struct OutputTemp {
         witnessed_level: u32,
         best_parent_unit: String,
         count: u32,
     };
-
-    let witnesses_set = witnesses
-        .iter()
-        .map(|s| format!("'{}'", s))
-        .collect::<Vec<_>>()
-        .join(",");
 
     let later_units_set = later_units
         .iter()
@@ -194,21 +190,20 @@ fn find_min_mc_witnessed_level(
         })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
-    if !rows.is_empty() {
-        min_mc_wl = rows[0].witnessed_level;
-        count += rows.len();
-    }
+    ensure!(!rows.is_empty(), "find_min_mc_witnessed_level: not 1 row");
+    min_mc_wl = rows[0].witnessed_level;
+    count += rows.len();
 
-    let mut best_parent_unit = rows[0].best_parent_unit;
+    let mut start_unit = rows.into_iter().nth(0).unwrap().best_parent_unit;
 
     while count < config::MAJORITY_OF_WITNESSES {
         let sql = format!(
             "SELECT best_parent_unit, witnessed_level, \
 						(SELECT COUNT(*) FROM unit_authors WHERE unit_authors.unit=units.unit AND address IN({})) AS count \
-						FROM units WHERE unit=?", witnesses_set);
+						FROM units WHERE unit={}", witnesses_set, start_unit);
         let mut stmt = db.prepare(&sql)?;
         let rows = stmt
-            .query_map(&[&best_parent_unit], |row| OutputTemp {
+            .query_map(&[], |row| OutputTemp {
                 best_parent_unit: row.get(0),
                 witnessed_level: row.get(1),
                 count: row.get(2),
@@ -216,119 +211,133 @@ fn find_min_mc_witnessed_level(
             .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         ensure!(rows.len() == 1, "findMinMcWitnessedLevel: not 1 row");
+        let row = rows.into_iter().nth(0).unwrap();
 
-        if rows[0].count > 0 && rows[0].witnessed_level < min_mc_wl {
-            min_mc_wl = rows[0].witnessed_level;
+        if row.count > 0 && row.witnessed_level < min_mc_wl {
+            min_mc_wl = row.witnessed_level;
         }
-        count += rows[0].count as usize;
+        count += row.count as usize;
+        start_unit = row.best_parent_unit;
     }
 
     Ok(min_mc_wl)
 }
 
-pub fn determine_if_has_alt_branches(
+fn determine_if_has_alt_branches(
     db: &Connection,
-    earlier_unit: &String,
     later_units: &[String],
-    arr_alt_branch_root_units: &[String],
+    alt_branch_root_units: &[String],
 ) -> Result<bool> {
-    if arr_alt_branch_root_units.size() == 0 {
+    if alt_branch_root_units.is_empty() {
         return Ok(false);
     }
 
-    graph::determine_if_included(db, earlier_unit, later_units).unwrap()?;
-}
-
-pub fn create_list_of_best_children_included_by_later_units(
-    db: &Connection,
-    later_units: &[String],
-    arr_alt_branch_root_units: &[String],
-    max_later_limci: &u32,
-) -> Result<Vec<String>> {
-    let mut arr_best_children = Vec::new();
-
-    if arr_alt_branch_root_units.size() == 0 {
-        return OK(arr_best_children);
+    for alt_root_unit in alt_branch_root_units {
+        if graph::determine_if_included_or_equal(db, alt_root_unit, later_units)? {
+            return Ok(true);
+        }
     }
 
-    filter_alt_branch_root_units(
-        db,
-        later_units,
-        &arr_best_children,
-        arr_alt_branch_root_units,
-        max_later_limci,
-    )
+    Ok(false)
 }
 
-pub fn filter_alt_branch_root_units(
+fn create_list_of_best_children_included_by_later_units(
     db: &Connection,
     later_units: &[String],
-    arr_best_children: &[String],
-    arr_alt_branch_root_units: &[String],
-    max_later_limci: &u32,
+    alt_branch_root_units: &[String],
+    max_later_limci: u32,
 ) -> Result<Vec<String>> {
-    let mut arr_filtered_alt_branch_root_units = Vec::new();
+    if alt_branch_root_units.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    let stmt =
-        db.prepare_cached("SELECT unit, is_free, main_chain_index FROM units WHERE unit IN(?)")?;
+    let mut best_children = Vec::new();
 
-    let rows = stmt.query_map(&[arr_alt_branch_root_units], |row| spec::UnitProps {
-        unit: row.get(0),
-        is_free: row.get(1),
-        main_chain_index: row.get(2),
-    })?;
+    let mut filtered_alt_branch_root_units = Vec::new();
 
-    ensure!(rows.count() != 0, "no alt branch root units?");
+    let alt_branch_root_units_set = alt_branch_root_units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<String>>()
+        .join(",");
+
+    let sql = format!(
+        "SELECT unit, is_free, main_chain_index FROM units WHERE unit IN({})",
+        alt_branch_root_units_set
+    );
+
+    let mut stmt = db.prepare(&sql)?;
+
+    struct TempUnitProp {
+        unit: String,
+        is_free: u32,
+        main_chain_index: Option<u32>,
+    }
+
+    let rows = stmt
+        .query_map(&[], |row| TempUnitProp {
+            unit: row.get(0),
+            is_free: row.get(1),
+            main_chain_index: row.get(2),
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    ensure!(!rows.is_empty(), "no alt branch root units?");
 
     for row in rows {
-        let row = row?;
-        if row.main_chain_index.is_some() && row.main_chain_index <= max_later_limci {
-            arr_best_children.push(row.unit);
-            arr_filtered_alt_branch_root_units.push(row.unit);
-        } else {
-            let mut included = graph::determine_if_included(db, row.unit, later_units).unwrap()?;
-            if included {
-                arr_best_children.push(row.unit);
-                arr_filtered_alt_branch_root_units.push(row.unit);
-            }
-        }
+        let is_included =
+            if row.main_chain_index.is_some() && row.main_chain_index <= Some(max_later_limci) {
+                true
+            } else {
+                graph::determine_if_included_or_equal(db, &row.unit, later_units)?
+            };
 
-        let mut arr_start_units = arr_filtered_alt_branch_root_units.clone();
+        if is_included {
+            best_children.push(row.unit.clone());
+            filtered_alt_branch_root_units.push(row.unit);
+        }
+    }
+
+    for mut start_unit in filtered_alt_branch_root_units {
         loop {
-            let stmt2 = db.prepare_cached(
-                "SELECT unit, is_free, main_chain_index FROM units WHERE best_parent_unit IN(?)",
+            let mut stmt = db.prepare_cached(
+                "SELECT unit, is_free, main_chain_index FROM units WHERE best_parent_unit = ?",
             )?;
 
-            let rows2 = stmt2.query_map(&[arr_start_units], |row| spec::UnitProps {
-                unit: row.get(0),
-                is_free: row.get(1),
-                main_chain_index: row.get(2),
-            })?;
+            let rows = stmt
+                .query_map(&[&start_unit], |row| TempUnitProp {
+                    unit: row.get(0),
+                    is_free: row.get(1),
+                    main_chain_index: row.get(2),
+                })?
+                .collect::<::std::result::Result<Vec<_>, _>>()?;
 
-            ensure!(rows2.count() != 0, "no alt branch root units?");
+            if rows.is_empty() {
+                break;
+            }
 
-            for row2 in rows2 {
-                let row2 = row2?;
-                let included = false;
-                if rows2.main_chain_index.is_some() && row2.main_chain_index <= max_later_limci {
-                    included = true;
+            let row = rows.into_iter().nth(0).unwrap();
+
+            let included = if row.main_chain_index.is_some()
+                && row.main_chain_index <= Some(max_later_limci)
+            {
+                true
+            } else {
+                graph::determine_if_included_or_equal(db, &row.unit, later_units)?
+            };
+
+            if included {
+                best_children.push(row.unit.clone());
+                if row.is_free == 1 {
+                    break;
                 } else {
-                    included = gragh::determine_if_included(db, row2.unit, later_units).unwrap()?;
-                }
-
-                if included {
-                    arr_best_children.push(row2.unit);
-                    if row2.if_free == 1 {
-                        arr_start_units.clear();
-                        break;
-                    } else {
-                        arr_start_units.clear();
-                        arr_start_units.push(row2.unit);
-                    }
+                    start_unit = row.unit;
                 }
             }
         }
     }
+
+    Ok(best_children)
 }
 
 fn set_content_hash(db: &Connection, unit: &String) -> Result<()> {
