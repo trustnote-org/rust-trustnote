@@ -1,7 +1,7 @@
 // use std::io::Read;
 use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -90,11 +90,13 @@ pub struct WsConnection<T> {
     // peer name is never changed once init
     peer: String,
     // the waiting request
-    req_map: Arc<WaiterMap<String, Value>>,
+    req_map: Arc<WaiterMap<usize, Value>>,
     // the listening coroutine
     listener: AtomicOption<JoinHandle<()>>,
     // the actual state data
     data: T,
+    // for request unique id generation
+    id: AtomicUsize,
 }
 
 impl<T> Sender for WsConnection<T> {
@@ -151,7 +153,7 @@ impl<T> WsConnection<T> {
     where
         T: Server<T> + Send + Sync + 'static,
     {
-        let req_map = Arc::new(WaiterMap::<String, Value>::new());
+        let req_map = Arc::new(WaiterMap::new());
 
         let req_map_1 = req_map.clone();
         let mut reader = WebSocket::from_raw_socket(ws.get_ref().try_clone()?, role);
@@ -164,6 +166,7 @@ impl<T> WsConnection<T> {
             req_map: req_map,
             listener: AtomicOption::none(),
             data: data,
+            id: AtomicUsize::new(0),
         });
 
         // we can't have a strong ref in the driver coroutine!
@@ -248,13 +251,14 @@ impl<T> WsConnection<T> {
                     }
                     "response" => {
                         // set the wait req
-                        let tag = match value[1]["tag"].as_str() {
-                            Some(t) => t.to_owned(),
+                        let tag = match value[1]["tag"].as_u64() {
+                            Some(t) => t as usize,
                             None => {
                                 error!("tag is not found for response");
                                 continue;
                             }
                         };
+                        info!("got response for tag={}", tag);
                         req_map_1.set_rsp(&tag, value).ok();
                     }
                     s => {
@@ -274,7 +278,7 @@ impl<T> WsConnection<T> {
             Value::Null => json!({ "command": command }),
             _ => json!({"command": command, "params": param}),
         };
-        let tag = ::object_hash::get_base64_hash(&request)?;
+        let tag = self.id.fetch_add(1, Ordering::Relaxed);
         request["tag"] = json!(tag);
 
         let blocker = self.req_map.new_waiter(tag);
@@ -284,7 +288,7 @@ impl<T> WsConnection<T> {
         #[derive(Deserialize)]
         struct Response {
             #[allow(dead_code)]
-            tag: String,
+            tag: usize,
             #[serde(default)]
             response: Value,
         };

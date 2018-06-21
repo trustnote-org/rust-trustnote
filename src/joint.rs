@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use config::*;
 use db;
 use definition;
 use error::Result;
@@ -202,38 +203,40 @@ impl Joint {
                 }
             }
 
-            // TODO: add spend_proofs, we dont't have spend_proofs now
-            // for (j, spend_proof) in message.spend_proofs.iter().enumerate() {
-            //     let mut stmt = tx.prepare_cached(
-            //         "INSERT INTO spend_proofs (unit, message_index, spend_proof_index, spend_proof, address) \
-            //         VALUES(?,?,?,?,?)")?;
-            //     let address = spend_proof.address.as_ref().unwrap_or(&author_addresses[0]);
-            //     stmt.insert(&[
-            //         unit_hash,
-            //         &(i as u32),
-            //         &(j as u32),
-            //         &spend_proof.spend_proof,
-            //         address,
-            //     ])?;
-            // }
+            for (j, spend_proof) in message.spend_proofs.iter().enumerate() {
+                let mut stmt = tx.prepare_cached(
+                    "INSERT INTO spend_proofs (unit, message_index, spend_proof_index, spend_proof, address) \
+                    VALUES(?,?,?,?,?)")?;
+                let address = spend_proof
+                    .address
+                    .as_ref()
+                    .unwrap_or(&self.unit.authors[0].address);
+                stmt.insert(&[
+                    unit_hash,
+                    &(i as u32),
+                    &(j as u32),
+                    &spend_proof.spend_proof,
+                    address,
+                ])?;
+            }
         }
         Ok(())
     }
 
-    #[allow(dead_code)]
-    fn save_header_earnings(&self, _tx: &Transaction) -> Result<()> {
-        // TODO: unimplemented!()
+    fn save_header_earnings(&self, tx: &Transaction) -> Result<()> {
+        let unit = &self.unit;
+        for recipient in unit.earned_headers_commission_recipients.iter() {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO earned_headers_commission_recipients \
+                 (unit, address, earned_headers_commission_share) VALUES(?,?,?)",
+            )?;
+            stmt.insert(&[
+                &unit.unit,
+                &recipient.address,
+                &recipient.earned_headers_commission_share,
+            ])?;
+        }
 
-        /*
-        if ("earned_headers_commission_recipients" in objUnit){
-			for (var i=0; i<objUnit.earned_headers_commission_recipients.length; i++){
-				var recipient = objUnit.earned_headers_commission_recipients[i];
-				conn.addQuery(arrQueries, 
-					"INSERT INTO earned_headers_commission_recipients (unit, address, earned_headers_commission_share) VALUES(?,?,?)", 
-					[objUnit.unit, recipient.address, recipient.earned_headers_commission_share]);
-			}
-		}
-        */
         Ok(())
     }
 
@@ -249,17 +252,33 @@ impl Joint {
         let sql = format!(
             "SELECT unit \
              FROM units AS parent_units \
-             WHERE unit IN({}) AND (witness_list_unit=?) \
-             ORDER BY \
-             witnessed_level DESC, \
+             WHERE unit IN({}) \
+             AND (witness_list_unit=? OR ( \
+             SELECT COUNT(*) \
+             FROM unit_witnesses \
+             JOIN unit_witnesses AS parent_witnesses USING(address) \
+             WHERE parent_witnesses.unit IN(parent_units.unit, parent_units.witness_list_unit) \
+             AND unit_witnesses.unit IN(?, ?) \
+             )>=?) \
+             ORDER BY witnessed_level DESC, \
              level-witnessed_level ASC, \
              unit ASC \
              LIMIT 1",
             parents_set
         );
 
-        let best_parent_unit: String =
-            tx.query_row(&sql, &[&unit.witness_list_unit], |row| row.get(0))?;
+        let witness_diff: u32 = (COUNT_WITNESSES - MAX_WITNESS_LIST_MUTATIONS) as u32;
+
+        let best_parent_unit: String = tx.query_row(
+            &sql,
+            &[
+                &unit.witness_list_unit,
+                &unit.unit,
+                &unit.witness_list_unit,
+                &witness_diff,
+            ],
+            |row| row.get(0),
+        )?;
 
         let mut stmt = tx.prepare_cached("UPDATE units SET best_parent_unit=? WHERE unit=?")?;
         stmt.execute(&[&best_parent_unit, self.get_unit_hash()])?;
@@ -316,7 +335,7 @@ impl Joint {
                 }
             }
 
-            if collected_witnesses.len() >= ::config::MAJORITY_OF_WITNESSES {
+            if collected_witnesses.len() >= MAJORITY_OF_WITNESSES {
                 return self.save_witness_level(tx, level);
             }
 
@@ -502,12 +521,13 @@ impl Joint {
         self.save_messages(&tx)?;
         self.save_header_earnings(&tx)?;
         self.save_inline_payment(&tx)?;
-        let best_parent_unit = self.update_best_parent(&tx)?;
-        self.update_level(&tx)?;
-        self.update_witness_level(&tx, best_parent_unit)?;
-        // TODO: add update mainchain()
-        // main_chain::update_main_chain()?;
-
+        if !self.unit.parent_units.is_empty() {
+            let best_parent_unit = self.update_best_parent(&tx)?;
+            self.update_level(&tx)?;
+            self.update_witness_level(&tx, best_parent_unit)?;
+            // TODO: add update mainchain()
+            // main_chain::update_main_chain()?;
+        }
         // TODO: add precommit hook
         tx.commit()?;
 
