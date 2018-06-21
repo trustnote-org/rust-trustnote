@@ -157,9 +157,6 @@ fn find_min_mc_witnessed_level(
     witnesses_set: &str,
     later_units: &[String],
 ) -> Result<u32> {
-    let mut min_mc_wl = ::std::u32::MAX;
-    let mut count = 0;
-
     struct OutputTemp {
         witnessed_level: u32,
         best_parent_unit: String,
@@ -191,9 +188,8 @@ fn find_min_mc_witnessed_level(
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(!rows.is_empty(), "find_min_mc_witnessed_level: not 1 row");
-    min_mc_wl = rows[0].witnessed_level;
-    count += rows.len();
-
+    let mut count = rows.len();
+    let mut min_mc_wl = rows[0].witnessed_level;
     let mut start_unit = rows.into_iter().nth(0).unwrap().best_parent_unit;
 
     while count < config::MAJORITY_OF_WITNESSES {
@@ -252,13 +248,12 @@ fn create_list_of_best_children_included_by_later_units(
     }
 
     let mut best_children = Vec::new();
-
     let mut filtered_alt_branch_root_units = Vec::new();
 
     let alt_branch_root_units_set = alt_branch_root_units
         .iter()
         .map(|s| format!("'{}'", s))
-        .collect::<Vec<String>>()
+        .collect::<Vec<_>>()
         .join(",");
 
     let sql = format!(
