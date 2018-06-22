@@ -143,7 +143,7 @@ pub fn determin_if_stable_in_laster_units_and_update_stable_mc_flag(
     }
 
     info!("stable in parents, will wait for write lock");
-    let _g = WRITER_MUTEX.lock()?;
+    let _g = WRITER_MUTEX.lock().unwrap();
     info!("stable in parents, got write lock");
     let last_stable_mci = storage::read_last_stable_mc_index(db)?;
     let prop = storage::read_unit_props(db, earlier_unit)?;

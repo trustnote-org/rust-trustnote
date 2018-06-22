@@ -4,6 +4,7 @@ use config::*;
 use db;
 use definition;
 use error::Result;
+use main_chain;
 use may::sync::Mutex;
 use object_hash::get_chash;
 use rusqlite::Transaction;
@@ -525,8 +526,7 @@ impl Joint {
             let best_parent_unit = self.update_best_parent(&tx)?;
             self.update_level(&tx)?;
             self.update_witness_level(&tx, best_parent_unit)?;
-            // TODO: add update mainchain()
-            // main_chain::update_main_chain()?;
+            main_chain::update_main_chain(&tx, None)?;
         }
         // TODO: add precommit hook
         tx.commit()?;
