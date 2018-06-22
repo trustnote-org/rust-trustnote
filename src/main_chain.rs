@@ -1,11 +1,11 @@
-use rusqlite::Connection;
-
 use config;
 use error::Result;
 use graph;
 use headers_commission;
 use object_hash;
 use paid_witnessing;
+use rusqlite::Connection;
+use spec;
 use storage;
 
 pub fn determin_if_stable_in_laster_units(
@@ -147,9 +147,12 @@ pub fn read_best_parent_and_its_witnesses(
     unit_hash: &String,
 ) -> Result<(String, Vec<String>)> {
     let prop = storage::read_static_unit_property(db, unit_hash)?;
-    let arr_witnesses = storage::read_witnesses(db, &prop.best_parent_unit)?;
+    let best_parent_unit = prop
+        .best_parent_unit
+        .ok_or_else(|| format_err!("no best parent set for unit {}", unit_hash))?;
+    let arr_witnesses = storage::read_witnesses(db, &best_parent_unit)?;
 
-    Ok((prop.best_parent_unit, arr_witnesses))
+    Ok((best_parent_unit, arr_witnesses))
 }
 
 fn find_min_mc_witnessed_level(
@@ -685,7 +688,7 @@ fn find_next_up_main_chain_unit(db: &Connection, unit: Option<&String>) -> Resul
              ORDER BY witnessed_level DESC, level-witnessed_level ASC, unit ASC LIMIT 1",
         )?;
 
-        stmt.query_row(&[], |row| StaticUnitProperty {
+        stmt.query_row(&[], |row| spec::StaticUnitProperty {
             level: 0, //Not queried
             witnessed_level: row.get(1),
             best_parent_unit: row.get(0),
