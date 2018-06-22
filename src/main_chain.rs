@@ -330,15 +330,15 @@ fn create_list_of_best_children(db: &Connection, parent_units: Vec<String>) -> R
                     unit: row.get(0),
                     is_free: row.get(1),
                 })?
-                .collect::<::std::result::Result<Vec<UnitTemp>, _>>()?;
+                .collect::<::std::result::Result<Vec<_>, _>>()?;
 
             let mut next_units = Vec::new();
-            for row in rows.iter() {
+            for row in rows {
                 best_children.push(row.unit.clone());
 
                 //It has children, push it to the query of next round
                 if row.is_free != 1 {
-                    next_units.push(row.unit.clone());
+                    next_units.push(row.unit);
                 }
             }
 
@@ -368,15 +368,12 @@ fn find_next_up_main_chain_unit(db: &Connection, unit: Option<&String>) -> Resul
              ORDER BY witnessed_level DESC, level-witnessed_level ASC, unit ASC LIMIT 1",
         )?;
 
-        let mut row = stmt.query_row(&[], |row| StaticUnitProperty {
+        stmt.query_row(&[], |row| StaticUnitProperty {
             level: 0, //Not queried
             witnessed_level: row.get(1),
             best_parent_unit: row.get(0),
             witness_list_unit: String::new(),
-        });
-        ensure!(row.is_ok(), "no free units?");
-
-        row.unwrap()
+        }).or_else(|e| bail!("no free units, err={}", e))?
     };
 
     //Handle unit props
@@ -422,12 +419,13 @@ fn update_latest_included_mc_index(
 
     info!("{} rows", rows.len());
 
-    ensure!(
-        rows.len() != 0 || !rebuild_mc,
-        "no latest_included_mc_index updated, last_mci={}, affected={}",
-        last_main_chain_index,
-        affected_rows
-    );
+    if rows.len() == 0 && rebuild_mc {
+        bail!(
+            "no latest_included_mc_index updated, last_mci={}, affected={}",
+            last_main_chain_index,
+            affected_rows
+        );
+    }
 
     for row in rows.iter() {
         info!("{} {}", row.1, row.0);
@@ -482,7 +480,7 @@ fn update_latest_included_mc_index(
     Ok(())
 }
 
-fn update_mc_flag(db: &Connection) -> Result<()> {
+fn update_stable_mc_flag(db: &Connection) -> Result<()> {
     loop {
         info!("Update stable mc flag");
 
@@ -544,7 +542,7 @@ fn update_mc_flag(db: &Connection) -> Result<()> {
 
         //The alternative branch
         let alt_branch_root_units: Vec<String> =
-            alt_children.iter().map(|row| row.unit.clone()).collect();
+            alt_children.into_iter().map(|row| row.unit).collect();
 
         //Query main chain witness level
         let min_mc_wl = {
@@ -581,7 +579,7 @@ fn update_mc_flag(db: &Connection) -> Result<()> {
         if alt_branch_root_units.len() == 0 {
             // no alt branches
             if min_mc_wl >= first_unstable_mc_level {
-                stable = true;;
+                stable = true;
             }
         } else {
             let max_alt_level = {
@@ -713,7 +711,7 @@ fn go_down_and_update_main_chain_index(db: &Connection, last_main_chain_index: u
 fn check_not_rebuild_stable_main_chain(db: &Connection, last_main_chain_index: u32) -> Result<()> {
     let mut stmt = db.prepare_cached(
         "SELECT unit FROM units \
-            WHERE is_on_main_chain=1 AND main_chain_index>? AND is_stable=1 LIMIT 1",
+         WHERE is_on_main_chain=1 AND main_chain_index>? AND is_stable=1 LIMIT 1",
     )?;
     let row = stmt.query_row(&[&last_main_chain_index], |row| row.get::<_, String>(0));
 
@@ -771,7 +769,7 @@ pub fn update_main_chain(db: &Connection, last_unit: Option<&String>) -> Result<
     update_latest_included_mc_index(db, last_main_chain_index, rebuild_mc)?;
 
     //Update stable mc flag
-    update_mc_flag(db)?;
+    update_stable_mc_flag(db)?;
 
     //Finish
     info!("Done Update MC");
