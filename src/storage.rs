@@ -741,14 +741,14 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
          WHERE main_chain_index<=? AND main_chain_index>=? AND sequence='final-bad'",
     )?;
 
-    struct TempUintProp {
+    struct TempUnitProp {
         unit: String,
         content_hash: Option<String>,
     }
 
     let unit_rows = stmt
         .query_map(&[&min_retrievable_mci, &prev_min_retrievable_mci], |row| {
-            TempUintProp {
+            TempUnitProp {
                 unit: row.get(0),
                 content_hash: row.get(1),
             }
@@ -778,7 +778,7 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
     Ok(min_retrievable_mci)
 }
 
-fn generate_queries_to_archive_joint(
+pub fn generate_queries_to_archive_joint(
     db: &Connection,
     joint: &Joint,
     reason: &str,
@@ -947,13 +947,13 @@ fn generate_queries_to_unspend_transfer_outputs_spent_in_archived_unit(
          AND inputs.unit!=alt_inputs.unit \
          )",
     )?;
-    struct TempUintProp {
+    struct TempUnitProp {
         src_unit: String,
         src_message_index: u32,
         src_output_index: u32,
     }
     let unit_rows = stmt
-        .query_map(&[&*unit], |row| TempUintProp {
+        .query_map(&[&*unit], |row| TempUnitProp {
             src_unit: row.get(0),
             src_message_index: row.get(1),
             src_output_index: row.get(2),
@@ -1000,12 +1000,12 @@ fn generate_queries_to_unspend_headers_commission_outputs_spent_in_archived_unit
          AND inputs.unit!=alt_inputs.unit \
          )",
     )?;
-    struct TempUintProp {
+    struct TempUnitProp {
         address: String,
         main_chain_index: u32,
     }
     let unit_rows = stmt
-        .query_map(&[&*unit], |row| TempUintProp {
+        .query_map(&[&*unit], |row| TempUnitProp {
             address: row.get(0),
             main_chain_index: row.get(1),
         })?
@@ -1047,12 +1047,12 @@ fn generate_queries_to_unspend_witnessing_outputs_spent_in_archived_unit(
          AND inputs.unit!=alt_inputs.unit \
          )",
     )?;
-    struct TempUintProp {
+    struct TempUnitProp {
         address: String,
         main_chain_index: u32,
     }
     let unit_rows = stmt
-        .query_map(&[&*unit], |row| TempUintProp {
+        .query_map(&[&*unit], |row| TempUnitProp {
             address: row.get(0),
             main_chain_index: row.get(1),
         })?

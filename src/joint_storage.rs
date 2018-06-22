@@ -1,8 +1,12 @@
+use db;
 use error::Result;
 use joint::Joint;
 use rusqlite::Connection;
 use serde_json;
+use std::collections::VecDeque;
+use std::rc::Rc;
 use storage;
+
 // use spec::Unit;
 
 #[derive(Debug)]
@@ -65,7 +69,7 @@ pub fn save_unhandled_joint_and_dependencies(
     missing_parent_units: &[String],
     peer: &String,
 ) -> Result<()> {
-    let unit = joint.unit.unit.as_ref().unwrap();
+    let unit = joint.get_unit_hash();
     let tx = db.transaction()?;
     let mut stmt =
         tx.prepare_cached("INSERT INTO unhandled_joints (unit, json, peer) VALUES (?, ?, ?)")?;
@@ -122,4 +126,105 @@ pub fn read_joints_since_mci(db: &Connection, mci: u32) -> Result<Vec<Joint>> {
     }
 
     Ok(joints)
+}
+
+pub fn purge_joint_and_dependencies<F>(
+    db: &mut Connection,
+    joint: &Joint,
+    err: &str,
+    f: F,
+) -> Result<()>
+where
+    F: Fn(&str, &str) + 'static,
+{
+    let unit = joint.get_unit_hash();
+    let rc_unit = Rc::new(unit.clone());
+
+    let mut tx = db.transaction()?;
+    {
+        let mut stmt =
+            tx.prepare_cached("INSERT INTO known_bad_joints (unit, json, error) VALUES (?, ?, ?)")?;
+        stmt.insert(&[unit, &serde_json::to_string(joint)?, &err])?;
+
+        let mut stmt = tx.prepare_cached("DELETE FROM unhandled_joints WHERE unit=?")?;
+        stmt.insert(&[unit])?;
+
+        let mut stmt = tx.prepare_cached("DELETE FROM dependencies WHERE unit=?")?;
+        stmt.insert(&[unit])?;
+    }
+
+    let mut queries = db::DbQueries::new();
+
+    collet_queries_to_purge_dependent_joints(&mut tx, rc_unit, &mut queries, err, f)?;
+
+    queries.execute(&tx)?;
+    tx.commit()?;
+
+    Ok(())
+}
+
+fn collet_queries_to_purge_dependent_joints<F>(
+    db: &Connection,
+    unit: Rc<String>,
+    queries: &mut db::DbQueries,
+    err: &str,
+    f: F,
+) -> Result<()>
+where
+    F: Fn(&str, &str) + 'static,
+{
+    struct TempUnitProp {
+        unit: String,
+        peer: String,
+    }
+
+    let mut deque = VecDeque::new();
+    deque.push_back(TempUnitProp {
+        unit: unit.to_string(),
+        peer: String::from("unknow"),
+    });
+
+    while let Some(new_unit) = deque.pop_front() {
+        let mut stmt = db.prepare_cached("SELECT unit, peer FROM dependencies JOIN unhandled_joints USING(unit) WHERE depends_on_unit=?",)?;
+
+        let unit_rows = stmt
+            .query_map(&[&new_unit.unit], |row| TempUnitProp {
+                unit: row.get(0),
+                peer: row.get(1),
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+        let units_str = unit_rows
+            .iter()
+            .map(|s| format!("'{}'", s.unit))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        for row in unit_rows {
+            deque.push_back(row);
+        }
+        let err_str = err.to_owned();
+
+        queries.add_query(move |db| {
+            let sql = format!(
+                "INSERT OR IGNORE INTO known_bad_joints (unit, json, error) \
+                 SELECT unit, json, ? FROM unhandled_joints WHERE unit IN({})",
+                units_str
+            );
+            let mut stmt = db.prepare(&sql)?;
+            stmt.execute(&[&err_str])?;
+
+            let sql = format!("DELETE FROM unhandled_joints WHERE unit IN({})", units_str);
+            let mut stmt = db.prepare(&sql)?;
+            stmt.execute(&[])?;
+
+            let sql = format!("DELETE FROM dependencies WHERE unit IN({})", units_str);
+            let mut stmt = db.prepare(&sql)?;
+            stmt.execute(&[])?;
+            Ok(())
+        });
+
+        f(&new_unit.unit, &new_unit.peer);
+    }
+    Ok(())
 }
