@@ -142,7 +142,7 @@ pub struct Unit {
 pub struct StaticUnitProperty {
     pub level: u32,
     pub witnessed_level: u32,
-    pub best_parent_unit: String,
+    pub best_parent_unit: Option<String>,
     pub witness_list_unit: String,
 }
 
