@@ -135,7 +135,7 @@ pub fn purge_joint_and_dependencies<F>(
     f: F,
 ) -> Result<()>
 where
-    F: Fn(&str, &str) + 'static,
+    F: Fn(&str, &str, &str) + 'static,
 {
     let unit = joint.get_unit_hash();
     let rc_unit = Rc::new(unit.clone());
@@ -171,7 +171,7 @@ fn collet_queries_to_purge_dependent_joints<F>(
     f: F,
 ) -> Result<()>
 where
-    F: Fn(&str, &str) + 'static,
+    F: Fn(&str, &str, &str) + 'static,
 {
     struct TempUnitProp {
         unit: String,
@@ -224,7 +224,7 @@ where
             Ok(())
         });
 
-        f(&new_unit.unit, &new_unit.peer);
+        f(&new_unit.unit, &new_unit.peer, err);
     }
     Ok(())
 }

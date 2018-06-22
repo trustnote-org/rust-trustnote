@@ -165,6 +165,25 @@ impl WsConnections {
         g[idx].clone()
     }
 
+    pub fn get_connection_by_name(&self, peer: &str) -> Option<Arc<HubConn>> {
+        let g = self.outbound.read().unwrap();
+        for i in 0..g.len() {
+            if g[i].get_peer() == peer {
+                return Some(g[i].clone());
+            }
+        }
+        drop(g);
+
+        let g = self.inbound.read().unwrap();
+        for i in 0..g.len() {
+            if g[i].get_peer() == peer {
+                return Some(g[i].clone());
+            }
+        }
+
+        None
+    }
+
     fn request_free_joints(&self) {
         let g = self.outbound.read().unwrap();
         for ws in g.iter() {
@@ -464,9 +483,11 @@ impl HubConn {
         if err.contains("is not stable in view of your parents") {
             return Ok(());
         }
-        joint_storage::purge_joint_and_dependencies(db, joint, err, |_unit, _peer| {
-            unimplemented!()
-            // WSS.get_connection_by_name(peer).map(|ws| ws.send_error(....).ok());
+        joint_storage::purge_joint_and_dependencies(db, joint, err, |unit, peer, error| {
+            WSS.get_connection_by_name(peer).map(|ws| {
+                let error = format!("error on (indirect) parent unit {}: {} ", unit, error);
+                ws.send_error_result(unit, &error).ok();
+            });
         })?;
         Ok(())
     }
