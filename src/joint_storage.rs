@@ -3,8 +3,10 @@ use error::Result;
 use joint::Joint;
 use rusqlite::Connection;
 use serde_json;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use storage;
+
 // use spec::Unit;
 
 #[derive(Debug)]
@@ -163,7 +165,7 @@ where
 
 fn collet_queries_to_purge_dependent_joints<F>(
     db: &Connection,
-    mut unit: Rc<String>,
+    unit: Rc<String>,
     queries: &mut db::DbQueries,
     err: &str,
     f: F,
@@ -171,30 +173,36 @@ fn collet_queries_to_purge_dependent_joints<F>(
 where
     F: Fn(&str, &str) + 'static,
 {
-    let mut stmt = db.prepare_cached(
-            "SELECT unit, peer FROM dependencies JOIN unhandled_joints USING(unit) WHERE depends_on_unit=?",
-        )?;
     struct TempUnitProp {
         unit: String,
         peer: String,
     }
-    loop {
+
+    let mut deque = VecDeque::new();
+    deque.push_back(TempUnitProp {
+        unit: unit.to_string(),
+        peer: String::from("unknow"),
+    });
+
+    while let Some(new_unit) = deque.pop_front() {
+        let mut stmt = db.prepare_cached("SELECT unit, peer FROM dependencies JOIN unhandled_joints USING(unit) WHERE depends_on_unit=?",)?;
+
         let unit_rows = stmt
-            .query_map(&[&*unit], |row| TempUnitProp {
+            .query_map(&[&new_unit.unit], |row| TempUnitProp {
                 unit: row.get(0),
                 peer: row.get(1),
             })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
-
-        if unit_rows.is_empty() {
-            break;
-        }
 
         let units_str = unit_rows
             .iter()
             .map(|s| format!("'{}'", s.unit))
             .collect::<Vec<_>>()
             .join(", ");
+
+        for row in unit_rows {
+            deque.push_back(row);
+        }
         let err_str = err.to_owned();
 
         queries.add_query(move |db| {
@@ -213,13 +221,10 @@ where
             let sql = format!("DELETE FROM dependencies WHERE unit IN({})", units_str);
             let mut stmt = db.prepare(&sql)?;
             stmt.execute(&[])?;
-
             Ok(())
         });
 
-        let prop = unit_rows.into_iter().nth(0).unwrap();
-        unit = Rc::new(prop.unit);
-        f(&unit, &prop.peer);
+        f(&new_unit.unit, &new_unit.peer);
     }
     Ok(())
 }
