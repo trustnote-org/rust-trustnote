@@ -60,7 +60,7 @@ pub fn determin_if_stable_in_laster_units(
         })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
-    ensure!(rows.len() != 0, "no best children of {}", best_parent_unit);
+    ensure!(!rows.is_empty(), "no best children of {}", best_parent_unit);
 
     let mc_rows: Vec<TempUnitProp> = rows
         .iter()
@@ -174,13 +174,14 @@ fn find_min_mc_witnessed_level(
 
     let sql = format!(
         "SELECT witnessed_level, best_parent_unit, \
-							(SELECT COUNT(*) FROM unit_authors WHERE unit_authors.unit=units.unit AND address IN({})) AS count \
-						FROM units \
-						WHERE unit IN({}) \
-						ORDER BY witnessed_level DESC, \
-							level-witnessed_level ASC, \
-							unit ASC \
-						LIMIT 1", witnesses_set, later_units_set);
+             (SELECT COUNT(*) FROM unit_authors WHERE unit_authors.unit=units.unit AND address IN({})) AS count \
+         FROM units \
+         WHERE unit IN({}) \
+         ORDER BY witnessed_level DESC, \
+             level-witnessed_level ASC, \
+             unit ASC \
+         LIMIT 1", witnesses_set, later_units_set);
+
     let mut stmt = db.prepare(&sql)?;
     let rows = stmt
         .query_map(&[], |row| OutputTemp {
@@ -191,15 +192,15 @@ fn find_min_mc_witnessed_level(
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(!rows.is_empty(), "find_min_mc_witnessed_level: not 1 row");
-    let mut count = rows.len();
+    let mut count = rows[0].count as usize;
     let mut min_mc_wl = rows[0].witnessed_level;
     let mut start_unit = rows.into_iter().nth(0).unwrap().best_parent_unit;
 
     while count < config::MAJORITY_OF_WITNESSES {
         let sql = format!(
             "SELECT best_parent_unit, witnessed_level, \
-						(SELECT COUNT(*) FROM unit_authors WHERE unit_authors.unit=units.unit AND address IN({})) AS count \
-						FROM units WHERE unit={}", witnesses_set, start_unit);
+             (SELECT COUNT(*) FROM unit_authors WHERE unit_authors.unit=units.unit AND address IN({})) AS count \
+             FROM units WHERE unit={}", witnesses_set, start_unit);
         let mut stmt = db.prepare(&sql)?;
         let rows = stmt
             .query_map(&[], |row| OutputTemp {
@@ -296,26 +297,34 @@ fn create_list_of_best_children_included_by_later_units(
         }
     }
 
-    for mut start_unit in filtered_alt_branch_root_units {
-        loop {
-            let mut stmt = db.prepare_cached(
-                "SELECT unit, is_free, main_chain_index FROM units WHERE best_parent_unit = ?",
-            )?;
+    let mut start_units = filtered_alt_branch_root_units;
+    loop {
+        let start_units_set = start_units
+            .drain(..)
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(",");
 
-            let rows = stmt
-                .query_map(&[&start_unit], |row| TempUnitProp {
-                    unit: row.get(0),
-                    is_free: row.get(1),
-                    main_chain_index: row.get(2),
-                })?
-                .collect::<::std::result::Result<Vec<_>, _>>()?;
+        let sql = format!(
+            "SELECT unit, is_free, main_chain_index FROM units WHERE best_parent_unit IN ({})",
+            start_units_set
+        );
 
-            if rows.is_empty() {
-                break;
-            }
+        let mut stmt = db.prepare(&sql)?;
 
-            let row = rows.into_iter().nth(0).unwrap();
+        let rows = stmt
+            .query_map(&[], |row| TempUnitProp {
+                unit: row.get(0),
+                is_free: row.get(1),
+                main_chain_index: row.get(2),
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
 
+        if rows.is_empty() {
+            break;
+        }
+
+        for row in rows {
             let included = if row.main_chain_index.is_some()
                 && row.main_chain_index <= Some(max_later_limci)
             {
@@ -326,10 +335,8 @@ fn create_list_of_best_children_included_by_later_units(
 
             if included {
                 best_children.push(row.unit.clone());
-                if row.is_free == 1 {
-                    break;
-                } else {
-                    start_unit = row.unit;
+                if row.is_free != 1 {
+                    start_units.push(row.unit);
                 }
             }
         }
