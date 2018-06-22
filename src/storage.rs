@@ -57,6 +57,13 @@ pub fn forget_unit(unit: &String) {
     unimplemented!()
 }
 
+pub fn read_witnesses(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
+    let mut stmt = db.prepare_cached("SELECT witness_list_unit FROM units WHERE unit=?")?;
+    let witness_hash: String = stmt.query_row(&[unit_hash], |row| row.get(0))?;
+
+    read_witness_list(db, &witness_hash)
+}
+
 // TODO: need to cache in memory
 pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
     let mut stmt =
