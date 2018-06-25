@@ -85,10 +85,10 @@ pub fn validate_author_signature_without_ref(
     _unit: &Unit,
     _definition: &String,
 ) -> Result<()> {
-    // Ok(())
+    Ok(())
     // TODO: unimplemented!() #37
-    println!("validate_author_signature_without_ref");
-    ::std::process::abort();
+    // println!("validate_author_signature_without_ref");
+    // ::std::process::abort();
 }
 
 pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
@@ -372,23 +372,31 @@ fn validate_hash_tree(
         });
     }
 
-    let validate_ball_hash = || {
-        let ball_hash = object_hash::get_ball_hash(
+    fn validate_ball_hash(
+        unit_hash: &String,
+        parent_balls: &Vec<String>,
+        skiplist_balls: &Vec<String>,
+        is_valide: bool,
+        ball: &String,
+    ) -> Result<()> {
+        let ball_hash =
+            object_hash::get_ball_hash(unit_hash, parent_balls, skiplist_balls, is_valide);
+        if &ball_hash != ball {
+            err!(ValidationError::JointError {
+                err: format!("ball hash is wrong, expect {}", ball_hash),
+            });
+        }
+        return Ok(());
+    }
+
+    if joint.skiplist_units.is_empty() {
+        return validate_ball_hash(
             unit_hash,
             &parent_balls,
             &validate_state.skiplist_balls,
             unit.content_hash.is_some(),
+            ball,
         );
-        if &ball_hash != ball {
-            err!(ValidationError::JointError {
-                err: "ball hash is wrong".to_owned(),
-            });
-        }
-        return Ok(());
-    };
-
-    if joint.skiplist_units.is_empty() {
-        return validate_ball_hash();
     }
 
     let skiplist_units = joint
@@ -415,8 +423,15 @@ fn validate_hash_tree(
             err: "some skiplist balls not found".to_owned(),
         });
     }
+    validate_state.skiplist_balls = skiplist_balls;
 
-    validate_ball_hash()
+    validate_ball_hash(
+        unit_hash,
+        &parent_balls,
+        &validate_state.skiplist_balls,
+        unit.content_hash.is_some(),
+        ball,
+    )
 }
 
 fn validate_parents(
