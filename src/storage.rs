@@ -1143,7 +1143,11 @@ fn read_definition_at_mci(
     Ok(definition)
 }
 
-pub fn determine_best_parents(db: &Connection, joint: &Joint, witnesses: &[String]) -> Result<()> {
+pub fn determine_best_parents(
+    db: &Connection,
+    joint: &Joint,
+    witnesses: &[String],
+) -> Result<Option<String>> {
     let parent_units = joint
         .unit
         .parent_units
@@ -1156,11 +1160,12 @@ pub fn determine_best_parents(db: &Connection, joint: &Joint, witnesses: &[Strin
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
         .join(", ");
+    let witness_list_unit = joint.unit.witness_list_unit.clone().unwrap();
     let sql = format!(
         "SELECT unit \
     FROM units AS parent_units \
     WHERE unit IN({}) \
-      AND (witness_list_unit=? OR ( \
+      AND (witness_list_unit={:?} OR ( \
         SELECT COUNT(*) \
         FROM unit_witnesses AS parent_witnesses \
         WHERE parent_witnesses.unit IN(parent_units.unit, parent_units.witness_list_unit) AND address IN({}) \
@@ -1169,20 +1174,16 @@ pub fn determine_best_parents(db: &Connection, joint: &Joint, witnesses: &[Strin
       level-witnessed_level ASC, \
       unit ASC \
     LIMIT 1",
-        parent_units,witness_list,COUNT_WITNESSES - MAX_WITNESS_LIST_MUTATIONS
+        parent_units,witness_list,witness_list_unit,COUNT_WITNESSES - MAX_WITNESS_LIST_MUTATIONS
     );
 
     let mut stmt = db.prepare(&sql)?;
     let rows = stmt
-        .query_map(&[&joint.unit.witness_list_unit], |row| row.get(0))?
+        .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
 
     if rows.len() != 1 {
-        return handle_best_parent(None);
+        return Ok(None);
     }
-    Ok(handle_best_parent(rows[0].clone())?)
-}
-
-fn handle_best_parent(_best_parent_unit: Option<String>) -> Result<()> {
-    unimplemented!();
+    Ok(rows[0].clone())
 }
