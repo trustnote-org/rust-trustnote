@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use config::{COUNT_WITNESSES, MAX_WITNESS_LIST_MUTATIONS};
 use db;
 use error::Result;
 use joint::Joint;
@@ -188,20 +189,11 @@ pub fn read_static_unit_property(
 
 // TODO: need to cache in memory
 pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
-    let mut stmt =
-        db.prepare_cached("SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
-    let rows = stmt.query_map(&[unit_hash], |row| row.get(0))?;
-    let mut names = Vec::new();
-    for name_result in rows {
-        names.push(name_result?);
-    }
-
-    if names.len() != ::config::COUNT_WITNESSES {
-        return Err(format_err!(
-            "wrong number of witnesses in unit {}",
-            unit_hash
-        ));
-    }
+    let mut stmt = db.prepare_cached("SELECT address FROM unit_authors WHERE unit=?")?;
+    let names = stmt
+        .query_map(&[unit_hash], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    ensure!(!names.is_empty(), "no authors");
     Ok(names)
 }
 
@@ -1142,6 +1134,51 @@ fn read_definition_at_mci(
     Ok(definition)
 }
 
+pub fn determine_best_parents(
+    db: &Connection,
+    joint: &Joint,
+    witnesses: &[String],
+) -> Result<Option<String>> {
+    let parent_units = joint
+        .unit
+        .parent_units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let witness_list = witnesses
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let witness_list_unit = joint.unit.witness_list_unit.clone().unwrap();
+    let sql = format!(
+        "SELECT unit \
+    FROM units AS parent_units \
+    WHERE unit IN({}) \
+      AND (witness_list_unit={} OR ( \
+        SELECT COUNT(*) \
+        FROM unit_witnesses AS parent_witnesses \
+        WHERE parent_witnesses.unit IN(parent_units.unit, parent_units.witness_list_unit) AND address IN({}) \
+      )>={}) \
+    ORDER BY witnessed_level DESC, \
+      level-witnessed_level ASC, \
+      unit ASC \
+    LIMIT 1",
+        parent_units,witness_list,witness_list_unit,COUNT_WITNESSES - MAX_WITNESS_LIST_MUTATIONS
+    );
+
+    let mut stmt = db.prepare(&sql)?;
+    let rows = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    if rows.is_empty() {
+        return Ok(None);
+    }
+    Ok(rows.into_iter().nth(0))
+}
+
 fn determine_if_has_witness_list_mutations_along_mc(
     db: &Connection,
     unit: ::spec::Unit,
@@ -1184,7 +1221,7 @@ fn determine_if_has_witness_list_mutations_along_mc(
         WHERE units.unit IN({}) \
         GROUP BY units.unit \
         HAVING count_matching_witnesses<{}",
-        witness_list, mc_unit_list, ::config::COUNT_WITNESSES - ::config::MAX_WITNESS_LIST_MUTATIONS);
+        witness_list, mc_unit_list, COUNT_WITNESSES - MAX_WITNESS_LIST_MUTATIONS);
     let mut stmt = db.prepare(&sql)?;
 
     let row = stmt.query_row(&[], |row| (row.get::<_, String>(0), row.get::<_, u32>(1)));
@@ -1193,7 +1230,7 @@ fn determine_if_has_witness_list_mutations_along_mc(
         let (unit, count_matching_witnesses) = row.unwrap();
         bail!(
             "too many ({}) witness list mutations relative to MC unit {}",
-            ::config::COUNT_WITNESSES as u32 - count_matching_witnesses,
+            COUNT_WITNESSES as u32 - count_matching_witnesses,
             unit
         );
     }

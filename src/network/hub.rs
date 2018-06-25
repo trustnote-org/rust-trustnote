@@ -533,6 +533,7 @@ impl HubConn {
         for unit in units {
             let g = UNIT_IN_WORK.try_lock(vec![unit.clone()]);
             if g.is_none() {
+                // other thread is working on the unit, skip it
                 continue;
             }
 

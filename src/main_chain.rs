@@ -29,7 +29,7 @@ pub fn determin_if_stable_in_laster_units(
         .iter()
         .map(|prop| prop.latest_included_mc_index)
         .max()
-        .unwrap_or(0);
+        .unwrap_or(None);
 
     let (best_parent_unit, arr_witnesses) = read_best_parent_and_its_witnesses(db, earlier_unit)?;
 
@@ -94,7 +94,7 @@ pub fn determin_if_stable_in_laster_units(
         db,
         later_units,
         &alt_branch_root_units,
-        max_later_limci,
+        max_later_limci.unwrap_or(0),
     )?.into_iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
@@ -149,13 +149,13 @@ pub fn determin_if_stable_in_laster_units_and_update_stable_mc_flag(
     let prop = storage::read_unit_props(db, earlier_unit)?;
     let new_last_stable_mci = prop.main_chain_index;
     ensure!(
-        new_last_stable_mci > last_stable_mci,
+        new_last_stable_mci > Some(last_stable_mci),
         "new last stable mci expected to be higher than existing"
     );
 
     let mut mci = last_stable_mci;
 
-    while mci <= new_last_stable_mci {
+    while Some(mci) <= new_last_stable_mci {
         mci += 1;
         mark_mc_index_stable(db, mci)?;
     }
@@ -720,7 +720,7 @@ fn find_next_up_main_chain_unit(db: &Connection, unit: Option<&String>) -> Resul
             level: 0, //Not queried
             witnessed_level: row.get(1),
             best_parent_unit: row.get(0),
-            witness_list_unit: String::new(),
+            witness_list_unit: None,
         }).or_else(|e| bail!("no free units, err={}", e))?
     };
 
@@ -852,7 +852,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
         struct TempUnitProp {
             unit: String,
             level: u32,
-            main_chain_index: u32,
+            main_chain_index: Option<u32>,
             is_on_main_chain: u32,
         };
 
@@ -880,7 +880,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
 
         ensure!(mc_child.len() == 1, "not a single MC child?");
         //let first_unstable_mc_unit = mc_child[0].unit.clone();
-        let first_unstable_mc_index = mc_child[0].main_chain_index;
+        let first_unstable_mc_index = mc_child[0].main_chain_index.unwrap_or(0);
         let first_unstable_mc_level = mc_child[0].level;
 
         let alt_children: Vec<TempUnitProp> = best_children
@@ -1084,7 +1084,7 @@ fn go_up_from_unit(db: &Connection, unit: Option<&String>) -> Result<(Option<Str
             let best_parent_unit_props = storage::read_unit_props(db, &best_parent_unit)?;
 
             if best_parent_unit_props.is_on_main_chain == 1 {
-                last_main_chain_index = best_parent_unit_props.main_chain_index;
+                last_main_chain_index = best_parent_unit_props.main_chain_index.unwrap_or(0);
                 break;
             }
 

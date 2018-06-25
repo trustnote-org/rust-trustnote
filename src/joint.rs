@@ -116,6 +116,25 @@ impl Joint {
             let rows = tx.execute(&sql, &[])?;
             info!("{} free units consumed", rows);
         }
+
+        Ok(())
+    }
+
+    fn save_witnesses(&self, tx: &Transaction) -> Result<()> {
+        let unit = &self.unit;
+        let unit_hash = self.get_unit_hash();
+
+        if !unit.witnesses.is_empty() {
+            let mut stmt =
+                tx.prepare_cached("INSERT INTO unit_witnesses (unit, address) VALUES(?,?)")?;
+            for address in unit.witnesses.iter() {
+                stmt.execute(&[unit_hash, address])?;
+            }
+        }
+        let mut stmt = tx.prepare_cached(
+            "INSERT OR IGNORE INTO witness_list_hashes (witness_list_unit, witness_list_hash) VALUES (?,?)")?;
+        let witnesses_hash = ::object_hash::get_base64_hash(&unit.witnesses)?;
+        stmt.execute(&[unit_hash, &witnesses_hash])?;
         Ok(())
     }
 
@@ -132,7 +151,7 @@ impl Joint {
             )?;
             let definition_json = serde_json::to_string(definition)?;
             let has_references = definition::has_references(definition)? as u8;
-            stmt.insert(&[&definition_chash, &definition_json, &has_references])?;
+            stmt.execute(&[&definition_chash, &definition_json, &has_references])?;
 
             // TODO: we ingore unit.content_hash here
             if definition_chash == author.address {
@@ -140,7 +159,7 @@ impl Joint {
                     "INSERT OR IGNORE INTO addresses (address) \
                      VALUES (?)",
                 )?;
-                stmt.insert(&[&author.address])?;
+                stmt.execute(&[&author.address])?;
             }
 
             let mut stmt = tx.prepare_cached(
@@ -347,7 +366,12 @@ impl Joint {
 
     fn update_witness_level(&self, tx: &Transaction, best_parent_unit: String) -> Result<()> {
         if self.unit.witnesses.is_empty() {
-            let witness_list = ::storage::read_witness_list(tx, self.get_unit_hash())?;
+            let witnesses_list_unit = self
+                .unit
+                .witness_list_unit
+                .as_ref()
+                .expect("no witnesses list unit");
+            let witness_list = ::storage::read_witness_list(tx, witnesses_list_unit)?;
             self.update_witness_level_by_witness_list(tx, &witness_list, best_parent_unit)
         } else {
             self.update_witness_level_by_witness_list(tx, &self.unit.witnesses, best_parent_unit)
@@ -518,6 +542,7 @@ impl Joint {
         self.save_unit(&tx, &sequence)?;
         self.save_ball(&tx)?;
         self.save_parents(&tx)?;
+        self.save_witnesses(&tx)?;
         self.save_authors(&tx)?;
         self.save_messages(&tx)?;
         self.save_header_earnings(&tx)?;
