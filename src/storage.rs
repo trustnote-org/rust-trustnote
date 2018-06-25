@@ -1141,3 +1141,71 @@ fn read_definition_at_mci(
     let definition = stmt.query_row(&[definition_chash, &max_mci], |row| row.get(0))?;
     Ok(definition)
 }
+
+fn determine_if_has_witness_list_mutations_along_mc(
+    db: &Connection,
+    unit: ::spec::Unit,
+    last_ball_unit: String,
+    witnesses: Vec<String>,
+) -> Result<()> {
+    if unit.parent_units.len() == 0 {
+        return Ok(());
+    }
+
+    let witness_list = witnesses
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let mc_units = build_list_of_mc_units_with_potentially_different_witness_lists(
+        db,
+        unit,
+        last_ball_unit,
+        witnesses,
+    )?;
+
+    info!("###### MC units {:?}", mc_units);
+
+    if mc_units.len() == 0 {
+        return Ok(());
+    }
+
+    let mc_unit_list = mc_units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let sql = format!("
+        SELECT units.unit, COUNT(*) AS count_matching_witnesses \
+        FROM units CROSS JOIN unit_witnesses \
+        ON (units.unit=unit_witnesses.unit OR units.witness_list_unit=unit_witnesses.unit) AND address IN({}) \
+        WHERE units.unit IN({}) \
+        GROUP BY units.unit \
+        HAVING count_matching_witnesses<{}",
+        witness_list, mc_unit_list, ::config::COUNT_WITNESSES - ::config::MAX_WITNESS_LIST_MUTATIONS);
+    let mut stmt = db.prepare(&sql)?;
+
+    let row = stmt.query_row(&[], |row| (row.get::<_, String>(0), row.get::<_, u32>(1)));
+
+    if row.is_ok() {
+        let (unit, count_matching_witnesses) = row.unwrap();
+        bail!(
+            "too many ({}) witness list mutations relative to MC unit {}",
+            ::config::COUNT_WITNESSES as u32 - count_matching_witnesses,
+            unit
+        );
+    }
+
+    Ok(())
+}
+
+fn build_list_of_mc_units_with_potentially_different_witness_lists(
+    _db: &Connection,
+    _unit: ::spec::Unit,
+    _last_ball_unit: String,
+    _witnesses: Vec<String>,
+) -> Result<(Vec<String>)> {
+    unimplemented!();
+}
