@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use config::{COUNT_WITNESSES, MAX_WITNESS_LIST_MUTATIONS};
 use db;
 use error::Result;
 use joint::Joint;
@@ -1140,4 +1141,49 @@ fn read_definition_at_mci(
     )?;
     let definition = stmt.query_row(&[definition_chash, &max_mci], |row| row.get(0))?;
     Ok(definition)
+}
+
+pub fn determine_best_parents(
+    db: &Connection,
+    joint: &Joint,
+    witnesses: &[String],
+) -> Result<Option<String>> {
+    let parent_units = joint
+        .unit
+        .parent_units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let witness_list = witnesses
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let witness_list_unit = joint.unit.witness_list_unit.clone().unwrap();
+    let sql = format!(
+        "SELECT unit \
+    FROM units AS parent_units \
+    WHERE unit IN({}) \
+      AND (witness_list_unit={} OR ( \
+        SELECT COUNT(*) \
+        FROM unit_witnesses AS parent_witnesses \
+        WHERE parent_witnesses.unit IN(parent_units.unit, parent_units.witness_list_unit) AND address IN({}) \
+      )>={}) \
+    ORDER BY witnessed_level DESC, \
+      level-witnessed_level ASC, \
+      unit ASC \
+    LIMIT 1",
+        parent_units,witness_list,witness_list_unit,COUNT_WITNESSES - MAX_WITNESS_LIST_MUTATIONS
+    );
+
+    let mut stmt = db.prepare(&sql)?;
+    let rows = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    if rows.is_empty() {
+        return Ok(None);
+    }
+    Ok(rows.into_iter().nth(0))
 }

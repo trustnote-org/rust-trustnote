@@ -147,10 +147,10 @@ where
         stmt.insert(&[unit, &serde_json::to_string(joint)?, &err])?;
 
         let mut stmt = tx.prepare_cached("DELETE FROM unhandled_joints WHERE unit=?")?;
-        stmt.insert(&[unit])?;
+        stmt.execute(&[unit])?;
 
         let mut stmt = tx.prepare_cached("DELETE FROM dependencies WHERE unit=?")?;
-        stmt.insert(&[unit])?;
+        stmt.execute(&[unit])?;
     }
 
     let mut queries = db::DbQueries::new();
