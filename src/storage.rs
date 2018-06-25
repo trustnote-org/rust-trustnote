@@ -1165,7 +1165,7 @@ pub fn determine_best_parents(
         "SELECT unit \
     FROM units AS parent_units \
     WHERE unit IN({}) \
-      AND (witness_list_unit={:?} OR ( \
+      AND (witness_list_unit={} OR ( \
         SELECT COUNT(*) \
         FROM unit_witnesses AS parent_witnesses \
         WHERE parent_witnesses.unit IN(parent_units.unit, parent_units.witness_list_unit) AND address IN({}) \
