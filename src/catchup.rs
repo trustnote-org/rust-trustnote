@@ -424,7 +424,7 @@ pub fn process_hash_tree(db: &mut Connection, balls: Vec<BallProps>) -> Result<(
             let sql = format!(
                 "SELECT ball FROM hash_tree_balls \
                  WHERE ball IN({}) UNION SELECT ball FROM balls WHERE ball IN({})",
-                parent_balls_set, skiplist_balls_set
+                skiplist_balls_set, skiplist_balls_set
             );
             let mut stmt = tx.prepare(&sql)?;
             let rows = stmt.query_map(&[], |row| row.get::<_, String>(0))?;
