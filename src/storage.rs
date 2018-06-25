@@ -189,20 +189,11 @@ pub fn read_static_unit_property(
 
 // TODO: need to cache in memory
 pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
-    let mut stmt =
-        db.prepare_cached("SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
-    let rows = stmt.query_map(&[unit_hash], |row| row.get(0))?;
-    let mut names = Vec::new();
-    for name_result in rows {
-        names.push(name_result?);
-    }
-
-    if names.len() != ::config::COUNT_WITNESSES {
-        return Err(format_err!(
-            "wrong number of witnesses in unit {}",
-            unit_hash
-        ));
-    }
+    let mut stmt = db.prepare_cached("SELECT address FROM unit_authors WHERE unit=?")?;
+    let names = stmt
+        .query_map(&[unit_hash], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    ensure!(!names.is_empty(), "no authors");
     Ok(names)
 }
 

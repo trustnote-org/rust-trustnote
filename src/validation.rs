@@ -625,8 +625,8 @@ fn validate_parents(
         let mut stmt = tx.prepare(&sql)?;
         let max_parent_last_ball_mci = stmt
             .query_map(&[], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<u32>, _>>()?;
-        if max_parent_last_ball_mci[0] > validate_state.last_ball_mci {
+            .collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
+        if max_parent_last_ball_mci[0] > Some(validate_state.last_ball_mci) {
             err!(ValidationError::JointError {
                 err: format!(
                     "last ball mci must not retreat, parents: {:?}",

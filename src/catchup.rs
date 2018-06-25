@@ -74,7 +74,7 @@ pub fn prepare_catchup_chain(db: &Connection, catchup_req: CatchupReq) -> Result
         let joint_last_ball_unit = joint.unit.last_ball_unit.clone();
         stable_last_ball_joints.push(joint);
         let unit_porps = storage::read_unit_props(db, &last_ball_unit)?;
-        if unit_porps.main_chain_index <= last_stable_mci {
+        if unit_porps.main_chain_index <= Some(last_stable_mci) {
             break;
         }
         if joint_last_ball_unit.is_none() {

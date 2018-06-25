@@ -143,7 +143,7 @@ pub struct StaticUnitProperty {
     pub level: u32,
     pub witnessed_level: u32,
     pub best_parent_unit: Option<String>,
-    pub witness_list_unit: String,
+    pub witness_list_unit: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -151,8 +151,8 @@ pub struct StaticUnitProperty {
 pub struct UnitProps {
     pub unit: String,
     pub level: u32,
-    pub latest_included_mc_index: u32,
-    pub main_chain_index: u32,
+    pub latest_included_mc_index: Option<u32>,
+    pub main_chain_index: Option<u32>,
     pub is_on_main_chain: u32,
     pub is_free: u32,
     pub is_stable: u32,
