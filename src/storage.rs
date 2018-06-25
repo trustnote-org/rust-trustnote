@@ -1180,10 +1180,10 @@ pub fn determine_best_parents(
     let mut stmt = db.prepare(&sql)?;
     let rows = stmt
         .query_map(&[], |row| row.get(0))?
-        .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
 
-    if rows.len() != 1 {
+    if rows.is_empty() {
         return Ok(None);
     }
-    Ok(rows[0].clone())
+    Ok(rows.into_iter().nth(0))
 }
