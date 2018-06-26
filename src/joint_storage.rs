@@ -63,6 +63,22 @@ pub fn check_new_joint(db: &Connection, joint: &Joint) -> Result<CheckNewResult>
     Ok(ret)
 }
 
+pub fn remove_unhandled_joint_and_dependencies(
+    db: &mut Connection,
+    unit: Option<String>,
+) -> Result<()> {
+    let tx = db.transaction()?;
+    {
+        let mut stmt = tx.prepare_cached("DELETE FROM unhandled_joints WHERE unit=?")?;
+        stmt.execute(&[&unit])?;
+
+        let mut stmt = tx.prepare_cached("DELETE FROM dependencies WHERE unit=?")?;
+        stmt.execute(&[&unit])?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn save_unhandled_joint_and_dependencies(
     db: &mut Connection,
     joint: &Joint,
@@ -71,20 +87,23 @@ pub fn save_unhandled_joint_and_dependencies(
 ) -> Result<()> {
     let unit = joint.get_unit_hash();
     let tx = db.transaction()?;
-    let mut stmt =
-        tx.prepare_cached("INSERT INTO unhandled_joints (unit, json, peer) VALUES (?, ?, ?)")?;
-    stmt.insert(&[unit, &serde_json::to_string(joint)?, peer])?;
-    let missing_units = missing_parent_units
-        .iter()
-        .map(|parent| format!("('{}', '{}')", unit, parent))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let sql = format!(
-        "INSERT OR IGNORE INTO dependencies (unit, depends_on_unit) VALUES {}",
-        missing_units
-    );
-    let mut stmt = tx.prepare(&sql)?;
-    stmt.execute(&[])?;
+    {
+        let mut stmt =
+            tx.prepare_cached("INSERT INTO unhandled_joints (unit, json, peer) VALUES (?, ?, ?)")?;
+        stmt.insert(&[unit, &serde_json::to_string(joint)?, peer])?;
+        let missing_units = missing_parent_units
+            .iter()
+            .map(|parent| format!("('{}', '{}')", unit, parent))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "INSERT OR IGNORE INTO dependencies (unit, depends_on_unit) VALUES {}",
+            missing_units
+        );
+        let mut stmt = tx.prepare(&sql)?;
+        stmt.execute(&[])?;
+    }
+    tx.commit()?;
     Ok(())
 }
 
