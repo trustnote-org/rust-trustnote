@@ -1,3 +1,4 @@
+use config;
 use db;
 use error::Result;
 use joint::Joint;
@@ -6,7 +7,6 @@ use serde_json;
 use std::collections::VecDeque;
 use std::rc::Rc;
 use storage;
-
 // use spec::Unit;
 
 #[derive(Debug)]
@@ -302,4 +302,60 @@ where
         f(&new_unit.unit, &new_unit.peer, err);
     }
     Ok(())
+}
+
+fn purge_uncovered_nonserial_joints(by_existence_of_children: bool) -> Result<()> {
+    
+    fn judge_str(flag:bool, str1:&str, str2:&str)->String{
+            
+        if flag {
+            str1.to_string()
+        } else {
+            str2.to_string()
+        }
+    }
+
+    let cond = judge_str(by_existence_of_children, "is_free=1",
+                    "(SELECT 1 FROM parenthoods WHERE parent unit=unit LINIT 1) IS NULL");
+    let order_column = judge_str(config::STORAGE == "mysql", "creation_date", "rowid");
+    let by_index = judge_str(by_existence_of_children && config::STORAGE == "sqlite", 
+                    "INDEXED BY bySequence",  "");
+
+    //pub const MAJORITY_OF_WITNESSES: usize = (COUNT_WITNESSES%2===0) ? (COUNT_WITNESSES/2+1) : Math.ceil(COUNT_WITNESSES/2);
+   let majority_of_witnesses = {
+       if config::COUNT_WITNESSES % 2 == 0 {
+           config::COUNT_WITNESSES / 2 + 1
+       }else{
+           (config::COUNT_WITNESSES + 1) / 2
+       }
+   };
+
+    // + byIndex +"+ order_column + "" + order_column + "
+    let sql =format!("SELECT unit FROM units {}
+		    WHERE {} AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL 
+			AND NOT EXISTS (SELECT * FROM dependencies WHERE depends_on_unit=units.unit) 
+			AND NOT EXISTS (SELECT * FROM balls WHERE balls.unit=units.unit) 
+			AND EXISTS ( 
+				SELECT DISTINCT address FROM units AS wunits CROSS JOIN unit_authors USING(unit) CROSS JOIN my_witnesses USING(address) 
+				WHERE wunits.{} > units.{} 
+				LIMIT {},1 
+			) /* AND NOT EXISTS (SELECT * FROM unhandled_joints) */",
+             by_index, cond, order_column, order_column, majority_of_witnesses - 1);
+    
+    let mut db = db::DB_POOL.get_connection();
+    let tx = db.transaction()?;
+    {
+        let mut stmt =  tx.prepare_cached(&sql)?;
+        let _rows = stmt.execute(&[])?;
+
+    }
+    tx.commit()?;
+
+   Ok(())
+   //unfinshed
+}
+
+#[allow(dead_code)]
+fn purge_uncovered_nonserial_joints_lock() -> Result<()> {
+    purge_uncovered_nonserial_joints(false)
 }
