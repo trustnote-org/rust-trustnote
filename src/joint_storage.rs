@@ -147,6 +147,20 @@ pub fn read_joints_since_mci(db: &Connection, mci: u32) -> Result<Vec<Joint>> {
     Ok(joints)
 }
 
+#[derive(Debug)]
+pub struct ReadyJoint {
+    pub jonit: Joint,
+    pub create_ts: u32,
+    pub peer: Option<String>,
+}
+pub fn read_dependent_joints_that_are_ready(
+    db: &Connection,
+    unit: &String,
+) -> Result<Vec<ReadyJoint>> {
+    let _ = (db, unit);
+    unimplemented!()
+}
+
 pub fn purge_joint_and_dependencies<F>(
     db: &mut Connection,
     joint: &Joint,

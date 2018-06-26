@@ -10,7 +10,7 @@ use config;
 use db;
 use error::Result;
 use joint::Joint;
-use joint_storage;
+use joint_storage::{self, ReadyJoint};
 use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
@@ -384,18 +384,15 @@ impl HubConn {
                     }
                     joint.save()?;
                     // self.validation_unlock()?;
-                    // self.send_result(json!({"unit": unit, "result": "accepted"}))?;
-                    // // forward to other peers
+                    self.send_result(json!({"unit": unit, "result": "accepted"}))?;
+                    // TODO: forward to other peers
                     // if (!bCatchingUp) {
                     //     self.forwardJoint(ws, objJoint)?;
                     // }
                     // drop(g);
-                    // // wake up other joints that depend on me
-                    // self.findAndHandleJointsThatAreReady(unit);
-                    unimplemented!();
-                    // TODO: forward to other peers
+
                     // wake up other joints that depend on me
-                    // self.find_and_handle_joints_that_are_ready(unit)?;
+                    self.find_and_handle_joints_that_are_ready(db, unit)?;
                 }
             },
             Err(err) => {
@@ -453,6 +450,11 @@ impl HubConn {
         Ok(())
     }
 
+    fn handle_saved_joint(&self, db: &Connection, joint: ReadyJoint) -> Result<()> {
+        let _ = (db, joint);
+        unimplemented!()
+    }
+
     // record peer event in database
     fn write_event(&self, db: &Connection, event: &str) -> Result<()> {
         if event.contains("invalid") || event.contains("nonserial") {
@@ -489,6 +491,17 @@ impl HubConn {
                 ws.send_error_result(unit, &error).ok();
             });
         })?;
+        Ok(())
+    }
+
+    fn find_and_handle_joints_that_are_ready(&self, db: &Connection, unit: &String) -> Result<()> {
+        let joints = joint_storage::read_dependent_joints_that_are_ready(db, unit)?;
+
+        for joint in joints {
+            self.handle_saved_joint(db, joint)?;
+        }
+        // TODO:
+        // self.handle_saved_private_payment()?;
         Ok(())
     }
 
