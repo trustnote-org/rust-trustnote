@@ -1003,7 +1003,7 @@ fn go_down_and_update_main_chain_index(db: &Connection, last_main_chain_index: u
     for row in rows.iter() {
         main_chain_index += 1;
         let mut children_units = Vec::new();
-        let mut units = Vec::new();
+        let mut units = vec![row.clone()];
         children_units.push(row.clone());
         let mut children_units_list = children_units
             .iter()
