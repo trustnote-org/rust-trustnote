@@ -122,14 +122,14 @@ impl Joint {
 
     fn save_witnesses(&self, tx: &Transaction) -> Result<()> {
         let unit = &self.unit;
-        let unit_hash = self.get_unit_hash();
+        if unit.witnesses.is_empty() {
+            return Ok(());
+        }
 
-        if !unit.witnesses.is_empty() {
-            let mut stmt =
-                tx.prepare_cached("INSERT INTO unit_witnesses (unit, address) VALUES(?,?)")?;
-            for address in unit.witnesses.iter() {
-                stmt.execute(&[unit_hash, address])?;
-            }
+        let unit_hash = self.get_unit_hash();
+        let mut stmt = tx.prepare_cached("INSERT INTO unit_witnesses (unit, address) VALUES(?,?)")?;
+        for address in unit.witnesses.iter() {
+            stmt.execute(&[unit_hash, address])?;
         }
         let mut stmt = tx.prepare_cached(
             "INSERT OR IGNORE INTO witness_list_hashes (witness_list_unit, witness_list_hash) VALUES (?,?)")?;
