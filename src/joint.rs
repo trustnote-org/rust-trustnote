@@ -350,7 +350,7 @@ impl Joint {
             }
 
             for address in authors {
-                if !witness_list.contains(&address) && !collected_witnesses.contains(&address) {
+                if witness_list.contains(&address) && !collected_witnesses.contains(&address) {
                     collected_witnesses.insert(address);
                 }
             }

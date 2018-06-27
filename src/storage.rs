@@ -24,7 +24,9 @@ lazy_static! {
                  WHERE units.is_on_main_chain=1 AND units.is_stable=1",
             ).expect("Initialzing MIN_RETRIEVABLE_MCI failed");
 
-        stmt.query_row(&[], |row| row.get::<_, u32>(0)).unwrap_or(0)
+        stmt.query_row(&[], |row| row.get::<_, Option<u32>>(0))
+            .unwrap_or(None)
+            .unwrap_or(0)
     });
 }
 
@@ -60,9 +62,13 @@ pub fn forget_unit(unit: &String) {
 
 pub fn read_witnesses(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
     let mut stmt = db.prepare_cached("SELECT witness_list_unit FROM units WHERE unit=?")?;
-    let witness_hash: String = stmt.query_row(&[unit_hash], |row| row.get(0))?;
+    let witness_hash: Option<String> = stmt.query_row(&[unit_hash], |row| row.get(0))?;
 
-    read_witness_list(db, &witness_hash)
+    if witness_hash.is_some() {
+        read_witness_list(db, &witness_hash.unwrap())
+    } else {
+        read_witness_list(db, unit_hash)
+    }
 }
 
 // TODO: need to cache in memory

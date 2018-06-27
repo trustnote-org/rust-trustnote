@@ -835,7 +835,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
         let last_stable_mc_unit = read_last_stable_mc_unit(db)?;
         info!("Last stable mc unit {}", last_stable_mc_unit);
 
-        let witnesses = storage::read_witness_list(db, &last_stable_mc_unit)?;
+        let witnesses = storage::read_witnesses(db, &last_stable_mc_unit)?;
         let witness_list = witnesses
             .iter()
             .map(|s| format!("'{}'", s))
