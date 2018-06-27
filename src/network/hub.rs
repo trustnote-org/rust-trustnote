@@ -342,7 +342,7 @@ impl HubConn {
 
         // clear the main chain index
         joint.unit.main_chain_index = None;
-        let unit = joint.unit.unit.as_ref().unwrap();
+        let unit = joint.get_unit_hash();
         // check if unit is in work, when g is dropped unlock the unit
         let g = UNIT_IN_WORK.try_lock(vec![unit.to_owned()]);
         if g.is_none() {
@@ -389,7 +389,9 @@ impl HubConn {
                     // if (!bCatchingUp) {
                     //     self.forwardJoint(ws, objJoint)?;
                     // }
-                    // drop(g);
+
+                    // must release the guard to let other work continue
+                    drop(g);
 
                     // wake up other joints that depend on me
                     self.find_and_handle_joints_that_are_ready(db, unit)?;
@@ -450,9 +452,118 @@ impl HubConn {
         Ok(())
     }
 
-    fn handle_saved_joint(&self, db: &Connection, joint: ReadyJoint) -> Result<()> {
-        let _ = (db, joint);
-        unimplemented!()
+    fn handle_saved_joint(&self, db: &mut Connection, joint: ReadyJoint) -> Result<()> {
+        use joint_storage::CheckNewResult;
+        use validation::{ValidationError, ValidationOk};
+
+        // let ReadyJoint {
+        //     joint,
+        //     create_ts,
+        //     peer,
+        // } = joint;
+        let joint = joint.joint;
+        let unit = joint.get_unit_hash();
+
+        // check if unit is in work, when g is dropped unlock the unit
+        let g = UNIT_IN_WORK.try_lock(vec![unit.to_owned()]);
+        if g.is_none() {
+            // the unit is in work, do nothing
+            return Ok(());
+        }
+
+        match joint_storage::check_new_joint(db, &joint)? {
+            CheckNewResult::New => {
+                info!("new in handleSavedJoint: {}", unit);
+                return Ok(());
+            }
+            CheckNewResult::Known => return Ok(()),
+            CheckNewResult::KnownBad => return Ok(()),
+            CheckNewResult::KnownUnverified => {}
+        }
+
+        match validation::validate(db, &joint) {
+            Ok(ok) => match ok {
+                ValidationOk::Unsigned(_) => {
+                    if joint.unsigned != Some(true) {
+                        bail!("ifOkUnsigned() signed");
+                    }
+                    joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
+                }
+                ValidationOk::Signed(_, _) => {
+                    if joint.unsigned == Some(true) {
+                        bail!("ifOk() unsigned");
+                    }
+                    joint.save()?;
+                    // self.validation_unlock()?;
+                    self.send_result(json!({"unit": unit, "result": "accepted"}))?;
+                    // TODO: forward to other peers
+                    // if (!bCatchingUp && !conf.bLight && creation_ts > Date.now() - FORWARDING_TIMEOUT)
+                    // forwardJoint(ws, objJoint);
+                    joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
+                }
+            },
+            Err(err) => {
+                let err: ValidationError = err.downcast()?;
+                match err {
+                    ValidationError::UnitError { err } => {
+                        warn!("{} validation failed: {}", unit, err);
+                        self.send_error_result(unit, &err)?;
+                        self.purge_joint_and_dependencies_and_notify_peers(db, &joint, &err)?;
+                        if !err.contains("authentifier verification failed")
+                            && !err.contains("bad merkle proof at path")
+                        {
+                            self.write_event(db, "invalid")?;
+                        }
+                    }
+                    ValidationError::JointError { err } => {
+                        self.send_error_result(unit, &err)?;
+                        self.write_event(db, "invalid")?;
+                        // TODO: insert known_bad_jonts
+                        unimplemented!()
+                        // b.query(
+                        // 	"INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
+                        // 	[objectHash.getJointHash(objJoint), JSON.stringify(objJoint), error],
+                        // 	function(){
+                        // 		delete assocUnitsInWork[unit];
+                        // 	}
+                        // );
+                    }
+                    ValidationError::NeedHashTree => {
+                        info!("need hash tree for unit {}", unit);
+                        if joint.unsigned == Some(true) {
+                            bail!("need hash tree unsigned");
+                        }
+                        bail!("handleSavedJoint: need hash tree");
+                    }
+                    ValidationError::NeedParentUnits(missing_units) => {
+                        let miss_unit_set = missing_units
+                            .iter()
+                            .map(|s| format!("'{}'", s))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        let sql = format!(
+                            "SELECT 1 FROM archived_joints WHERE unit IN({}) LIMIT 1",
+                            miss_unit_set
+                        );
+                        let mut stmt = db.prepare(&sql)?;
+                        ensure!(
+                            stmt.exists(&[])?,
+                            "unit {} still has unresolved dependencies: {}",
+                            unit,
+                            miss_unit_set
+                        );
+                        info!(
+                            "unit {} has unresolved dependencies that were archived: {}",
+                            unit, miss_unit_set
+                        );
+                        drop(g);
+                        self.request_new_missing_joints(&db, &missing_units)?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     // record peer event in database
@@ -494,7 +605,11 @@ impl HubConn {
         Ok(())
     }
 
-    fn find_and_handle_joints_that_are_ready(&self, db: &Connection, unit: &String) -> Result<()> {
+    fn find_and_handle_joints_that_are_ready(
+        &self,
+        db: &mut Connection,
+        unit: &String,
+    ) -> Result<()> {
         let joints = joint_storage::read_dependent_joints_that_are_ready(db, unit)?;
 
         for joint in joints {

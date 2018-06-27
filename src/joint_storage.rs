@@ -68,17 +68,14 @@ pub fn check_new_joint(db: &Connection, joint: &Joint) -> Result<CheckNewResult>
     Ok(ret)
 }
 
-pub fn remove_unhandled_joint_and_dependencies(
-    db: &mut Connection,
-    unit: Option<String>,
-) -> Result<()> {
+pub fn remove_unhandled_joint_and_dependencies(db: &mut Connection, unit: &String) -> Result<()> {
     let tx = db.transaction()?;
     {
         let mut stmt = tx.prepare_cached("DELETE FROM unhandled_joints WHERE unit=?")?;
-        stmt.execute(&[&unit])?;
+        stmt.execute(&[unit])?;
 
         let mut stmt = tx.prepare_cached("DELETE FROM dependencies WHERE unit=?")?;
-        stmt.execute(&[&unit])?;
+        stmt.execute(&[unit])?;
     }
     tx.commit()?;
     Ok(())
