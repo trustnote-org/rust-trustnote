@@ -167,10 +167,7 @@ pub fn read_dependent_joints_that_are_ready(
     };
 
     let where_clause = if !unit.is_empty() {
-        format!(
-            "WHERE src_deps.depends_on_unit='{}'",
-            unit.replace("'", "''")
-        )
+        format!("WHERE src_deps.depends_on_unit='{}'", unit)
     } else {
         "".to_string()
     };
@@ -199,9 +196,9 @@ pub fn read_dependent_joints_that_are_ready(
     for row in rows {
         let unit: String = row;
         let mut stmt = db.prepare_cached(
-            "SELECT json, peer, strftime('creation_date', ) AS creation_ts FROM unhandled_joints WHERE unit={}")?;
+            "SELECT json, peer, strftime('%s', creation_date) AS creation_ts FROM unhandled_joints WHERE unit=?")?;
 
-        let rows_inner = stmt
+        let mut rows_inner = stmt
             .query_map(&[&unit], |row_inner| ReadyJoint {
                 joint: serde_json::from_str(&row_inner.get::<_, String>(0))
                     .expect("failed to parse json"),
@@ -213,9 +210,7 @@ pub fn read_dependent_joints_that_are_ready(
             })?
             .collect::<::std::result::Result<Vec<ReadyJoint>, _>>()?;
 
-        for row in rows_inner {
-            ret.push(row);
-        }
+        ret.append(rows_inner.as_mut());
     }
 
     Ok(ret)
