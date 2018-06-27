@@ -152,7 +152,7 @@ pub struct ReadyJoint {
 }
 pub fn read_dependent_joints_that_are_ready(
     db: &Connection,
-    unit: &String,
+    unit: Option<&String>,
 ) -> Result<Vec<ReadyJoint>> {
     let _ = (db, unit);
     unimplemented!()
