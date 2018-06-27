@@ -221,10 +221,10 @@ fn find_min_mc_witnessed_level(
         let sql = format!(
             "SELECT best_parent_unit, witnessed_level, \
              (SELECT COUNT(*) FROM unit_authors WHERE unit_authors.unit=units.unit AND address IN({})) AS count \
-             FROM units WHERE unit={}", witnesses_set, start_unit);
+             FROM units WHERE unit=?", witnesses_set);
         let mut stmt = db.prepare(&sql)?;
         let rows = stmt
-            .query_map(&[], |row| OutputTemp {
+            .query_map(&[&start_unit], |row| OutputTemp {
                 best_parent_unit: row.get(0),
                 witnessed_level: row.get(1),
                 count: row.get(2),

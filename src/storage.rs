@@ -117,14 +117,12 @@ pub fn read_props_of_units(
 ) -> Result<(UnitProps, Vec<UnitProps>)> {
     let b_earlier_in_later_units = later_unit_hashes.contains(unit_hash);
 
-    let mut hash_list = later_unit_hashes
+    let hash_list = later_unit_hashes
         .iter()
+        .chain([unit_hash].iter().map(|s| *s))
         .map(|s| format!("'{}'", s))
-        .collect::<Vec<_>>();
-
-    hash_list.push(unit_hash.clone());
-
-    let hash_list = hash_list.join(", ");
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let sql = format!(
         "SELECT unit, level, latest_included_mc_index, main_chain_index, is_on_main_chain, is_free FROM units WHERE unit IN ({})",
