@@ -14,7 +14,7 @@ use joint_storage::{self, ReadyJoint};
 use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
-use may::sync::RwLock;
+use may::sync::{Mutex, RwLock};
 use rusqlite::Connection;
 use serde_json::{self, Value};
 use storage;
@@ -39,6 +39,7 @@ lazy_static! {
     // maybe this is too heavy, could use an optimized hashset<AtomicBool>
     static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
     static ref JOINT_IN_REQ: MapLock<String> = MapLock::new();
+    static ref DEPENDENCIES: Mutex<()> = Mutex::new(());
     static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
     static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now());
 }
@@ -610,6 +611,7 @@ impl HubConn {
         db: &mut Connection,
         unit: &String,
     ) -> Result<()> {
+        let _g = DEPENDENCIES.lock().unwrap();
         let joints = joint_storage::read_dependent_joints_that_are_ready(db, Some(unit))?;
 
         for joint in joints {
