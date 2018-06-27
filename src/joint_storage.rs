@@ -1,6 +1,7 @@
 use db;
 use error::Result;
 use joint::Joint;
+use may::sync::Mutex;
 use rusqlite::Connection;
 use serde_json;
 use std::collections::VecDeque;
@@ -8,6 +9,10 @@ use std::rc::Rc;
 use storage;
 
 // use spec::Unit;
+
+lazy_static! {
+    static ref JOINTSTORAGE_MUTEX: Mutex<()> = Mutex::new(());
+}
 
 #[derive(Debug)]
 pub enum CheckNewResult {
@@ -149,16 +154,74 @@ pub fn read_joints_since_mci(db: &Connection, mci: u32) -> Result<Vec<Joint>> {
 
 #[derive(Debug)]
 pub struct ReadyJoint {
-    pub jonit: Joint,
+    pub joint: Joint,
     pub create_ts: u32,
     pub peer: Option<String>,
 }
+
 pub fn read_dependent_joints_that_are_ready(
     db: &Connection,
     unit: &String,
-) -> Result<Vec<ReadyJoint>> {
-    let _ = (db, unit);
-    unimplemented!()
+) -> Result<(Vec<ReadyJoint>)> {
+    let from = if !unit.is_empty() {
+        "FROM dependencies AS src_deps JOIN dependencies USING(unit)".to_string()
+    } else {
+        "FROM dependencies".to_string()
+    };
+
+    let where_clause = if !unit.is_empty() {
+        format!(
+            "WHERE src_deps.depends_on_unit='{}'",
+            unit.replace("'", "''")
+        )
+    } else {
+        "".to_string()
+    };
+
+    let _g = JOINTSTORAGE_MUTEX.lock().unwrap();
+
+    let sql = format!(
+        "SELECT dependencies.unit, unhandled_joints.unit AS unit_for_json, \
+         SUM(CASE WHEN units.unit IS NULL THEN 1 ELSE 0 END) AS count_missing_parents \
+         {} \
+         JOIN unhandled_joints ON dependencies.unit=unhandled_joints.unit \
+         LEFT JOIN units ON dependencies.depends_on_unit=units.unit \
+         {} \
+         GROUP BY dependencies.unit \
+         HAVING count_missing_parents=0 \
+         ORDER BY NULL",
+        from, where_clause
+    );
+
+    let mut ret = Vec::new();
+    let mut stmt = db.prepare(&sql)?;
+    let rows = stmt
+        .query_map(&[], |row| row.get(1))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    for row in rows {
+        let unit: String = row;
+        let mut stmt = db.prepare_cached(
+            "SELECT json, peer, strftime('creation_date', ) AS creation_ts FROM unhandled_joints WHERE unit={}")?;
+
+        let rows_inner = stmt
+            .query_map(&[&unit], |row_inner| ReadyJoint {
+                joint: serde_json::from_str(&row_inner.get::<_, String>(0))
+                    .expect("failed to parse json"),
+                create_ts: {
+                    let ts: String = row_inner.get(2);
+                    ts.parse::<u32>().unwrap()
+                },
+                peer: row_inner.get(1),
+            })?
+            .collect::<::std::result::Result<Vec<ReadyJoint>, _>>()?;
+
+        for row in rows_inner {
+            ret.push(row);
+        }
+    }
+
+    Ok(ret)
 }
 
 pub fn purge_joint_and_dependencies<F>(
