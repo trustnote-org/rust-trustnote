@@ -147,7 +147,7 @@ pub fn read_joints_since_mci(db: &Connection, mci: u32) -> Result<Vec<Joint>> {
 #[derive(Debug)]
 pub struct ReadyJoint {
     pub joint: Joint,
-    pub create_ts: u32,
+    pub create_ts: usize,
     pub peer: Option<String>,
 }
 
@@ -192,7 +192,7 @@ pub fn read_dependent_joints_that_are_ready(
             .query_map(&[&unit], |row_inner| ReadyJoint {
                 joint: serde_json::from_str(&row_inner.get::<_, String>(0))
                     .expect("failed to parse json"),
-                create_ts: row_inner.get(2),
+                create_ts: row_inner.get::<_, String>(2).parse::<usize>().unwrap() * 1000,
                 peer: row_inner.get(1),
             })?
             .collect::<::std::result::Result<Vec<ReadyJoint>, _>>()?;
