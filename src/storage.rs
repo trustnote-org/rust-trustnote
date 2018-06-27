@@ -253,7 +253,6 @@ pub fn read_joint_with_ball(db: &Connection, unit: &String) -> Result<Joint> {
             joint.ball = Some(ball);
         }
     }
-
     Ok(joint)
 }
 

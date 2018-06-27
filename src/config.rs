@@ -16,25 +16,6 @@ pub const MAX_PARENT_PER_UNIT: usize = 16;
 
 pub const STORAGE: &str = "sqlite";
 pub const MAX_LENGTH: usize = 200;
-//pub arrBreadcrumbs:Vec<String> = vec![];
-//pub const MAJORITY_OF_WITNESSES: usize = (COUNT_WITNESSES%2===0) ? (COUNT_WITNESSES/2+1) : (COUNT_WITNESSES/2);
-#[derive(Debug)]
-struct bread_crumbs {
-    breadcrumbs:Vec<String>,
-}
-
-impl bread_crumbs{
-    fn get(&self)->usize{
-        self.breadcrumbs.len()
-    }
-
-    fn add(&mut self, breadcrumb:&str) {
-        if self.breadcrumbs.len() > MAX_LENGTH {
-             self.breadcrumbs.remove(0);
-        }
-        self.breadcrumbs.push(time::now().to_string() + ":" + breadcrumb);
-    }
-}
 
 pub const COUNT_MC_BALLS_FOR_PAID_WITNESSING: u32 = 100;
 
