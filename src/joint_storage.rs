@@ -1,7 +1,6 @@
 use db;
 use error::Result;
 use joint::Joint;
-use may::sync::Mutex;
 use rusqlite::Connection;
 use serde_json;
 use std::collections::VecDeque;
@@ -9,10 +8,6 @@ use std::rc::Rc;
 use storage;
 
 // use spec::Unit;
-
-lazy_static! {
-    static ref JOINTSTORAGE_MUTEX: Mutex<()> = Mutex::new(());
-}
 
 #[derive(Debug)]
 pub enum CheckNewResult {
@@ -158,21 +153,16 @@ pub struct ReadyJoint {
 
 pub fn read_dependent_joints_that_are_ready(
     db: &Connection,
-    unit: &String,
+    unit: Option<&String>,
 ) -> Result<(Vec<ReadyJoint>)> {
-    let from = if !unit.is_empty() {
-        "FROM dependencies AS src_deps JOIN dependencies USING(unit)".to_string()
+    let (from, where_clause) = if unit.is_some() {
+        (
+            "FROM dependencies AS src_deps JOIN dependencies USING(unit)",
+            format!("WHERE src_deps.depends_on_unit='{}'", unit.unwrap()),
+        )
     } else {
-        "FROM dependencies".to_string()
+        ("FROM dependencies", String::new())
     };
-
-    let where_clause = if !unit.is_empty() {
-        format!("WHERE src_deps.depends_on_unit='{}'", unit)
-    } else {
-        "".to_string()
-    };
-
-    let _g = JOINTSTORAGE_MUTEX.lock().unwrap();
 
     let sql = format!(
         "SELECT dependencies.unit, unhandled_joints.unit AS unit_for_json, \
@@ -202,10 +192,7 @@ pub fn read_dependent_joints_that_are_ready(
             .query_map(&[&unit], |row_inner| ReadyJoint {
                 joint: serde_json::from_str(&row_inner.get::<_, String>(0))
                     .expect("failed to parse json"),
-                create_ts: {
-                    let ts: String = row_inner.get(2);
-                    ts.parse::<u32>().unwrap()
-                },
+                create_ts: row_inner.get(2),
                 peer: row_inner.get(1),
             })?
             .collect::<::std::result::Result<Vec<ReadyJoint>, _>>()?;

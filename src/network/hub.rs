@@ -610,7 +610,7 @@ impl HubConn {
         db: &mut Connection,
         unit: &String,
     ) -> Result<()> {
-        let joints = joint_storage::read_dependent_joints_that_are_ready(db, unit)?;
+        let joints = joint_storage::read_dependent_joints_that_are_ready(db, Some(unit))?;
 
         for joint in joints {
             self.handle_saved_joint(db, joint)?;
