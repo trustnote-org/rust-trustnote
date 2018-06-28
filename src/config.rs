@@ -2,7 +2,6 @@ extern crate config;
 
 use self::config::*;
 use may::sync::RwLock;
-use time;
 
 pub const WS_PORT: u16 = 8080;
 pub const COUNT_WITNESSES: usize = 12;
@@ -15,7 +14,6 @@ pub const MAX_MESSAGES_PER_UNIT: usize = 128;
 pub const MAX_PARENT_PER_UNIT: usize = 16;
 
 pub const STORAGE: &str = "sqlite";
-pub const MAX_LENGTH: usize = 200;
 
 pub const COUNT_MC_BALLS_FOR_PAID_WITNESSING: u32 = 100;
 
