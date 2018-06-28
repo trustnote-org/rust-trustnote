@@ -13,8 +13,6 @@ pub const STALLED_TIMEOUT: usize = 10;
 pub const MAX_MESSAGES_PER_UNIT: usize = 128;
 pub const MAX_PARENT_PER_UNIT: usize = 16;
 
-pub const STORAGE: &str = "sqlite";
-
 pub const COUNT_MC_BALLS_FOR_PAID_WITNESSING: u32 = 100;
 
 lazy_static! {

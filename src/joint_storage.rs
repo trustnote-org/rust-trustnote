@@ -321,12 +321,7 @@ fn purge_uncovered_nonserial_joints(by_existence_of_children: bool) -> Result<()
             "is_free=1",
             "(SELECT 1 FROM parenthoods WHERE parent unit=unit LINIT 1) IS NULL",
         );
-        let order_column = judge_str(config::STORAGE == "mysql", "creation_date", "rowid");
-        let by_index = judge_str(
-            flag && config::STORAGE == "sqlite",
-            "INDEXED BY bySequence",
-            "",
-        );
+        let by_index = judge_str(flag, "INDEXED BY bySequence", "");
 
         let sql = format!(
             "SELECT unit FROM units {}
@@ -336,12 +331,10 @@ fn purge_uncovered_nonserial_joints(by_existence_of_children: bool) -> Result<()
                 AND EXISTS ( \
                     SELECT DISTINCT address FROM units AS wunits CROSS \
                     JOIN unit_authors USING(unit) CROSS JOIN my_witnesses USING(address) \
-                    WHERE wunits.{} > units.{} LIMIT {},1 ) \
+                    WHERE wunits.rowid > units.rowid LIMIT {},1 ) \
                     /* AND NOT EXISTS (SELECT * FROM unhandled_joints) */",
             by_index,
             cond,
-            order_column,
-            order_column,
             config::MAJORITY_OF_WITNESSES - 1,
         );
 
