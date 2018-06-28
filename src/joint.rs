@@ -217,9 +217,32 @@ impl Joint {
             ])?;
 
             if message.payload_location.as_str() == "inline" {
+                use spec::Payload;
                 match message.app.as_str() {
                     "payment" | "text" => {}
-                    _ => unimplemented!(),
+                    "data_feed" => match message.payload {
+                        Some(Payload::Other(ref v)) => {
+                            if let Some(map) = v.as_object() {
+                                for (i, (k, v)) in map.iter().enumerate() {
+                                    let field_name =
+                                        if v.is_number() { "int_value" } else { "value" };
+                                    let sql = format!(
+                                        "INSERT INTO data_feeds \
+                                         (unit, message_index, feed_name, {}) VALUES(?,?,?,?)",
+                                        field_name
+                                    );
+                                    let mut stmt = tx.prepare_cached(&sql)?;
+                                    if v.is_number() {
+                                        stmt.execute(&[unit_hash, &(i as u32), k, &v.as_i64()])?;
+                                    } else {
+                                        stmt.execute(&[unit_hash, &(i as u32), k, &v.as_str()])?;
+                                    }
+                                }
+                            }
+                        }
+                        _ => unreachable!("data_feed invalid message"),
+                    },
+                    app => unimplemented!("unknow message app: {}", app),
                 }
             }
 
