@@ -313,60 +313,71 @@ fn purge_uncovered_nonserial_joints(by_existence_of_children: bool) -> Result<()
             str2.to_string()
         }
     }
-
-    let cond = judge_str(
-        by_existence_of_children,
-        "is_free=1",
-        "(SELECT 1 FROM parenthoods WHERE parent unit=unit LINIT 1) IS NULL",
-    );
-    let order_column = judge_str(config::STORAGE == "mysql", "creation_date", "rowid");
-    let by_index = judge_str(
-        by_existence_of_children && config::STORAGE == "sqlite",
-        "INDEXED BY bySequence",
-        "",
-    );
-
-    let sql = format!(
-        "SELECT unit FROM units {}
-		    WHERE {} AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL \
-			AND NOT EXISTS (SELECT * FROM dependencies WHERE depends_on_unit=units.unit) \
-			AND NOT EXISTS (SELECT * FROM balls WHERE balls.unit=units.unit) \
-			AND EXISTS ( \
-				SELECT DISTINCT address FROM units AS wunits CROSS \
-                JOIN unit_authors USING(unit) CROSS JOIN my_witnesses USING(address) \
-				WHERE wunits.{} > units.{} LIMIT {},1 ) \
-                /* AND NOT EXISTS (SELECT * FROM unhandled_joints) */",
-        by_index,
-        cond,
-        order_column,
-        order_column,
-        config::MAJORITY_OF_WITNESSES - 1,
-    );
-
+    let mut flag = by_existence_of_children;
     let mut db = db::DB_POOL.get_connection();
+    loop {
+        let cond = judge_str(
+            flag,
+            "is_free=1",
+            "(SELECT 1 FROM parenthoods WHERE parent unit=unit LINIT 1) IS NULL",
+        );
+        let order_column = judge_str(config::STORAGE == "mysql", "creation_date", "rowid");
+        let by_index = judge_str(
+            flag && config::STORAGE == "sqlite",
+            "INDEXED BY bySequence",
+            "",
+        );
 
-    let rows = {
-        let mut stmt = db.prepare(&sql)?;
-        /* stmt.query_map(&[], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<String>, _>>()? */
-        let tmprows = stmt.query_map(&[], |row| row.get(0))?;
-        tmprows.collect::<::std::result::Result<Vec<String>, _>>()?
-    };
-    /* loop {
-        unimplemented!();
-    } */
-    for unit in rows.iter() {
-        let tx = db.transaction()?;
-        let joint =
-            storage::read_joint(&tx, &unit).map_err(|_e| format_err!("nonserial unit not found?"))?;
+        let sql = format!(
+            "SELECT unit FROM units {}
+                WHERE {} AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL \
+                AND NOT EXISTS (SELECT * FROM dependencies WHERE depends_on_unit=units.unit) \
+                AND NOT EXISTS (SELECT * FROM balls WHERE balls.unit=units.unit) \
+                AND EXISTS ( \
+                    SELECT DISTINCT address FROM units AS wunits CROSS \
+                    JOIN unit_authors USING(unit) CROSS JOIN my_witnesses USING(address) \
+                    WHERE wunits.{} > units.{} LIMIT {},1 ) \
+                    /* AND NOT EXISTS (SELECT * FROM unhandled_joints) */",
+            by_index,
+            cond,
+            order_column,
+            order_column,
+            config::MAJORITY_OF_WITNESSES - 1,
+        );
 
-        let mut queries = db::DbQueries::new();
-        storage::generate_queries_to_archive_joint(&tx, &joint, "uncoverred", &mut queries)?;
-        tx.commit()?;
+        let rows = {
+            let mut stmt = db.prepare(&sql)?;
+            let tmprows = stmt.query_map(&[], |row| row.get(0))?;
+            tmprows.collect::<::std::result::Result<Vec<String>, _>>()?
+        };
+        for unit in rows.iter() {
+            let tx = db.transaction()?;
+            let joint = storage::read_joint(&tx, &unit)
+                .map_err(|_e| format_err!("nonserial unit not found?"))?;
+
+            let mut queries = db::DbQueries::new();
+            storage::generate_queries_to_archive_joint(&tx, &joint, "uncoverred", &mut queries)?;
+            tx.commit()?;
+        }
+        if rows.is_empty() {
+            if !flag {
+                return Ok(());
+            } else {
+                break;
+            }
+        }
+        flag = true;
+    }
+    let sql = "UPDATE units SET is_free=1 WHERE is_free=0 AND main_chain_index IS NULL \
+               AND (SELECT 1 FROM parenthoods WHERE parent_unit=unit LIMIT 1) IS NULL";
+    let tx = db.transaction()?;
+    {
+        let mut stmt = tx.prepare_cached(&sql)?;
+        stmt.execute(&[])?;
     }
 
+    tx.commit()?;
     Ok(())
-    //unfinshed
 }
 
 #[allow(dead_code)]
