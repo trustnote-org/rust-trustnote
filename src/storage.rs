@@ -31,31 +31,16 @@ lazy_static! {
 }
 
 pub fn is_known_unit(unit: &String) -> bool {
-    {
-        let g = CACHED_UNIT.read().unwrap();
-        if g.contains_key(unit) {
-            return true;
-        }
-    }
-    let g = KNOWN_UNIT.read().unwrap();
-    g.contains(unit)
+    CACHED_UNIT.read().unwrap().contains_key(unit) || KNOWN_UNIT.read().unwrap().contains(unit)
 }
 
 pub fn set_unit_is_known(unit: &String) {
-    let mut g = KNOWN_UNIT.write().unwrap();
-    g.insert(unit.to_owned());
+    KNOWN_UNIT.write().unwrap().insert(unit.to_owned());
 }
 
 pub fn forget_unit(unit: &String) {
-    {
-        let mut g = KNOWN_UNIT.write().unwrap();
-        g.remove(unit);
-    }
-
-    {
-        let mut g = CACHED_UNIT.write().unwrap();
-        g.remove(unit);
-    }
+    KNOWN_UNIT.write().unwrap().remove(unit);
+    CACHED_UNIT.write().unwrap().remove(unit);
 
     unimplemented!()
 }

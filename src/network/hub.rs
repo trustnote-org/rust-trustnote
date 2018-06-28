@@ -676,7 +676,9 @@ impl HubConn {
                 CheckNewResult::New => {
                     new_units.push(unit.clone());
                 }
-                _ => info!("unit {} is already known", unit),
+                CheckNewResult::Known => info!("unit {} is already known", unit),
+                CheckNewResult::KnownUnverified => info!("unit {} known unverified", unit),
+                CheckNewResult::KnownBad => error!("unit {} known bad, ignore it", unit),
             }
         }
 
@@ -909,6 +911,7 @@ pub fn start_catchup() -> Result<()> {
     };
 
     let mut db = db::DB_POOL.get_connection();
+    catchup::purge_handled_balls_from_hash_tree(&db)?;
 
     let mut is_left_over = check_catchup_leftover(&db)?;
 
@@ -924,36 +927,37 @@ pub fn start_catchup() -> Result<()> {
                 "SELECT 1 FROM hash_tree_balls LEFT JOIN units USING(unit) \
                  WHERE units.unit IS NULL LIMIT 1",
             )?;
-            if stmt.exists(&[])? {
-                if is_left_over {
-                    // skip sleep if is_left_over is true
-                    is_left_over = false;
-                } else {
-                    // every one second check again
-                    coroutine::sleep(Duration::from_secs(1));
-                    continue;
-                }
-            }
+            is_left_over = stmt.exists(&[])?;
 
             // try to start a new batch
             let mut stmt = db.prepare_cached(
                 "SELECT ball FROM catchup_chain_balls ORDER BY member_index LIMIT 2",
             )?;
-            let balls = stmt
+            let mut balls = stmt
                 .query_map(&[], |row| row.get(0))?
                 .collect::<::std::result::Result<Vec<String>, _>>()?;
-            let len = balls.len();
-            if len == 0 {
-                break;
-            }
-            if len == 1 {
+
+            if balls.len() == 1 {
                 let mut stmt = db.prepare_cached("DELETE FROM catchup_chain_balls WHERE ball=?")?;
                 stmt.execute(&[&balls[0]])?;
-                break;
+                balls.clear();
             }
 
             balls
         };
+
+        if balls.is_empty() {
+            if is_left_over {
+                // every one second check again
+                info!("wait for catchup data consumed!");
+                coroutine::sleep(Duration::from_secs(1));
+                continue;
+            } else {
+                // we have done
+                info!("catchup done!");
+                break;
+            }
+        }
 
         if let Err(e) = ws.request_next_hash_tree(&mut db, &balls[0], &balls[1]) {
             error!("request_next_hash_tree err={}", e);
