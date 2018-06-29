@@ -368,6 +368,10 @@ fn purge_uncovered_nonserial_joints(mut by_existence_of_children: bool) -> Resul
         by_existence_of_children = true;
     }
 
+    if !by_existence_of_children {
+        return Ok(());
+    }
+
     let mut stmt = db.prepare_cached(
         "UPDATE units SET is_free=1 WHERE is_free=0 AND main_chain_index IS NULL \
          AND (SELECT 1 FROM parenthoods WHERE parent_unit=unit LIMIT 1) IS NULL",
