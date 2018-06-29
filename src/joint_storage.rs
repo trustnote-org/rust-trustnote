@@ -1,13 +1,13 @@
-use config;
+use std::collections::VecDeque;
+use std::rc::Rc;
+
 use db;
 use error::Result;
 use joint::Joint;
+use may::sync::Mutex;
 use rusqlite::Connection;
 use serde_json;
-use std::collections::VecDeque;
-use std::rc::Rc;
 use storage;
-// use spec::Unit;
 
 #[derive(Debug)]
 pub enum CheckNewResult {
@@ -304,76 +304,83 @@ where
     Ok(())
 }
 
-//TODO: add mutex
-fn purge_uncovered_nonserial_joints(by_existence_of_children: bool) -> Result<()> {
-    fn judge_str(flag: bool, str1: &str, str2: &str) -> String {
-        if flag {
-            str1.to_string()
-        } else {
-            str2.to_string()
-        }
-    }
-    let mut flag = by_existence_of_children;
+fn purge_uncovered_nonserial_joints(mut by_existence_of_children: bool) -> Result<()> {
+    use joint::WRITER_MUTEX;
     let mut db = db::DB_POOL.get_connection();
+
     loop {
-        let cond = judge_str(
-            flag,
-            "is_free=1",
-            "(SELECT 1 FROM parenthoods WHERE parent unit=unit LINIT 1) IS NULL",
-        );
-        let by_index = judge_str(flag, "INDEXED BY bySequence", "");
-
-        let sql = format!(
-            "SELECT unit FROM units {}
-                WHERE {} AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL \
-                AND NOT EXISTS (SELECT * FROM dependencies WHERE depends_on_unit=units.unit) \
-                AND NOT EXISTS (SELECT * FROM balls WHERE balls.unit=units.unit) \
-                AND EXISTS ( \
-                    SELECT DISTINCT address FROM units AS wunits CROSS \
-                    JOIN unit_authors USING(unit) CROSS JOIN my_witnesses USING(address) \
-                    WHERE wunits.rowid > units.rowid LIMIT {},1 ) \
-                    /* AND NOT EXISTS (SELECT * FROM unhandled_joints) */",
-            by_index,
-            cond,
-            config::MAJORITY_OF_WITNESSES - 1,
-        );
-
-        let rows = {
-            let mut stmt = db.prepare(&sql)?;
-            let tmprows = stmt.query_map(&[], |row| row.get(0))?;
-            tmprows.collect::<::std::result::Result<Vec<String>, _>>()?
+        let units = {
+            let mut stmt = if by_existence_of_children {
+                // by_existence_of_children = true
+                db.prepare_cached(
+                "SELECT unit FROM units INDEXED BY bySequence \
+                 WHERE (SELECT 1 FROM parenthoods WHERE parent unit=unit LINIT 1) IS NULL AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL \
+                     AND NOT EXISTS (SELECT * FROM dependencies WHERE depends_on_unit=units.unit) \
+                     AND NOT EXISTS (SELECT * FROM balls WHERE balls.unit=units.unit) \
+                     AND EXISTS ( \
+                         SELECT DISTINCT address FROM units AS wunits CROSS \
+                         JOIN unit_authors USING(unit) CROSS JOIN my_witnesses USING(address) \
+                         WHERE wunits.rowid > units.rowid \
+                         LIMIT 6,1 \
+                     )",
+                // FIXME: LIMIT = config::MAJORITY_OF_WITNESSES - 1;
+                )?
+            } else {
+                db.prepare_cached(
+                "SELECT unit FROM units \
+                 WHERE is_free=1 AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL \
+                     AND NOT EXISTS (SELECT * FROM dependencies WHERE depends_on_unit=units.unit) \
+                     AND NOT EXISTS (SELECT * FROM balls WHERE balls.unit=units.unit) \
+                     AND EXISTS ( \
+                         SELECT DISTINCT address FROM units AS wunits CROSS \
+                         JOIN unit_authors USING(unit) CROSS JOIN my_witnesses USING(address) \
+                         WHERE wunits.rowid > units.rowid LIMIT 6,1 \
+                     )",
+                // FIXME: LIMIT = config::MAJORITY_OF_WITNESSES - 1;
+                )?
+            };
+            let rows = stmt.query_map(&[], |row| row.get(0))?;
+            rows.collect::<::std::result::Result<Vec<String>, _>>()?
         };
-        for unit in rows.iter() {
-            let tx = db.transaction()?;
-            let joint = storage::read_joint(&tx, &unit)
-                .map_err(|_e| format_err!("nonserial unit not found?"))?;
 
-            let mut queries = db::DbQueries::new();
-            storage::generate_queries_to_archive_joint(&tx, &joint, "uncoverred", &mut queries)?;
-            tx.commit()?;
-        }
-        if rows.is_empty() {
-            if !flag {
+        if units.is_empty() {
+            if !by_existence_of_children {
                 return Ok(());
             } else {
                 break;
             }
         }
-        flag = true;
-    }
-    let sql = "UPDATE units SET is_free=1 WHERE is_free=0 AND main_chain_index IS NULL \
-               AND (SELECT 1 FROM parenthoods WHERE parent_unit=unit LIMIT 1) IS NULL";
-    let tx = db.transaction()?;
-    {
-        let mut stmt = tx.prepare_cached(&sql)?;
-        stmt.execute(&[])?;
+
+        for unit in units {
+            let joint = storage::read_joint(&db, &unit)
+                .or_else(|e| bail!("nonserial unit not found?, err={}", e))?;
+
+            let g = WRITER_MUTEX.lock().unwrap();
+            let mut queries = db::DbQueries::new();
+            storage::generate_queries_to_archive_joint(&db, &joint, "uncoverred", &mut queries)?;
+            let tx = db.transaction()?;
+            queries.execute(&tx)?;
+            tx.commit()?;
+            drop(g);
+            storage::forget_unit(&unit);
+        }
+
+        by_existence_of_children = true;
     }
 
-    tx.commit()?;
+    let mut stmt = db.prepare_cached(
+        "UPDATE units SET is_free=1 WHERE is_free=0 AND main_chain_index IS NULL \
+         AND (SELECT 1 FROM parenthoods WHERE parent_unit=unit LIMIT 1) IS NULL",
+    )?;
+    stmt.execute(&[])?;
+
     Ok(())
 }
 
-#[allow(dead_code)]
-fn purge_uncovered_nonserial_joints_lock() -> Result<()> {
+pub fn purge_uncovered_nonserial_joints_lock() -> Result<()> {
+    lazy_static! {
+        static ref PURGE_UNCOVERED: Mutex<()> = Mutex::new(());
+    }
+    let _g = PURGE_UNCOVERED.lock().unwrap();
     purge_uncovered_nonserial_joints(false)
 }
