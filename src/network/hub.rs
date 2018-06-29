@@ -17,6 +17,7 @@ use may::net::TcpStream;
 use may::sync::RwLock;
 use rusqlite::Connection;
 use serde_json::{self, Value};
+use std::collections::VecDeque;
 use storage;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
@@ -453,7 +454,12 @@ impl HubConn {
         Ok(())
     }
 
-    fn handle_saved_joint(&self, db: &mut Connection, joint: ReadyJoint) -> Result<()> {
+    fn handle_saved_joint(
+        &self,
+        db: &mut Connection,
+        joint: ReadyJoint,
+        units: &mut VecDeque<String>,
+    ) -> Result<()> {
         use joint_storage::CheckNewResult;
         use validation::{ValidationError, ValidationOk};
 
@@ -502,7 +508,9 @@ impl HubConn {
                     // forwardJoint(ws, objJoint);
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                     drop(g);
-                    self.find_and_handle_joints_that_are_ready(db, unit)?;
+
+                    //Push back unit to DeQueue, later it can be popped and then the joints depend on it can get handled
+                    units.push_back(unit.clone());
                 }
             },
             Err(err) => {
@@ -616,11 +624,17 @@ impl HubConn {
         // info!("before get lock find dependency on {}", unit);
         // let _g = DEPENDENCIES.lock().unwrap();
         // info!("after get lock find dependency on {}", unit);
-        let joints = joint_storage::read_dependent_joints_that_are_ready(db, Some(unit))?;
+        let mut units = VecDeque::new();
+        units.push_back(unit.clone());
 
-        for joint in joints {
-            self.handle_saved_joint(db, joint)?;
+        while let Some(unit) = units.pop_front() {
+            let joints = joint_storage::read_dependent_joints_that_are_ready(db, Some(&unit))?;
+
+            for joint in joints {
+                self.handle_saved_joint(db, joint, &mut units)?;
+            }
         }
+
         // TODO:
         // self.handle_saved_private_payment()?;
         Ok(())
