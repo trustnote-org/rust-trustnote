@@ -362,14 +362,17 @@ impl HubConn {
                 }
                 self.send_result(json!({"unit": unit, "result": "known"}))?;
                 self.write_event(db, "know_good")?;
+                return Ok(());
             }
             CheckNewResult::KnownBad => {
                 self.send_result(json!({"unit": unit, "result": "known_bad"}))?;
                 self.write_event(db, "know_bad")?;
+                return Ok(());
             }
 
             CheckNewResult::KnownUnverified => {
-                self.send_result(json!({"unit": unit, "result": "known_unverified"}))?
+                self.send_result(json!({"unit": unit, "result": "known_unverified"}))?;
+                return Ok(());
             }
         }
 
