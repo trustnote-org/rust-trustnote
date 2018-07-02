@@ -4,6 +4,7 @@ use std::rc::Rc;
 use config::{COUNT_WITNESSES, MAX_WITNESS_LIST_MUTATIONS};
 use db;
 use error::Result;
+use failure::ResultExt;
 use joint::Joint;
 use may::sync::RwLock;
 use rusqlite::Connection;
@@ -423,7 +424,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
             if row.definition_chash.is_some() {
                 let definition_chash = &row.definition_chash.unwrap();
-                definition = serde_json::from_str(read_definition(db, definition_chash)?.as_str())?;
+                definition = read_definition(db, definition_chash)?;
             }
         }
 
@@ -1084,18 +1085,19 @@ fn find_last_ball_mci_of_mci(db: &Connection, mci: u32) -> Result<u32> {
     Ok(rows[0].main_chain_index)
 }
 
-pub fn read_definition(db: &Connection, definition_chash: &String) -> Result<String> {
+pub fn read_definition(db: &Connection, definition_chash: &String) -> Result<Value> {
     let mut stmt =
         db.prepare_cached("SELECT definition FROM definitions WHERE definition_chash=?")?;
-    let definition = stmt.query_row(&[definition_chash], |row| row.get(0))?;
-    Ok(definition)
+    let definition: String = stmt.query_row(&[definition_chash], |row| row.get(0))?;
+    Ok(serde_json::from_str(&definition)
+        .context(format!("failed to read definition: {}", definition_chash))?)
 }
 
 pub fn read_definition_by_address(
     db: &Connection,
     address: &String,
     max_mci: Option<u32>,
-) -> Result<String> {
+) -> Result<Value> {
     let max_mci = max_mci.unwrap_or(::std::u32::MAX);
     let mut stmt = db.prepare_cached(
         "SELECT definition_chash FROM address_definition_changes CROSS JOIN units USING(unit) \
@@ -1113,14 +1115,17 @@ fn read_definition_at_mci(
     db: &Connection,
     definition_chash: &String,
     max_mci: u32,
-) -> Result<String> {
+) -> Result<Value> {
     let mut stmt = db.prepare_cached(
         "SELECT definition FROM definitions \
          CROSS JOIN unit_authors USING(definition_chash) CROSS JOIN units USING(unit) \
          WHERE definition_chash=? AND is_stable=1 AND sequence='good' AND main_chain_index<=?",
     )?;
-    let definition = stmt.query_row(&[definition_chash, &max_mci], |row| row.get(0))?;
-    Ok(definition)
+    let definition: String = stmt.query_row(&[definition_chash, &max_mci], |row| row.get(0))?;
+    Ok(serde_json::from_str(&definition).context(format!(
+        "failed to read definition at mci: definition_chash={}, max_mci={}",
+        definition_chash, max_mci
+    ))?)
 }
 
 pub fn determine_best_parents(
