@@ -14,9 +14,10 @@ use joint_storage::{self, ReadyJoint};
 use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
-use may::sync::RwLock;
+use may::sync::{Mutex, RwLock};
 use rusqlite::Connection;
 use serde_json::{self, Value};
+use std::collections::VecDeque;
 use storage;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
@@ -39,7 +40,6 @@ lazy_static! {
     // maybe this is too heavy, could use an optimized hashset<AtomicBool>
     static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
     static ref JOINT_IN_REQ: MapLock<String> = MapLock::new();
-    // static ref DEPENDENCIES: Mutex<()> = Mutex::new(());
     static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
     static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now());
 }
@@ -53,12 +53,12 @@ fn init_connection(ws: &Arc<HubConn>) {
 
     let mut rng = thread_rng();
     let n: u64 = rng.gen_range(0, 1000);
-    let ws = Arc::downgrade(ws);
+    let ws_c = Arc::downgrade(ws);
 
     // start the heartbeat timer for each connection
     go!(move || loop {
         coroutine::sleep(Duration::from_millis(3000 + n));
-        let ws = match ws.upgrade() {
+        let ws = match ws_c.upgrade() {
             Some(ws) => ws,
             None => return,
         };
@@ -71,6 +71,19 @@ fn init_connection(ws: &Arc<HubConn>) {
             error!("heartbeat err= {}", rsp.unwrap_err());
             ws.close();
         }
+    });
+
+    let ws_c = Arc::downgrade(ws);
+    // find and handle ready joints
+    go!(move || loop {
+        coroutine::sleep(Duration::from_millis(5000));
+        let ws = match ws_c.upgrade() {
+            Some(ws) => ws,
+            None => return,
+        };
+        info!("find_and_handle_joints_that_are_ready");
+        let mut db = ::db::DB_POOL.get_connection();
+        t!(ws.find_and_handle_joints_that_are_ready(&mut db, None));
     });
 }
 
@@ -361,14 +374,17 @@ impl HubConn {
                 }
                 self.send_result(json!({"unit": unit, "result": "known"}))?;
                 self.write_event(db, "know_good")?;
+                return Ok(());
             }
             CheckNewResult::KnownBad => {
                 self.send_result(json!({"unit": unit, "result": "known_bad"}))?;
                 self.write_event(db, "know_bad")?;
+                return Ok(());
             }
 
             CheckNewResult::KnownUnverified => {
-                self.send_result(json!({"unit": unit, "result": "known_unverified"}))?
+                self.send_result(json!({"unit": unit, "result": "known_unverified"}))?;
+                return Ok(());
             }
         }
 
@@ -379,7 +395,8 @@ impl HubConn {
                         bail!("ifOkUnsigned() signed");
                     }
                 }
-                ValidationOk::Signed(_, _) => {
+                ValidationOk::Signed(_, lock) => {
+                    drop(lock);
                     if joint.unsigned == Some(true) {
                         bail!("ifOk() unsigned");
                     }
@@ -395,7 +412,7 @@ impl HubConn {
                     drop(g);
 
                     // wake up other joints that depend on me
-                    self.find_and_handle_joints_that_are_ready(db, unit)?;
+                    self.find_and_handle_joints_that_are_ready(db, Some(unit))?;
                 }
             },
             Err(err) => {
@@ -453,7 +470,12 @@ impl HubConn {
         Ok(())
     }
 
-    fn handle_saved_joint(&self, db: &mut Connection, joint: ReadyJoint) -> Result<()> {
+    fn handle_saved_joint(
+        &self,
+        db: &mut Connection,
+        joint: ReadyJoint,
+        unhandled_joints: &mut VecDeque<ReadyJoint>,
+    ) -> Result<()> {
         use joint_storage::CheckNewResult;
         use validation::{ValidationError, ValidationOk};
 
@@ -464,11 +486,13 @@ impl HubConn {
         // } = joint;
         let joint = joint.joint;
         let unit = joint.get_unit_hash();
+        info!("handle_saved_joint: {}", unit);
 
         // check if unit is in work, when g is dropped unlock the unit
         let g = UNIT_IN_WORK.try_lock(vec![unit.to_owned()]);
         if g.is_none() {
             // the unit is in work, do nothing
+            info!("handle_saved_joint: {} in work", unit);
             return Ok(());
         }
 
@@ -490,7 +514,8 @@ impl HubConn {
                     }
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                 }
-                ValidationOk::Signed(_, _) => {
+                ValidationOk::Signed(_, lock) => {
+                    drop(lock);
                     if joint.unsigned == Some(true) {
                         bail!("ifOk() unsigned");
                     }
@@ -502,7 +527,14 @@ impl HubConn {
                     // forwardJoint(ws, objJoint);
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                     drop(g);
-                    self.find_and_handle_joints_that_are_ready(db, unit)?;
+
+                    //Push back unit to DeQueue, later it can be popped and then the joints depend on it can get handled
+                    let joints =
+                        joint_storage::read_dependent_joints_that_are_ready(db, Some(unit))?;
+
+                    for joint in joints {
+                        unhandled_joints.push_back(joint);
+                    }
                 }
             },
             Err(err) => {
@@ -611,16 +643,24 @@ impl HubConn {
     fn find_and_handle_joints_that_are_ready(
         &self,
         db: &mut Connection,
-        unit: &String,
+        unit: Option<&String>,
     ) -> Result<()> {
-        // info!("before get lock find dependency on {}", unit);
-        // let _g = DEPENDENCIES.lock().unwrap();
-        // info!("after get lock find dependency on {}", unit);
-        let joints = joint_storage::read_dependent_joints_that_are_ready(db, Some(unit))?;
+        lazy_static! {
+            static ref DEPENDENCIES: Mutex<()> = Mutex::new(());
+        }
+        let _g = DEPENDENCIES.lock().unwrap();
+        let mut unhandled_joints = VecDeque::new();
+
+        let joints = joint_storage::read_dependent_joints_that_are_ready(db, unit)?;
 
         for joint in joints {
-            self.handle_saved_joint(db, joint)?;
+            unhandled_joints.push_back(joint);
         }
+
+        while let Some(joint) = unhandled_joints.pop_front() {
+            self.handle_saved_joint(db, joint, &mut unhandled_joints)?;
+        }
+
         // TODO:
         // self.handle_saved_private_payment()?;
         Ok(())
