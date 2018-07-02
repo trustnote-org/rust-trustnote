@@ -1125,11 +1125,10 @@ fn read_definition_at_mci(
 
 pub fn determine_best_parents(
     db: &Connection,
-    joint: &Joint,
-    witnesses: &[String],
+    unit: &Unit,
+    witnesses: Vec<String>,
 ) -> Result<Option<String>> {
-    let parent_units = joint
-        .unit
+    let parent_units = unit
         .parent_units
         .iter()
         .map(|s| format!("'{}'", s))
@@ -1140,7 +1139,7 @@ pub fn determine_best_parents(
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
         .join(", ");
-    let witness_list_unit = joint.unit.witness_list_unit.clone().unwrap();
+    let witness_list_unit = unit.witness_list_unit.clone().unwrap();
     let sql = format!(
         "SELECT unit \
     FROM units AS parent_units \
@@ -1168,12 +1167,13 @@ pub fn determine_best_parents(
     Ok(rows.into_iter().nth(0))
 }
 
-fn determine_if_has_witness_list_mutations_along_mc(
+pub fn determine_if_has_witness_list_mutations_along_mc(
     db: &Connection,
-    unit: ::spec::Unit,
-    last_ball_unit: String,
+    unit: &Unit,
+    last_ball_unit: &String,
     witnesses: Vec<String>,
 ) -> Result<()> {
+    //Genesis
     if unit.parent_units.len() == 0 {
         return Ok(());
     }
@@ -1227,11 +1227,44 @@ fn determine_if_has_witness_list_mutations_along_mc(
     Ok(())
 }
 
+// the MC return from this function is the MC built from this unit, not our current MC
 fn build_list_of_mc_units_with_potentially_different_witness_lists(
-    _db: &Connection,
-    _unit: ::spec::Unit,
-    _last_ball_unit: String,
-    _witnesses: Vec<String>,
+    db: &Connection,
+    unit: &Unit,
+    last_ball_unit: &String,
+    witnesses: Vec<String>,
 ) -> Result<(Vec<String>)> {
-    unimplemented!();
+    let mut mc_units = Vec::new();
+
+    let best_parent_unit = determine_best_parents(db, unit, witnesses)?;
+    ensure!(best_parent_unit.is_some(), "no compatible best parent");
+
+    //Add and go up
+    let mut parent_hash = best_parent_unit.unwrap();
+    loop {
+        let parent_props = read_static_unit_property(db, &parent_hash)?;
+
+        // the parent has the same witness list and the parent has already passed the MC compatibility test
+        if unit.witness_list_unit.is_some()
+            && unit.witness_list_unit == parent_props.witness_list_unit
+        {
+            break;
+        } else {
+            mc_units.push(parent_hash.clone());
+        }
+
+        if &parent_hash == last_ball_unit {
+            break;
+        }
+
+        ensure!(
+            parent_props.best_parent_unit.is_some(),
+            "no best parent of unit {}?",
+            parent_hash
+        );
+
+        parent_hash = parent_props.best_parent_unit.unwrap();
+    }
+
+    Ok(mc_units)
 }
