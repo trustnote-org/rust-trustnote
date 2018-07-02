@@ -221,10 +221,10 @@ fn find_min_mc_witnessed_level(
         let sql = format!(
             "SELECT best_parent_unit, witnessed_level, \
              (SELECT COUNT(*) FROM unit_authors WHERE unit_authors.unit=units.unit AND address IN({})) AS count \
-             FROM units WHERE unit={}", witnesses_set, start_unit);
+             FROM units WHERE unit=?", witnesses_set);
         let mut stmt = db.prepare(&sql)?;
         let rows = stmt
-            .query_map(&[], |row| OutputTemp {
+            .query_map(&[&start_unit], |row| OutputTemp {
                 best_parent_unit: row.get(0),
                 witnessed_level: row.get(1),
                 count: row.get(2),
@@ -835,7 +835,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
         let last_stable_mc_unit = read_last_stable_mc_unit(db)?;
         info!("Last stable mc unit {}", last_stable_mc_unit);
 
-        let witnesses = storage::read_witness_list(db, &last_stable_mc_unit)?;
+        let witnesses = storage::read_witnesses(db, &last_stable_mc_unit)?;
         let witness_list = witnesses
             .iter()
             .map(|s| format!("'{}'", s))
@@ -1003,7 +1003,7 @@ fn go_down_and_update_main_chain_index(db: &Connection, last_main_chain_index: u
     for row in rows.iter() {
         main_chain_index += 1;
         let mut children_units = Vec::new();
-        let mut units = Vec::new();
+        let mut units = vec![row.clone()];
         children_units.push(row.clone());
         let mut children_units_list = children_units
             .iter()

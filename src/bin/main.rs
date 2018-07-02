@@ -199,8 +199,13 @@ fn pause() {
 }
 
 fn main() -> Result<()> {
+    let stack_size = if cfg!(debug_assertions) {
+        0x4000
+    } else {
+        0x1000
+    };
     may::config()
-        .set_stack_size(0x2000)
+        .set_stack_size(stack_size)
         .set_io_workers(0)
         .set_workers(1);
     signature::init_secp256k1()?;

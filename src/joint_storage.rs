@@ -1,13 +1,13 @@
+use std::collections::VecDeque;
+use std::rc::Rc;
+
 use db;
 use error::Result;
 use joint::Joint;
+use may::sync::Mutex;
 use rusqlite::Connection;
 use serde_json;
-use std::collections::VecDeque;
-use std::rc::Rc;
 use storage;
-
-// use spec::Unit;
 
 #[derive(Debug)]
 pub enum CheckNewResult {
@@ -63,6 +63,19 @@ pub fn check_new_joint(db: &Connection, joint: &Joint) -> Result<CheckNewResult>
     Ok(ret)
 }
 
+pub fn remove_unhandled_joint_and_dependencies(db: &mut Connection, unit: &String) -> Result<()> {
+    let tx = db.transaction()?;
+    {
+        let mut stmt = tx.prepare_cached("DELETE FROM unhandled_joints WHERE unit=?")?;
+        stmt.execute(&[unit])?;
+
+        let mut stmt = tx.prepare_cached("DELETE FROM dependencies WHERE unit=?")?;
+        stmt.execute(&[unit])?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 pub fn save_unhandled_joint_and_dependencies(
     db: &mut Connection,
     joint: &Joint,
@@ -71,20 +84,23 @@ pub fn save_unhandled_joint_and_dependencies(
 ) -> Result<()> {
     let unit = joint.get_unit_hash();
     let tx = db.transaction()?;
-    let mut stmt =
-        tx.prepare_cached("INSERT INTO unhandled_joints (unit, json, peer) VALUES (?, ?, ?)")?;
-    stmt.insert(&[unit, &serde_json::to_string(joint)?, peer])?;
-    let missing_units = missing_parent_units
-        .iter()
-        .map(|parent| format!("('{}', '{}')", unit, parent))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let sql = format!(
-        "INSERT OR IGNORE INTO dependencies (unit, depends_on_unit) VALUES {}",
-        missing_units
-    );
-    let mut stmt = tx.prepare(&sql)?;
-    stmt.execute(&[])?;
+    {
+        let mut stmt =
+            tx.prepare_cached("INSERT INTO unhandled_joints (unit, json, peer) VALUES (?, ?, ?)")?;
+        stmt.insert(&[unit, &serde_json::to_string(joint)?, peer])?;
+        let missing_units = missing_parent_units
+            .iter()
+            .map(|parent| format!("('{}', '{}')", unit, parent))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "INSERT OR IGNORE INTO dependencies (unit, depends_on_unit) VALUES {}",
+            missing_units
+        );
+        let mut stmt = tx.prepare(&sql)?;
+        stmt.execute(&[])?;
+    }
+    tx.commit()?;
     Ok(())
 }
 
@@ -126,6 +142,65 @@ pub fn read_joints_since_mci(db: &Connection, mci: u32) -> Result<Vec<Joint>> {
     }
 
     Ok(joints)
+}
+
+#[derive(Debug)]
+pub struct ReadyJoint {
+    pub joint: Joint,
+    pub create_ts: usize,
+    pub peer: Option<String>,
+}
+
+pub fn read_dependent_joints_that_are_ready(
+    db: &Connection,
+    unit: Option<&String>,
+) -> Result<(Vec<ReadyJoint>)> {
+    let (from, where_clause) = if unit.is_some() {
+        (
+            "FROM dependencies AS src_deps JOIN dependencies USING(unit)",
+            format!("WHERE src_deps.depends_on_unit='{}'", unit.unwrap()),
+        )
+    } else {
+        ("FROM dependencies", String::new())
+    };
+
+    let sql = format!(
+        "SELECT dependencies.unit, unhandled_joints.unit AS unit_for_json, \
+         SUM(CASE WHEN units.unit IS NULL THEN 1 ELSE 0 END) AS count_missing_parents \
+         {} \
+         JOIN unhandled_joints ON dependencies.unit=unhandled_joints.unit \
+         LEFT JOIN units ON dependencies.depends_on_unit=units.unit \
+         {} \
+         GROUP BY dependencies.unit \
+         HAVING count_missing_parents=0 \
+         ORDER BY NULL",
+        from, where_clause
+    );
+
+    let mut ret = Vec::new();
+    let mut stmt = db.prepare(&sql)?;
+    let rows = stmt
+        .query_map(&[], |row| row.get(1))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    for row in rows {
+        let unit: String = row;
+        let mut stmt = db.prepare_cached(
+            "SELECT json, peer, strftime('%s', creation_date) AS creation_ts FROM unhandled_joints WHERE unit=?")?;
+
+        let mut rows_inner = stmt
+            .query_map(&[&unit], |row_inner| ReadyJoint {
+                joint: serde_json::from_str(&row_inner.get::<_, String>(0))
+                    .expect("failed to parse json"),
+                create_ts: row_inner.get::<_, String>(2).parse::<usize>().unwrap() * 1000,
+                peer: row_inner.get(1),
+            })?
+            .collect::<::std::result::Result<Vec<ReadyJoint>, _>>()?;
+
+        ret.append(rows_inner.as_mut());
+    }
+
+    Ok(ret)
 }
 
 pub fn purge_joint_and_dependencies<F>(
@@ -225,6 +300,94 @@ where
         });
 
         f(&new_unit.unit, &new_unit.peer, err);
+    }
+    Ok(())
+}
+
+fn purge_uncovered_nonserial_joints(mut by_existence_of_children: bool) -> Result<()> {
+    use joint::WRITER_MUTEX;
+    let mut db = db::DB_POOL.get_connection();
+
+    loop {
+        let units = {
+            let mut stmt = if by_existence_of_children {
+                // by_existence_of_children = true
+                db.prepare_cached(
+                "SELECT unit FROM units INDEXED BY bySequence \
+                 WHERE (SELECT 1 FROM parenthoods WHERE parent unit=unit LINIT 1) IS NULL AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL \
+                     AND NOT EXISTS (SELECT * FROM dependencies WHERE depends_on_unit=units.unit) \
+                     AND NOT EXISTS (SELECT * FROM balls WHERE balls.unit=units.unit) \
+                     AND EXISTS ( \
+                         SELECT DISTINCT address FROM units AS wunits CROSS \
+                         JOIN unit_authors USING(unit) CROSS JOIN my_witnesses USING(address) \
+                         WHERE wunits.rowid > units.rowid \
+                         LIMIT 6,1 \
+                     )",
+                // FIXME: LIMIT = config::MAJORITY_OF_WITNESSES - 1;
+                )?
+            } else {
+                db.prepare_cached(
+                "SELECT unit FROM units \
+                 WHERE is_free=1 AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL \
+                     AND NOT EXISTS (SELECT * FROM dependencies WHERE depends_on_unit=units.unit) \
+                     AND NOT EXISTS (SELECT * FROM balls WHERE balls.unit=units.unit) \
+                     AND EXISTS ( \
+                         SELECT DISTINCT address FROM units AS wunits CROSS \
+                         JOIN unit_authors USING(unit) CROSS JOIN my_witnesses USING(address) \
+                         WHERE wunits.rowid > units.rowid LIMIT 6,1 \
+                     )",
+                // FIXME: LIMIT = config::MAJORITY_OF_WITNESSES - 1;
+                )?
+            };
+            let rows = stmt.query_map(&[], |row| row.get(0))?;
+            rows.collect::<::std::result::Result<Vec<String>, _>>()?
+        };
+
+        if units.is_empty() {
+            if !by_existence_of_children {
+                return Ok(());
+            } else {
+                break;
+            }
+        }
+
+        for unit in units {
+            let joint = storage::read_joint(&db, &unit)
+                .or_else(|e| bail!("nonserial unit not found?, err={}", e))?;
+
+            let g = WRITER_MUTEX.lock().unwrap();
+            let mut queries = db::DbQueries::new();
+            storage::generate_queries_to_archive_joint(&db, &joint, "uncoverred", &mut queries)?;
+            let tx = db.transaction()?;
+            queries.execute(&tx)?;
+            tx.commit()?;
+            drop(g);
+            storage::forget_unit(&unit);
+        }
+
+        by_existence_of_children = true;
+    }
+
+    if !by_existence_of_children {
+        return Ok(());
+    }
+
+    let mut stmt = db.prepare_cached(
+        "UPDATE units SET is_free=1 WHERE is_free=0 AND main_chain_index IS NULL \
+         AND (SELECT 1 FROM parenthoods WHERE parent_unit=unit LIMIT 1) IS NULL",
+    )?;
+    stmt.execute(&[])?;
+
+    Ok(())
+}
+
+pub fn purge_uncovered_nonserial_joints_lock() -> Result<()> {
+    lazy_static! {
+        static ref PURGE_UNCOVERED: Mutex<()> = Mutex::new(());
+    }
+
+    if let Ok(_) = PURGE_UNCOVERED.try_lock() {
+        return purge_uncovered_nonserial_joints(false);
     }
     Ok(())
 }

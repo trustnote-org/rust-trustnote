@@ -17,7 +17,10 @@ fn get_max_spendable_mci(db: &Connection) -> Result<u32> {
     let mut stmt = db.prepare_cached(
         "SELECT MAX(main_chain_index) AS max_spendable_mci FROM headers_commission_outputs",
     )?;
-    let mci = stmt.query_row(&[], |row| row.get(0)).unwrap_or(0);
+    let mci = stmt
+        .query_row(&[], |row| row.get::<_, Option<u32>>(0))
+        .unwrap_or(None)
+        .unwrap_or(0);
     Ok(mci)
 }
 
@@ -195,7 +198,7 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
         );
 
         let mut stmt = db.prepare(&sql)?;
-        stmt.insert(&[])?;
+        stmt.execute(&[])?;
     }
 
     let mut stmt = db.prepare_cached(
@@ -203,7 +206,7 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
                 SELECT main_chain_index, address, SUM(amount) FROM headers_commission_contributions JOIN units USING(unit) \
                 WHERE main_chain_index>? \
                 GROUP BY main_chain_index, address")?;
-    stmt.insert(&[&since_mc_index])?;
+    stmt.execute(&[&since_mc_index])?;
 
     *max_spendable_mci = Some(get_max_spendable_mci(db)?);
     Ok(())

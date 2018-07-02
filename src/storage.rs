@@ -24,45 +24,36 @@ lazy_static! {
                  WHERE units.is_on_main_chain=1 AND units.is_stable=1",
             ).expect("Initialzing MIN_RETRIEVABLE_MCI failed");
 
-        stmt.query_row(&[], |row| row.get::<_, u32>(0)).unwrap_or(0)
+        stmt.query_row(&[], |row| row.get::<_, Option<u32>>(0))
+            .unwrap_or(None)
+            .unwrap_or(0)
     });
 }
 
 pub fn is_known_unit(unit: &String) -> bool {
-    {
-        let g = CACHED_UNIT.read().unwrap();
-        if g.contains_key(unit) {
-            return true;
-        }
-    }
-    let g = KNOWN_UNIT.read().unwrap();
-    g.contains(unit)
+    CACHED_UNIT.read().unwrap().contains_key(unit) || KNOWN_UNIT.read().unwrap().contains(unit)
 }
 
 pub fn set_unit_is_known(unit: &String) {
-    let mut g = KNOWN_UNIT.write().unwrap();
-    g.insert(unit.to_owned());
+    KNOWN_UNIT.write().unwrap().insert(unit.to_owned());
 }
 
 pub fn forget_unit(unit: &String) {
-    {
-        let mut g = KNOWN_UNIT.write().unwrap();
-        g.remove(unit);
-    }
-
-    {
-        let mut g = CACHED_UNIT.write().unwrap();
-        g.remove(unit);
-    }
+    KNOWN_UNIT.write().unwrap().remove(unit);
+    CACHED_UNIT.write().unwrap().remove(unit);
 
     unimplemented!()
 }
 
 pub fn read_witnesses(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
     let mut stmt = db.prepare_cached("SELECT witness_list_unit FROM units WHERE unit=?")?;
-    let witness_hash: String = stmt.query_row(&[unit_hash], |row| row.get(0))?;
+    let witness_hash: Option<String> = stmt.query_row(&[unit_hash], |row| row.get(0))?;
 
-    read_witness_list(db, &witness_hash)
+    if witness_hash.is_some() {
+        read_witness_list(db, &witness_hash.unwrap())
+    } else {
+        read_witness_list(db, unit_hash)
+    }
 }
 
 // TODO: need to cache in memory
@@ -117,14 +108,12 @@ pub fn read_props_of_units(
 ) -> Result<(UnitProps, Vec<UnitProps>)> {
     let b_earlier_in_later_units = later_unit_hashes.contains(unit_hash);
 
-    let mut hash_list = later_unit_hashes
+    let hash_list = later_unit_hashes
         .iter()
+        .chain([unit_hash].iter().map(|s| *s))
         .map(|s| format!("'{}'", s))
-        .collect::<Vec<_>>();
-
-    hash_list.push(unit_hash.clone());
-
-    let hash_list = hash_list.join(", ");
+        .collect::<Vec<_>>()
+        .join(", ");
 
     let sql = format!(
         "SELECT unit, level, latest_included_mc_index, main_chain_index, is_on_main_chain, is_free FROM units WHERE unit IN ({})",
