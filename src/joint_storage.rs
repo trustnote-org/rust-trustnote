@@ -385,6 +385,9 @@ pub fn purge_uncovered_nonserial_joints_lock() -> Result<()> {
     lazy_static! {
         static ref PURGE_UNCOVERED: Mutex<()> = Mutex::new(());
     }
-    let _g = PURGE_UNCOVERED.try_lock().unwrap();
-    purge_uncovered_nonserial_joints(false)
+
+    if let Ok(_) = PURGE_UNCOVERED.try_lock() {
+        return purge_uncovered_nonserial_joints(false);
+    }
+    Ok(())
 }
