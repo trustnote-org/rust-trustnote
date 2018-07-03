@@ -141,20 +141,29 @@ impl Joint {
     // return a vec of author address
     fn save_authors(&self, tx: &Transaction) -> Result<()> {
         let unit_hash = self.get_unit_hash();
+        let mut definition_chash = None;
         for author in &self.unit.authors {
             let definition = &author.definition;
-            let definition_chash = get_chash(definition)?;
-            let mut stmt = tx.prepare_cached(
-                "INSERT OR IGNORE INTO definitions \
-                 (definition_chash, definition, has_references) \
-                 VALUES (?, ?, ?)",
-            )?;
-            let definition_json = serde_json::to_string(definition)?;
-            let has_references = definition::has_references(definition)? as u8;
-            stmt.execute(&[&definition_chash, &definition_json, &has_references])?;
+            if !definition.is_null() {
+                definition_chash = Some(get_chash(definition)?);
+                let mut stmt = tx.prepare_cached(
+                    "INSERT OR IGNORE INTO definitions \
+                     (definition_chash, definition, has_references) \
+                     VALUES (?, ?, ?)",
+                )?;
+                let definition_json = serde_json::to_string(definition)?;
+                let has_references = definition::has_references(definition)? as u8;
+                stmt.execute(&[&definition_chash, &definition_json, &has_references])?;
 
-            // TODO: we ingore unit.content_hash here
-            if definition_chash == author.address {
+                // TODO: we ingore unit.content_hash here
+                if definition_chash.as_ref() == Some(&author.address) {
+                    let mut stmt = tx.prepare_cached(
+                        "INSERT OR IGNORE INTO addresses (address) \
+                         VALUES (?)",
+                    )?;
+                    stmt.execute(&[&author.address])?;
+                }
+            } else if let Some(_) = self.unit.content_hash {
                 let mut stmt = tx.prepare_cached(
                     "INSERT OR IGNORE INTO addresses (address) \
                      VALUES (?)",

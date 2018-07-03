@@ -2,18 +2,47 @@ use std::collections::HashMap;
 
 use config;
 use error::Result;
+use failure::ResultExt;
 use rusqlite::Connection;
+use serde::Deserialize;
 use serde_json::Value;
+use signature;
 use spec::*;
 use validation::ValidationState;
 
-pub fn validate_definition(
-    _db: &Connection,
-    definition: &Value,
-    _unit: &Unit,
-    _validate_state: &mut ValidationState,
-    is_asset: bool,
-) -> Result<()> {
+struct Definition<'a> {
+    op: &'a str,
+    args: &'a Value,
+}
+
+impl<'a> Definition<'a> {
+    fn from_value(value: &'a Value) -> Result<Self> {
+        if !value.is_array() {
+            println!("definition={:?}", value);
+            bail!("definition must be array");
+        }
+
+        let arr = value.as_array().unwrap();
+        if arr.len() != 2 {
+            bail!("expression must be 2-element array");
+        }
+        let op = arr[0]
+            .as_str()
+            .ok_or_else(|| format_err!("op is not a string"))?;
+        let args = &arr[1];
+
+        Ok(Definition { op, args })
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SigValue<'a> {
+    algo: Option<&'a str>,
+    pubkey: &'a str,
+}
+
+pub fn validate_definition(definition: &Value, is_asset: bool) -> Result<()> {
     fn evaluate(
         definition: &Value,
         is_in_negation: bool,
@@ -25,20 +54,9 @@ pub fn validate_definition(
             bail!("complexity exceeded");
         }
 
-        if !definition.is_array() {
-            bail!("definition must be array");
-        }
+        let definition = Definition::from_value(definition)?;
 
-        let arr = definition.as_array().unwrap();
-        if arr.len() != 2 {
-            bail!("expression must be 2-element array");
-        }
-        let op = arr[0]
-            .as_str()
-            .ok_or_else(|| format_err!("op is not a string"))?;
-        let args = &arr[1];
-
-        match op {
+        match definition.op {
             "sig" => {
                 if is_in_negation {
                     bail!("sig cannot be negated");
@@ -46,34 +64,22 @@ pub fn validate_definition(
                 if is_asset {
                     bail!("asset condition cannot have sig");
                 }
-                if !args.is_object() {
-                    bail!("sig args is not object");
-                }
-                let args = args.as_object().unwrap();
-                for (k, v) in args {
-                    // let key = k
-                    //     .as_str()
-                    //     .ok_or_else(|| format_err!("sig key is not string"))?;
-                    let value = v
-                        .as_str()
-                        .ok_or_else(|| format_err!("sig value is not string"))?;
 
-                    match k.as_str() {
-                        // "algo" => unimplemented!(),
-                        "pubkey" => {
-                            if value.len() != config::HASH_LENGTH {
-                                bail!("wrong pubkey length")
-                            }
-                        }
-                        _ => bail!("unknown fields in sig"),
-                    }
-                    return Ok(true);
+                let sig_value =
+                    SigValue::deserialize(definition.args).context("can't convert to SigValue")?;
+
+                if let Some(algo) = sig_value.algo {
+                    ensure!(algo == "secp256k1", "unsupported sig algo");
                 }
+
+                ensure!(
+                    sig_value.pubkey.len() == config::HASH_LENGTH,
+                    "wrong pubkey length"
+                );
             }
             op => unimplemented!("unsupported op: {}", op),
         }
-
-        Ok(false)
+        Ok(true)
     }
 
     let mut complexity = 0;
@@ -87,38 +93,64 @@ pub fn validate_definition(
 }
 
 pub fn validate_authentifiers(
-    db: &Connection,
+    _db: &Connection,
     _address: &String,
     asset: &Value,
     definition: &Value,
-    unit: &Unit,
+    _unit: &Unit,
     validate_state: &mut ValidationState,
     authentifiers: &HashMap<String, String>,
 ) -> Result<()> {
+    let evaluate = |definition: &Value, path: &str, used_path: &mut Vec<String>| -> Result<()> {
+        let definition = Definition::from_value(definition)?;
+        match definition.op {
+            "sig" => {
+                let sig = authentifiers
+                    .get(path)
+                    .ok_or_else(|| format_err!("authentifier path not found: {}", path))?;
+                used_path.push(path.to_owned());
+
+                if validate_state.unsigned && sig.starts_with('-') {
+                    return Ok(());
+                }
+
+                let sig_value =
+                    SigValue::deserialize(definition.args).context("can't conver to SigValue")?;
+                let unit_hash = validate_state
+                    .unit_hash_to_sign
+                    .as_ref()
+                    .expect("no unit hash to sign found");
+
+                signature::verify(unit_hash, sig, sig_value.pubkey)
+                    .context(format!("bad signature at path: {:?}", path))?;
+            }
+            op => unimplemented!("unsupported op: {}", op),
+        }
+        Ok(())
+    };
+
     let is_asset = authentifiers.is_empty();
-    if asset.is_null() && !is_asset {
+    if is_asset && !asset.is_null() {
         bail!("incompatible params");
     }
-    validate_definition(db, definition, unit, validate_state, is_asset)?;
-    // let mut used_path = Vec::new();
-    // let res = evaluate(definition, "r", &mut used_path)?;
-    // if !is_asset && used_path.len() != authentifiers.len() {
-    //     bail!(
-    //         "some authentifiers are not used, res= {:?}, used={:?}, passed={:?}",
-    //         res,
-    //         used_path,
-    //         authentifiers
-    //     );
-    // }
+    validate_definition(definition, is_asset)?;
+    let mut used_path = Vec::new();
+    let res = evaluate(definition, "r", &mut used_path)?;
+    if !is_asset && used_path.len() != authentifiers.len() {
+        bail!(
+            "some authentifiers are not used, res= {:?}, used={:?}, passed={:?}",
+            res,
+            used_path,
+            authentifiers
+        );
+    }
     Ok(())
 }
 
 pub fn has_references(definition: &Value) -> Result<bool> {
-    let op = definition
-        .as_str()
-        .ok_or_else(|| format_err!("failed to get op from definition"))?;
+    let definition = Definition::from_value(definition).context("has_references")?;
 
-    match op {
+    match definition.op {
         "sig" | " hash" | "cosigned by" => Ok(false),
         op => unimplemented!("unkonw op: {}", op),
     }

@@ -29,13 +29,13 @@ pub struct DoubleSpendInput {
 
 #[derive(Debug)]
 pub struct ValidationState {
-    unsigned: bool,
-    sequence: String,
-    last_ball_mci: u32,
-    max_known_mci: u32,
-    skiplist_balls: Vec<String>,
-    max_parent_limci: u32,
-    has_no_references: bool,
+    pub unsigned: bool,
+    pub sequence: String,
+    pub last_ball_mci: u32,
+    pub max_known_mci: u32,
+    pub skiplist_balls: Vec<String>,
+    pub max_parent_limci: u32,
+    pub has_no_references: bool,
     pub unit_hash_to_sign: Option<Vec<u8>>,
     pub additional_queries: Vec<String>,
     pub double_spend_inputs: Vec<DoubleSpendInput>,
