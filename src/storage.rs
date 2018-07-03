@@ -10,6 +10,8 @@ use rusqlite::Connection;
 use serde_json::{self, Value};
 use spec::*;
 
+use utils::FifoCache;
+
 // global data that store unit info
 lazy_static! {
     static ref CACHED_UNIT: RwLock<HashMap<String, StaticUnitProperty>> =
@@ -28,6 +30,8 @@ lazy_static! {
             .unwrap_or(None)
             .unwrap_or(0)
     });
+    static ref MY_CACHED_UNIT: FifoCache<String, StaticUnitProperty> =
+        FifoCache::with_capacity(1000);
 }
 
 pub fn is_known_unit(unit: &String) -> bool {
