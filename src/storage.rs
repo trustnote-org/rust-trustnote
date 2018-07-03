@@ -1215,8 +1215,7 @@ pub fn determine_if_has_witness_list_mutations_along_mc(
 
     let row = stmt.query_row(&[], |row| (row.get::<_, String>(0), row.get::<_, u32>(1)));
 
-    if row.is_ok() {
-        let (unit, count_matching_witnesses) = row.unwrap();
+    if let Ok((unit, count_matching_witnesses)) = row {
         bail!(
             "too many ({}) witness list mutations relative to MC unit {}",
             COUNT_WITNESSES as u32 - count_matching_witnesses,
