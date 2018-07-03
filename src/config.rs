@@ -15,6 +15,8 @@ pub const MAX_PARENT_PER_UNIT: usize = 16;
 
 pub const COUNT_MC_BALLS_FOR_PAID_WITNESSING: u32 = 100;
 
+pub const MAX_ITEMS_IN_CACHE: usize = 300;
+
 lazy_static! {
     pub static ref CONFIG: RwLock<Config> = RwLock::new({
         let mut settings = Config::default();

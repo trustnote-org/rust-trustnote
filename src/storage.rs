@@ -1,3 +1,4 @@
+use config::MAX_ITEMS_IN_CACHE;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -13,6 +14,7 @@ use spec::*;
 use utils::FifoCache;
 
 // global data that store unit info
+//#![warn(dead_code)]
 lazy_static! {
     static ref CACHED_UNIT: RwLock<HashMap<String, StaticUnitProperty>> =
         RwLock::new(HashMap::new());
@@ -30,8 +32,12 @@ lazy_static! {
             .unwrap_or(None)
             .unwrap_or(0)
     });
-    static ref MY_CACHED_UNIT: FifoCache<String, StaticUnitProperty> =
-        FifoCache::with_capacity(1000);
+    static ref CACHED_UNIT_AUTHORS: FifoCache<String, Vec<Author>> =
+        FifoCache::with_capacity(MAX_ITEMS_IN_CACHE);
+    static ref CACHED_UNIT_WITNESSES: FifoCache<String, Vec<String>> =
+        FifoCache::with_capacity(MAX_ITEMS_IN_CACHE);
+    static ref CACHED_ASSET_INFOS: FifoCache<String, Option<String>> =
+        FifoCache::with_capacity(MAX_ITEMS_IN_CACHE);
 }
 
 pub fn is_known_unit(unit: &String) -> bool {
@@ -177,7 +183,12 @@ pub fn read_static_unit_property(
         witness_list_unit: row.get(3),
     })?;
 
+    CACHED_UNIT
+        .write()
+        .unwrap()
+        .insert(unit_hash.to_string(), ret.clone());
     Ok(ret)
+    //Ok(ret)
 }
 
 // TODO: need to cache in memory
@@ -187,6 +198,13 @@ pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<Stri
         .query_map(&[unit_hash], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     ensure!(!names.is_empty(), "no authors");
+    let author = Author {
+        address: names.get(0).unwrap().to_string(),
+        authentifiers: names.get(1),
+
+        definition: names.get(2).unwrap().to_string(),
+    };
+    CACHED_UNIT_AUTHORS.insert(unit_hash.to_string(), author);
     Ok(names)
 }
 
