@@ -11,6 +11,7 @@ use serde_json::Value;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Author {
     pub address: String,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub authentifiers: HashMap<String, String>,
     #[serde(default)]
     pub definition: Value,
