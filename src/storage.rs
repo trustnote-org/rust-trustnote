@@ -1233,7 +1233,7 @@ pub fn determine_if_has_witness_list_mutations_along_mc(
         WHERE units.unit IN({}) \
         GROUP BY units.unit \
         HAVING count_matching_witnesses<{}",
-        witness_list, mc_unit_list, COUNT_WITNESSES - MAX_WITNESS_LIST_MUTATIONS);
+        witness_list, mc_unit_list, config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS);
     let mut stmt = db.prepare(&sql)?;
 
     let row = stmt.query_row(&[], |row| (row.get::<_, String>(0), row.get::<_, u32>(1)));
@@ -1241,7 +1241,7 @@ pub fn determine_if_has_witness_list_mutations_along_mc(
     if let Ok((unit, count_matching_witnesses)) = row {
         bail!(
             "too many ({}) witness list mutations relative to MC unit {}",
-            COUNT_WITNESSES as u32 - count_matching_witnesses,
+            config::COUNT_WITNESSES as u32 - count_matching_witnesses,
             unit
         );
     }
