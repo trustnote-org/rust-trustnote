@@ -23,10 +23,11 @@ impl<K: Eq + Hash, V: Clone> FifoCache<K, V> {
 
     #[inline]
     pub fn insert(&self, k: K, v: V) -> Option<V> {
-        while self.size - 1 < self.inner.read().unwrap().len() {
-            self.inner.write().unwrap().pop();
+        let map = self.inner.write().unwrap();
+        while self.size - 1 < map.len() {
+            map.pop();
         }
-        self.inner.write().unwrap().insert(k, v)
+        map.insert(k, v)
     }
 
     #[inline]
