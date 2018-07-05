@@ -1324,7 +1324,8 @@ fn validate_messages(
         validate_message(tx, &message, message_index, unit, validate_state)?;
     }
 
-    ensure!(validate_state.has_base_payment, "no base payment message");
+    //Do not check it since has_base_payment has not been set yet
+    //ensure!(validate_state.has_base_payment, "no base payment message");
 
     Ok(())
 }
