@@ -138,7 +138,7 @@ pub struct Unit {
     pub witness_list_unit: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// internally used struct
 pub struct StaticUnitProperty {
     pub level: u32,
