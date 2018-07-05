@@ -85,7 +85,6 @@ pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<Stri
             unit_hash
         ));
     }
-    //let witnesses: Vec<String> = rows.into_iter().collect();
     CACHED_UNIT_WITNESSES.insert(unit_hash.to_string(), names.clone());
     Ok(names)
 }
@@ -194,7 +193,6 @@ pub fn read_static_unit_property(
 
     CACHED_UNIT.insert(unit_hash.to_string(), ret.clone());
     Ok(ret)
-    //Ok(ret)
 }
 
 pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
@@ -203,11 +201,7 @@ pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<Stri
         .query_map(&[unit_hash], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     ensure!(!names.is_empty(), "no authors");
-    //let name_clone = names.clone();
-    //let mut author: String;
-
     CACHED_UNIT_AUTHORS.insert(unit_hash.to_string(), names.clone());
-
     Ok(names)
 }
 
