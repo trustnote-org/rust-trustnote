@@ -1,7 +1,4 @@
 use config;
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
-
 use config::{COUNT_WITNESSES, MAX_WITNESS_LIST_MUTATIONS};
 use db;
 use error::Result;
@@ -10,6 +7,9 @@ use may::sync::RwLock;
 use rusqlite::Connection;
 use serde_json::{self, Value};
 use spec::*;
+use std::collections::HashMap;
+use std::rc::Rc;
+use std::sync::Arc;
 
 use utils::FifoCache;
 
@@ -36,7 +36,7 @@ lazy_static! {
         FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
     static ref CACHED_UNIT_WITNESSES: FifoCache<String, Vec<String>> =
         FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
-    static ref CACHED_ASSET_INFOS: FifoCache<String, Option<String>> =
+    static ref _CACHED_ASSET_INFOS: FifoCache<String, Option<String>> =
         FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
 }
 
@@ -48,7 +48,7 @@ pub fn set_unit_is_known(unit: &String) {
     KNOWN_UNIT.insert(unit.to_owned(), true);
 }
 
-pub fn forget_unit(unit: &String) {
+pub fn forget_unit(_unit: &String) {
     /*  KNOWN_UNIT.write().unwrap().remove(unit);
     CACHED_UNIT.write().unwrap().remove(unit); */
 
@@ -175,7 +175,6 @@ pub fn read_static_unit_property(
     db: &Connection,
     unit_hash: &String,
 ) -> Result<StaticUnitProperty> {
-    use std::sync::Arc;
     if let Some(g) = CACHED_UNIT.get(unit_hash) {
         let tmp = Arc::try_unwrap(g).unwrap();
         return Ok(tmp);
@@ -196,11 +195,16 @@ pub fn read_static_unit_property(
 }
 
 pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
+    if let Some(g) = CACHED_UNIT_AUTHORS.get(unit_hash) {
+        let tmp = Arc::try_unwrap(g).unwrap();
+        return Ok(tmp);
+    }
     let mut stmt = db.prepare_cached("SELECT address FROM unit_authors WHERE unit=?")?;
-    let names = stmt
+    let mut names = stmt
         .query_map(&[unit_hash], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     ensure!(!names.is_empty(), "no authors");
+    names.sort();
     CACHED_UNIT_AUTHORS.insert(unit_hash.to_string(), names.clone());
     Ok(names)
 }
