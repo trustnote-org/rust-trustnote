@@ -80,7 +80,8 @@ pub struct ValidationState {
     pub double_spend_inputs: Vec<DoubleSpendInput>,
     pub addresses_with_forked_path: Vec<String>,
     pub conflicting_units: Vec<String>,
-    // input_keys: // what this?
+    pub input_keys: Vec<String>, //It could be spendproof in Spendproof or some input related customized string
+    pub has_base_payment: bool,
 }
 
 impl ValidationState {
@@ -98,6 +99,8 @@ impl ValidationState {
             double_spend_inputs: Vec::new(),
             addresses_with_forked_path: Vec::new(),
             conflicting_units: Vec::new(),
+            input_keys: Vec::new(),
+            has_base_payment: false,
         }
     }
 }
@@ -1303,11 +1306,171 @@ fn validate_author(
     Ok(())
 }
 
+#[inline]
+fn is_valid_base64(b64: &String, len: usize) -> Result<bool> {
+    use base64;
+    let buf = base64::decode(b64)?;
+    return Ok(b64.len() == len && base64::encode(&buf) == *b64);
+}
+
 fn validate_messages(
+    tx: &Transaction,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    info!("validateMessages {:?}", unit.unit);
+
+    for (message_index, message) in unit.messages.iter().enumerate() {
+        validate_message(tx, &message, message_index, unit, validate_state)?;
+    }
+
+    ensure!(validate_state.has_base_payment, "no base payment message");
+
+    Ok(())
+}
+
+fn validate_message(
+    tx: &Transaction,
+    message: &Message,
+    message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    //Some quick checks includes spend proofs, payload, payment etc
+    ensure!(
+        message.payload_hash.len() == config::HASH_LENGTH,
+        "wrong payload hash size"
+    );
+
+    if !message.spend_proofs.is_empty() {
+        ensure!(
+            message.spend_proofs.len() <= config::MAX_SPEND_PROOFS_PER_MESSAGE,
+            "spend_proofs must be non-empty array max {} elements",
+            config::MAX_SPEND_PROOFS_PER_MESSAGE
+        );
+
+        let author_addresses = unit
+            .authors
+            .iter()
+            .map(|a| a.address.clone())
+            .collect::<Vec<_>>();
+        //Spend proofs are sorted in the same order as their corresponding inputs
+
+        for spend_proof in message.spend_proofs.iter() {
+            ensure!(
+                is_valid_base64(&spend_proof.spend_proof, config::HASH_LENGTH)?,
+                "spend proof {} is not a valid base64",
+                spend_proof.spend_proof
+            );
+
+            if author_addresses.len() == 1 {
+                if spend_proof.address.is_some() {
+                    bail!("when single-authored, must not put address in spend proof");
+                }
+            } else {
+                ensure!(
+                    spend_proof.address.is_some(),
+                    "when multi-authored, must put address in spend_proofs"
+                );
+
+                let spend_proof_address = spend_proof.address.as_ref().unwrap();
+                ensure!(
+                    author_addresses.contains(spend_proof_address),
+                    "spend proof address {} is not an author",
+                    spend_proof_address
+                );
+            }
+
+            if validate_state.input_keys.contains(&spend_proof.spend_proof) {
+                bail!("spend proof {} already used", spend_proof.spend_proof);
+            }
+            validate_state
+                .input_keys
+                .push(spend_proof.spend_proof.clone());
+        }
+
+        if message.payload_location == "inline" {
+            bail!("you don't need spend proofs when you have inline payload");
+        }
+    }
+
+    if message.payload_location != "inline"
+        && message.payload_location != "uri"
+        && message.payload_location != "none"
+    {
+        bail!("wrong payload location: {}", message.payload_location);
+    }
+
+    if message.payload_location == "uri" {
+        ensure!(message.payload.is_none(), "must not contain payload");
+        ensure!(message.payload_uri.is_some(), "no payload uri");
+        ensure!(message.payload_uri_hash.is_some(), "no payload uri hash");
+
+        let payload_uri = message.payload_uri.as_ref().unwrap();
+        let payload_uri_hash = message.payload_uri_hash.as_ref().unwrap();
+        ensure!(
+            payload_uri_hash.len() == config::HASH_LENGTH,
+            "wrong length of payload uri hash"
+        );
+        ensure!(payload_uri.len() <= 500, "payload_uri too long");
+        ensure!(
+            object_hash::get_base64_hash(payload_uri)? == *payload_uri_hash,
+            "wrong payload_uri hash"
+        );
+    } else {
+        ensure!(
+            message.payload_uri.is_none() && message.payload_uri_hash.is_none(),
+            "must not contain payload_uri and payload_uri_hash"
+        );
+    }
+
+    if message.app == "payment" {
+        ensure!(
+            message.payload_location == "inline" || message.payload_location == "none",
+            "payment location must be inline or none"
+        );
+        if message.payload_location == "none" && message.spend_proofs.len() == 0 {
+            bail!("private payment must come with spend proof(s)");
+        }
+    }
+
+    let inline_only_apps = vec![
+        "address_definition_change",
+        "data_feed",
+        "definition_template",
+        "asset",
+        "asset_attestors",
+        "attestation",
+        "poll",
+        "vote",
+    ];
+    if inline_only_apps.contains(&message.app.as_str()) && message.payload_location != "inline" {
+        bail!("{} must be inline", message.app);
+    }
+
+    let _spend_proofs = validate_spend_proofs(tx, message, message_index, unit, validate_state)?;
+
+    let _payload = validate_payload(tx, message, message_index, unit, validate_state)?;
+
+    Ok(())
+}
+
+fn validate_spend_proofs(
     _tx: &Transaction,
+    _message: &Message,
+    _message_index: usize,
     _unit: &Unit,
     _validate_state: &mut ValidationState,
 ) -> Result<()> {
     Ok(())
-    // unimplemented!()
+}
+
+fn validate_payload(
+    _tx: &Transaction,
+    _message: &Message,
+    _message_index: usize,
+    _unit: &Unit,
+    _validate_state: &mut ValidationState,
+) -> Result<()> {
+    Ok(())
 }
