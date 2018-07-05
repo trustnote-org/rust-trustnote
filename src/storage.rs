@@ -1,5 +1,4 @@
 use config;
-use config::{COUNT_WITNESSES, MAX_WITNESS_LIST_MUTATIONS};
 use db;
 use error::Result;
 use joint::Joint;
@@ -9,16 +8,10 @@ use serde_json::{self, Value};
 use spec::*;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
-
 use utils::FifoCache;
 
 // global data that store unit info
 lazy_static! {
-    static ref CACHED_UNIT: FifoCache<String, StaticUnitProperty> =
-        FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
-    static ref KNOWN_UNIT: FifoCache<String, bool> =
-        FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
     static ref MIN_RETRIEVABLE_MCI: RwLock<u32> = RwLock::new({
         let db = db::DB_POOL.get_connection();
         let mut stmt =
@@ -32,6 +25,10 @@ lazy_static! {
             .unwrap_or(None)
             .unwrap_or(0)
     });
+    static ref CACHED_UNIT: FifoCache<String, StaticUnitProperty> =
+        FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
+    static ref KNOWN_UNIT: FifoCache<String, ()> =
+        FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
     static ref CACHED_UNIT_AUTHORS: FifoCache<String, Vec<String>> =
         FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
     static ref CACHED_UNIT_WITNESSES: FifoCache<String, Vec<String>> =
@@ -41,18 +38,18 @@ lazy_static! {
 }
 
 pub fn is_known_unit(unit: &String) -> bool {
-    CACHED_UNIT.get(unit).is_some() || KNOWN_UNIT.get(unit).is_some()
+    CACHED_UNIT.get(unit.to_string()).is_some() || KNOWN_UNIT.get(unit.to_string()).is_some()
 }
 
 pub fn set_unit_is_known(unit: &String) {
-    KNOWN_UNIT.insert(unit.to_owned(), true);
+    KNOWN_UNIT.insert(unit.to_owned(), ());
 }
 
-pub fn forget_unit(_unit: &String) {
-    /*  KNOWN_UNIT.write().unwrap().remove(unit);
-    CACHED_UNIT.write().unwrap().remove(unit); */
-
-    unimplemented!()
+pub fn forget_unit(unit: &String) {
+    KNOWN_UNIT.remove(unit);
+    CACHED_UNIT.remove(unit);
+    CACHED_UNIT_AUTHORS.remove(unit);
+    CACHED_UNIT_WITNESSES.remove(unit);
 }
 
 pub fn read_witnesses(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
@@ -67,7 +64,7 @@ pub fn read_witnesses(db: &Connection, unit_hash: &String) -> Result<Vec<String>
 }
 
 pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
-    if let Some(g) = CACHED_UNIT_WITNESSES.get(unit_hash) {
+    if let Some(g) = CACHED_UNIT_WITNESSES.get(unit_hash.to_string()) {
         return Ok(g.to_vec());
     }
 
@@ -79,7 +76,7 @@ pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<Stri
         names.push(name_result?);
     }
 
-    if names.len() != ::config::COUNT_WITNESSES {
+    if names.len() != config::COUNT_WITNESSES {
         return Err(format_err!(
             "wrong number of witnesses in unit {}",
             unit_hash
@@ -175,9 +172,8 @@ pub fn read_static_unit_property(
     db: &Connection,
     unit_hash: &String,
 ) -> Result<StaticUnitProperty> {
-    if let Some(g) = CACHED_UNIT.get(unit_hash) {
-        let tmp = Arc::try_unwrap(g).unwrap();
-        return Ok(tmp);
+    if let Some(g) = CACHED_UNIT.get(unit_hash.to_string()) {
+        return Ok(g);
     }
     let mut stmt = db.prepare_cached(
         "SELECT level, witnessed_level, best_parent_unit, witness_list_unit \
@@ -195,9 +191,8 @@ pub fn read_static_unit_property(
 }
 
 pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
-    if let Some(g) = CACHED_UNIT_AUTHORS.get(unit_hash) {
-        let tmp = Arc::try_unwrap(g).unwrap();
-        return Ok(tmp);
+    if let Some(g) = CACHED_UNIT_AUTHORS.get(unit_hash.to_string()) {
+        return Ok(g);
     }
     let mut stmt = db.prepare_cached("SELECT address FROM unit_authors WHERE unit=?")?;
     let mut names = stmt
@@ -1177,7 +1172,7 @@ pub fn determine_best_parents(
       level-witnessed_level ASC, \
       unit ASC \
     LIMIT 1",
-        parent_units,witness_list,witness_list_unit,COUNT_WITNESSES - MAX_WITNESS_LIST_MUTATIONS
+        parent_units,witness_list,witness_list_unit,config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS
     );
 
     let mut stmt = db.prepare(&sql)?;
