@@ -1,11 +1,9 @@
 extern crate fifo_cache;
 
 use may::sync::RwLock;
-use std::borrow::Borrow;
-use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
-use std::rc::Rc;
 use std::sync::Arc;
+
 #[derive(Debug)]
 pub struct FifoCache<K: Eq + Hash, V> {
     inner: RwLock<fifo_cache::FifoCache<K, V>>,
@@ -24,23 +22,10 @@ impl<K: Eq + Hash, V> FifoCache<K, V> {
     }
 
     pub fn get(&self, k: &K) -> Option<Arc<V>> {
-        if let Some(_) = Some(self.inner.is_poisoned()) {
-            return self.inner.read().unwrap().get(k);
-        }
-        None
+        self.inner.read().unwrap().get(k)
     }
 
-    pub fn insert(&mut self, k: K, v: V) -> Option<Arc<V>> {
-        if let Some(_) = Some(self.inner.is_poisoned()) {
-            return self.inner.write().unwrap().insert(k, v);
-        }
-        None
+    pub fn insert(&self, k: K, v: V) -> Option<Arc<V>> {
+        self.inner.write().unwrap().insert(k, v)
     }
-
-    /*    pub fn remove<Q: ?Sized>(&mut self, k: &K) -> Option<Arc<V>> {
-        if let Some(_) = Some(self.inner.is_poisoned()) {
-            return self.inner.write().unwrap().remove(&k);
-        }
-        None
-    } */
 }

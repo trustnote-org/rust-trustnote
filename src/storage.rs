@@ -1,4 +1,4 @@
-use config::MAX_ITEMS_IN_CACHE;
+use config;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
@@ -14,11 +14,11 @@ use spec::*;
 use utils::FifoCache;
 
 // global data that store unit info
-//#![warn(dead_code)]
 lazy_static! {
-    static ref CACHED_UNIT: RwLock<HashMap<String, StaticUnitProperty>> =
-        RwLock::new(HashMap::new());
-    static ref KNOWN_UNIT: RwLock<HashSet<String>> = RwLock::new(HashSet::new());
+    static ref CACHED_UNIT: FifoCache<String, StaticUnitProperty> =
+        FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
+    static ref KNOWN_UNIT: FifoCache<String, bool> =
+        FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
     static ref MIN_RETRIEVABLE_MCI: RwLock<u32> = RwLock::new({
         let db = db::DB_POOL.get_connection();
         let mut stmt =
@@ -32,25 +32,25 @@ lazy_static! {
             .unwrap_or(None)
             .unwrap_or(0)
     });
-    static ref CACHED_UNIT_AUTHORS: FifoCache<String, Vec<Author>> =
-        FifoCache::with_capacity(MAX_ITEMS_IN_CACHE);
+    static ref CACHED_UNIT_AUTHORS: FifoCache<String, Vec<String>> =
+        FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
     static ref CACHED_UNIT_WITNESSES: FifoCache<String, Vec<String>> =
-        FifoCache::with_capacity(MAX_ITEMS_IN_CACHE);
+        FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
     static ref CACHED_ASSET_INFOS: FifoCache<String, Option<String>> =
-        FifoCache::with_capacity(MAX_ITEMS_IN_CACHE);
+        FifoCache::with_capacity(config::MAX_ITEMS_IN_CACHE);
 }
 
 pub fn is_known_unit(unit: &String) -> bool {
-    CACHED_UNIT.read().unwrap().contains_key(unit) || KNOWN_UNIT.read().unwrap().contains(unit)
+    CACHED_UNIT.get(unit).is_some() || KNOWN_UNIT.get(unit).is_some()
 }
 
 pub fn set_unit_is_known(unit: &String) {
-    KNOWN_UNIT.write().unwrap().insert(unit.to_owned());
+    KNOWN_UNIT.insert(unit.to_owned(), true);
 }
 
 pub fn forget_unit(unit: &String) {
-    KNOWN_UNIT.write().unwrap().remove(unit);
-    CACHED_UNIT.write().unwrap().remove(unit);
+    /*  KNOWN_UNIT.write().unwrap().remove(unit);
+    CACHED_UNIT.write().unwrap().remove(unit); */
 
     unimplemented!()
 }
@@ -66,8 +66,11 @@ pub fn read_witnesses(db: &Connection, unit_hash: &String) -> Result<Vec<String>
     }
 }
 
-// TODO: need to cache in memory
 pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
+    if let Some(g) = CACHED_UNIT_WITNESSES.get(unit_hash) {
+        return Ok(g.to_vec());
+    }
+
     let mut stmt =
         db.prepare_cached("SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
     let rows = stmt.query_map(&[unit_hash], |row| row.get(0))?;
@@ -82,6 +85,8 @@ pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<Stri
             unit_hash
         ));
     }
+    //let witnesses: Vec<String> = rows.into_iter().collect();
+    CACHED_UNIT_WITNESSES.insert(unit_hash.to_string(), names.clone());
     Ok(names)
 }
 
@@ -167,11 +172,15 @@ pub fn read_props_of_units(
     Ok((prop.unwrap(), props))
 }
 
-// TODO: need to cache in memory
 pub fn read_static_unit_property(
     db: &Connection,
     unit_hash: &String,
 ) -> Result<StaticUnitProperty> {
+    use std::sync::Arc;
+    if let Some(g) = CACHED_UNIT.get(unit_hash) {
+        let tmp = Arc::try_unwrap(g).unwrap();
+        return Ok(tmp);
+    }
     let mut stmt = db.prepare_cached(
         "SELECT level, witnessed_level, best_parent_unit, witness_list_unit \
          FROM units WHERE unit=?",
@@ -183,28 +192,22 @@ pub fn read_static_unit_property(
         witness_list_unit: row.get(3),
     })?;
 
-    CACHED_UNIT
-        .write()
-        .unwrap()
-        .insert(unit_hash.to_string(), ret.clone());
+    CACHED_UNIT.insert(unit_hash.to_string(), ret.clone());
     Ok(ret)
     //Ok(ret)
 }
 
-// TODO: need to cache in memory
 pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
     let mut stmt = db.prepare_cached("SELECT address FROM unit_authors WHERE unit=?")?;
     let names = stmt
         .query_map(&[unit_hash], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     ensure!(!names.is_empty(), "no authors");
-    let author = Author {
-        address: names.get(0).unwrap().to_string(),
-        authentifiers: names.get(1),
+    //let name_clone = names.clone();
+    //let mut author: String;
 
-        definition: names.get(2).unwrap().to_string(),
-    };
-    CACHED_UNIT_AUTHORS.insert(unit_hash.to_string(), author);
+    CACHED_UNIT_AUTHORS.insert(unit_hash.to_string(), names.clone());
+
     Ok(names)
 }
 
