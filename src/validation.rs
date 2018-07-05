@@ -907,12 +907,12 @@ fn validate_authors(
     validate_state: &mut ValidationState,
 ) -> Result<()> {
     if unit.authors.len() > config::MAX_AUTHORS_PER_UNIT {
-        return Err(format_err!("too many authors"));
+        bail!("too many authors");
     }
     let mut prev_address = String::from("");
     for author in unit.authors.iter() {
         if author.address <= prev_address {
-            return Err(format_err!("author addresses not sorted"));
+            bail!("author addresses not sorted");
         }
         prev_address = author.address.clone();
     }
