@@ -918,16 +918,52 @@ fn validate_authors(
     }
     validate_state.unit_hash_to_sign = Some(unit.get_unit_hash_to_sign());
     for author in unit.authors.iter() {
-        validate_author(tx, author, unit, validate_state);
+        validate_author(tx, author, unit, validate_state)?;
     }
     Ok(())
 }
+
 fn validate_author(
-    _tx: &Transaction,
-    _author: &Author,
-    _unit: &Unit,
-    _validate_state: &mut ValidationState,
-) {
+    tx: &Transaction,
+    author: &Author,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    if author.address.len() != 32 {
+        bail!("wrong address length");
+    }
+    if author.authentifiers.is_empty() && unit.content_hash.is_none() {
+        bail!("no authentifiers");
+    }
+    for (_, value) in author.authentifiers.iter() {
+        if value.is_empty() {
+            bail!("authentifiers must be nonempty strings");
+        }
+        if value.len() > config::MAX_AUTHENTIFIER_LENGTH {
+            bail!("authentifier too long");
+        }
+    }
+    let _nonserial = false;
+    use object_hash;
+    use storage;
+    if author.definition == Value::Null {
+        if !object_hash::is_chash_valid(&author.address).unwrap() {
+            bail!("address checksum invalid");
+        }
+        if unit.content_hash.is_some() {
+            validate_state.sequence = "final-bad".to_string();
+            return Ok(());
+        }
+        storage::read_definition_by_address(
+            tx,
+            &author.address,
+            Some(validate_state.last_ball_mci),
+        )?;
+    }
+    // if !address_defination.is_empty() {
+    //     // validate_authentifiers(address_defination);
+    // }
+
     unimplemented!()
 }
 
