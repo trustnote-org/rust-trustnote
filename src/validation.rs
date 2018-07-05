@@ -6,9 +6,8 @@ use main_chain;
 use map_lock::{self, MapLock};
 use object_hash;
 use rusqlite::{Connection, Transaction};
+use serde_json::Value;
 use spec::*;
-
-const HASH_LENGTH: usize = 44;
 
 // global address map lock
 lazy_static! {
@@ -30,12 +29,14 @@ pub struct DoubleSpendInput {
 
 #[derive(Debug)]
 pub struct ValidationState {
-    unsigned: bool,
-    sequence: String,
-    last_ball_mci: u32,
-    max_known_mci: u32,
-    skiplist_balls: Vec<String>,
-    max_parent_limci: u32,
+    pub unsigned: bool,
+    pub sequence: String,
+    pub last_ball_mci: u32,
+    pub max_known_mci: u32,
+    pub skiplist_balls: Vec<String>,
+    pub max_parent_limci: u32,
+    pub has_no_references: bool,
+    pub unit_hash_to_sign: Option<Vec<u8>>,
     pub additional_queries: Vec<String>,
     pub double_spend_inputs: Vec<DoubleSpendInput>,
     // input_keys: // what this?
@@ -49,6 +50,8 @@ impl ValidationState {
             max_known_mci: 0,
             last_ball_mci: 0,
             max_parent_limci: 0,
+            has_no_references: true,
+            unit_hash_to_sign: None,
             skiplist_balls: Vec::new(),
             additional_queries: Vec::new(),
             double_spend_inputs: Vec::new(),
@@ -80,15 +83,28 @@ pub fn is_valid_address(address: &String) -> Result<bool> {
 }
 
 pub fn validate_author_signature_without_ref(
-    _db: &Connection,
-    _author: &Author,
-    _unit: &Unit,
-    _definition: &String,
+    db: &Connection,
+    author: &Author,
+    unit: &Unit,
+    definition: &Value,
 ) -> Result<()> {
+    use definition;
+
+    let mut validate_state = ValidationState::new();
+    validate_state.unit_hash_to_sign = Some(unit.get_unit_hash_to_sign());
+    validate_state.last_ball_mci = 0;
+    validate_state.has_no_references = true;
+
+    definition::validate_authentifiers(
+        db,
+        &author.address,
+        &Value::Null,
+        definition,
+        unit,
+        &mut validate_state,
+        &author.authentifiers,
+    )?;
     Ok(())
-    // TODO: unimplemented!() #37
-    // println!("validate_author_signature_without_ref");
-    // ::std::process::abort();
 }
 
 pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
@@ -99,7 +115,7 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
     let unit_hash = unit.unit.as_ref().unwrap();
     info!("validating joint identified by unit {}", unit_hash);
 
-    if unit_hash.len() != HASH_LENGTH {
+    if unit_hash.len() != config::HASH_LENGTH {
         err!(ValidationError::JointError {
             err: "wrong unit length".to_owned()
         });
@@ -120,7 +136,7 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
         }
     } else if joint.ball.is_some() {
         let ball = joint.ball.as_ref().unwrap();
-        if ball.len() != HASH_LENGTH {
+        if ball.len() != config::HASH_LENGTH {
             err!(ValidationError::JointError {
                 err: "wrong ball length".to_owned()
             });
@@ -134,7 +150,7 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
 
     if unit.content_hash.is_some() {
         let content_hash = unit.content_hash.as_ref().unwrap();
-        if content_hash.len() != HASH_LENGTH {
+        if content_hash.len() != config::HASH_LENGTH {
             err!(ValidationError::UnitError {
                 err: "wrong content_hash length".to_owned(),
             });
@@ -208,13 +224,13 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
             });
         }
 
-        if unit.last_ball.as_ref().map(|s| s.len()).unwrap_or(0) != HASH_LENGTH {
+        if unit.last_ball.as_ref().map(|s| s.len()).unwrap_or(0) != config::HASH_LENGTH {
             err!(ValidationError::UnitError {
                 err: "wrong length of last ball".to_owned(),
             });
         }
 
-        if unit.last_ball_unit.as_ref().map(|s| s.len()).unwrap_or(0) != HASH_LENGTH {
+        if unit.last_ball_unit.as_ref().map(|s| s.len()).unwrap_or(0) != config::HASH_LENGTH {
             err!(ValidationError::UnitError {
                 err: "wrong length of last ball unit".to_owned(),
             });

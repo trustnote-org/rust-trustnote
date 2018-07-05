@@ -3,6 +3,7 @@ use joint::Joint;
 use my_witness::MY_WITNESSES;
 use object_hash;
 use rusqlite::Connection;
+use serde_json::Value;
 use spec::*;
 use std::collections::HashMap;
 use storage;
@@ -211,7 +212,7 @@ pub fn process_witness_proof(
         ensure!(author_by_witness, "not authored by my witness");
     }
 
-    let mut assoc_definitions = HashMap::<String, String>::new();
+    let mut assoc_definitions = HashMap::<String, Value>::new();
     let mut assoc_definition_chashes = HashMap::<String, String>::new();
 
     if !from_current {
@@ -261,7 +262,7 @@ pub fn process_witness_proof(
                     chash == *definition_chash,
                     "definition doesn't hash to the expected value"
                 );
-                assoc_definitions.insert(definition_chash.clone(), author.definition.to_string());
+                assoc_definitions.insert(definition_chash.clone(), author.definition.clone());
                 b_found = true;
             }
 
@@ -275,7 +276,10 @@ pub fn process_witness_proof(
                 db,
                 author,
                 unit,
-                assoc_definitions.get(&definition_chash).unwrap(),
+                assoc_definitions.get(&definition_chash).expect(&format!(
+                    "failed to find definition, definition_chash={}",
+                    definition_chash
+                )),
             )?;
             for message in unit.messages.iter() {
                 let payment = match message.payload.as_ref() {

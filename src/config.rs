@@ -3,7 +3,9 @@ extern crate config;
 use self::config::*;
 use may::sync::RwLock;
 
+pub const HASH_LENGTH: usize = 44;
 pub const WS_PORT: u16 = 8080;
+pub const MAX_COMPLEXITY: usize = 100;
 pub const COUNT_WITNESSES: usize = 12;
 pub const MAX_WITNESS_LIST_MUTATIONS: usize = 1;
 pub const MAJORITY_OF_WITNESSES: usize = 7;
