@@ -38,7 +38,7 @@ lazy_static! {
 }
 
 pub fn is_known_unit(unit: &String) -> bool {
-    CACHED_UNIT.get(unit.to_string()).is_some() || KNOWN_UNIT.get(unit.to_string()).is_some()
+    CACHED_UNIT.get(unit).is_some() || KNOWN_UNIT.get(unit).is_some()
 }
 
 pub fn set_unit_is_known(unit: &String) {
@@ -64,7 +64,7 @@ pub fn read_witnesses(db: &Connection, unit_hash: &String) -> Result<Vec<String>
 }
 
 pub fn read_witness_list(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
-    if let Some(g) = CACHED_UNIT_WITNESSES.get(unit_hash.to_string()) {
+    if let Some(g) = CACHED_UNIT_WITNESSES.get(unit_hash) {
         return Ok(g.to_vec());
     }
 
@@ -172,7 +172,7 @@ pub fn read_static_unit_property(
     db: &Connection,
     unit_hash: &String,
 ) -> Result<StaticUnitProperty> {
-    if let Some(g) = CACHED_UNIT.get(unit_hash.to_string()) {
+    if let Some(g) = CACHED_UNIT.get(unit_hash) {
         return Ok(g);
     }
     let mut stmt = db.prepare_cached(
@@ -191,7 +191,7 @@ pub fn read_static_unit_property(
 }
 
 pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<String>> {
-    if let Some(g) = CACHED_UNIT_AUTHORS.get(unit_hash.to_string()) {
+    if let Some(g) = CACHED_UNIT_AUTHORS.get(unit_hash) {
         return Ok(g);
     }
     let mut stmt = db.prepare_cached("SELECT address FROM unit_authors WHERE unit=?")?;

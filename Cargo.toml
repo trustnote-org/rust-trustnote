@@ -17,7 +17,7 @@ num_cpus = "1"
 may_waiter = "0.1"
 lazy_static = "1"
 tungstenite = "0.5"
-indexmap = { git = "https://github.com/bluss/indexmap" }
+indexmap = "1.0"
 
 serde = "1"
 serde_json = "1"

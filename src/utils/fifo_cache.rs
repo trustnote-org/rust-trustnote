@@ -14,15 +14,17 @@ impl<K: Eq + Hash, V: Clone> FifoCache<K, V> {
         }
     }
 
-    pub fn get(&self, k: K) -> Option<V> {
-        let g = self.inner.read().unwrap();
-        g.get(&k).map(|v| v.clone())
+    #[inline]
+    pub fn get(&self, k: &K) -> Option<V> {
+        self.inner.read().unwrap().get(k).map(|v| v.clone())
     }
 
+    #[inline]
     pub fn insert(&self, k: K, v: V) -> Option<V> {
         self.inner.write().unwrap().insert(k, v)
     }
 
+    #[inline]
     pub fn remove(&self, k: &K) -> Option<V> {
         self.inner.write().unwrap().remove(k)
     }
