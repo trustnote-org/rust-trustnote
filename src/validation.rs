@@ -79,6 +79,7 @@ pub struct ValidationState {
     pub unit_hash_to_sign: Option<Vec<u8>>,
     pub additional_queries: Vec<String>,
     pub double_spend_inputs: Vec<DoubleSpendInput>,
+    pub addresses_with_forked_path: Vec<String>,
     // input_keys: // what this?
 }
 
@@ -95,6 +96,7 @@ impl ValidationState {
             skiplist_balls: Vec::new(),
             additional_queries: Vec::new(),
             double_spend_inputs: Vec::new(),
+            addresses_with_forked_path: Vec::new(),
         }
     }
 }
@@ -900,12 +902,33 @@ fn validate_witnesses(
 }
 
 fn validate_authors(
+    tx: &Transaction,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    if unit.authors.len() > config::MAX_AUTHORS_PER_UNIT {
+        return Err(format_err!("too many authors"));
+    }
+    let mut prev_address = String::from("");
+    for author in unit.authors.iter() {
+        if author.address <= prev_address {
+            return Err(format_err!("author addresses not sorted"));
+        }
+        prev_address = author.address.clone();
+    }
+    validate_state.unit_hash_to_sign = Some(unit.get_unit_hash_to_sign());
+    for author in unit.authors.iter() {
+        validate_author(tx, author, unit, validate_state);
+    }
+    Ok(())
+}
+fn validate_author(
     _tx: &Transaction,
+    _author: &Author,
     _unit: &Unit,
     _validate_state: &mut ValidationState,
-) -> Result<()> {
-    Ok(())
-    // unimplemented!()
+) {
+    unimplemented!()
 }
 
 fn validate_messages(
