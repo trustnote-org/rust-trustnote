@@ -82,6 +82,7 @@ pub struct ValidationState {
     pub conflicting_units: Vec<String>,
     pub input_keys: Vec<String>, //It could be spendproof in Spendproof or some input related customized string
     pub has_base_payment: bool,
+    pub addresses_with_forked_path: Vec<String>,
 }
 
 impl ValidationState {
@@ -101,6 +102,7 @@ impl ValidationState {
             conflicting_units: Vec::new(),
             input_keys: Vec::new(),
             has_base_payment: false,
+            addresses_with_forked_path: Vec::new(),
         }
     }
 }
@@ -1355,8 +1357,8 @@ fn validate_message(
             .iter()
             .map(|a| a.address.clone())
             .collect::<Vec<_>>();
-        //Spend proofs are sorted in the same order as their corresponding inputs
 
+        //Spend proofs are sorted in the same order as their corresponding inputs
         for spend_proof in message.spend_proofs.iter() {
             ensure!(
                 is_valid_base64(&spend_proof.spend_proof, config::HASH_LENGTH)?,
@@ -1365,9 +1367,10 @@ fn validate_message(
             );
 
             if author_addresses.len() == 1 {
-                if spend_proof.address.is_some() {
-                    bail!("when single-authored, must not put address in spend proof");
-                }
+                ensure!(
+                    spend_proof.address.is_none(),
+                    "when single-authored, must not put address in spend proof"
+                );
             } else {
                 ensure!(
                     spend_proof.address.is_some(),
@@ -1390,9 +1393,10 @@ fn validate_message(
                 .push(spend_proof.spend_proof.clone());
         }
 
-        if message.payload_location == "inline" {
-            bail!("you don't need spend proofs when you have inline payload");
-        }
+        ensure!(
+            message.payload_location != "inline",
+            "you don't need spend proofs when you have inline payload"
+        );
     }
 
     if message.payload_location != "inline"
@@ -1449,7 +1453,7 @@ fn validate_message(
         bail!("{} must be inline", message.app);
     }
 
-    let _spend_proofs = validate_spend_proofs(tx, message, message_index, unit, validate_state)?;
+    let _spend_proofs = validate_spend_proofs(tx, message, unit, validate_state)?;
 
     let _payload = validate_payload(tx, message, message_index, unit, validate_state)?;
 
@@ -1457,12 +1461,121 @@ fn validate_message(
 }
 
 fn validate_spend_proofs(
-    _tx: &Transaction,
-    _message: &Message,
-    _message_index: usize,
-    _unit: &Unit,
-    _validate_state: &mut ValidationState,
+    tx: &Transaction,
+    message: &Message,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
 ) -> Result<()> {
+    if message.spend_proofs.is_empty() {
+        return Ok(());
+    }
+
+    let eqs = message
+        .spend_proofs
+        .iter()
+        .map(|s| {
+            let address = if s.address.is_some() {
+                s.address.as_ref().unwrap()
+            } else {
+                &unit.authors[0].address
+            };
+            format!("spend_proof='{}' AND address='{}'", s.spend_proof, address)
+        })
+        .collect::<Vec<_>>()
+        .join(" OR ");
+
+    let sql = format!(
+        "SELECT address, unit, main_chain_index, sequence \
+         FROM spend_proofs JOIN units USING(unit) WHERE unit != {} AND ({})",
+        unit.unit.as_ref().unwrap(),
+        eqs
+    );
+
+    let _check = check_for_double_spend(tx, "spend proof", &sql, unit, validate_state)?;
+
+    Ok(())
+}
+
+fn check_for_double_spend(
+    tx: &Transaction,
+    kind: &str,
+    sql: &String,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    let mut stmt = tx.prepare(sql)?;
+
+    struct ConflictingRecord {
+        address: String,
+        unit: String,
+        main_chain_index: Option<u32>,
+        sequence: String,
+    };
+
+    let rows = stmt
+        .query_map(&[], |row| ConflictingRecord {
+            address: row.get("address"),
+            unit: row.get("unit"),
+            main_chain_index: row.get("main_chain_index"),
+            sequence: row.get("sequence"),
+        })?
+        .collect::<::std::result::Result<Vec<ConflictingRecord>, _>>()?;
+
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let author_addresses = unit
+        .authors
+        .iter()
+        .map(|a| a.address.clone())
+        .collect::<Vec<_>>();
+
+    for conflicting_record in rows {
+        if author_addresses.contains(&conflicting_record.address) {
+            bail!("conflicting {} spent from another address?", kind);
+        }
+
+        let included = graph::determine_if_included_or_equal(
+            &*tx,
+            &conflicting_record.unit,
+            &unit.parent_units,
+        )?;
+
+        if included {
+            let error = format!(
+                "{:?}: conflicting {} in inner unit {}",
+                unit.unit, kind, conflicting_record.unit
+            );
+
+            // too young (serial or nonserial)
+            if conflicting_record.main_chain_index > Some(validate_state.last_ball_mci)
+                || conflicting_record.main_chain_index == None
+            {
+                bail!(error);
+            }
+
+            match conflicting_record.sequence.as_str() {
+                "good" => bail!(error),  // in good sequence (final state)
+                "final-bad" => continue, // to be voided: can reuse the output
+                _ => bail!(
+                    "unreachable code, conflicting {} in unit {}",
+                    kind,
+                    conflicting_record.unit
+                ),
+            }
+        } else {
+            ensure!(
+                validate_state
+                    .addresses_with_forked_path
+                    .contains(&conflicting_record.address),
+                "double spending {} without double spending address?",
+                kind
+            );
+            continue;
+        }
+    }
+
     Ok(())
 }
 
