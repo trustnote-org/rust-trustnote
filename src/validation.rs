@@ -967,18 +967,16 @@ fn validate_author(
                 e
             )
         })?;
-    } else {
-        definition::validate_authentifiers(
-            tx,
-            &author.address,
-            &Value::Null,
-            &author.definition,
-            unit,
-            validate_state,
-            &author.authentifiers,
-        )?;
-        bail!("bad type of defination");
     }
+    definition::validate_authentifiers(
+        tx,
+        &author.address,
+        &Value::Null,
+        &author.definition,
+        unit,
+        validate_state,
+        &author.authentifiers,
+    )?;
 
     Ok(())
 }
