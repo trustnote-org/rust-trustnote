@@ -944,8 +944,8 @@ fn validate_author(
         }
     }
 
-    if author.definition == Value::Null {
-        if !object_hash::is_chash_valid(&author.address).unwrap() {
+    if author.definition.is_null() {
+        if !object_hash::is_chash_valid(&author.address) {
             bail!("address checksum invalid");
         }
         if unit.content_hash.is_some() {

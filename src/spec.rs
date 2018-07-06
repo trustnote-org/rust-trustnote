@@ -9,6 +9,7 @@ use object_hash::get_base64_hash;
 use serde_json::Value;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Author {
     pub address: String,
     #[serde(skip_serializing_if = "HashMap::is_empty")]
