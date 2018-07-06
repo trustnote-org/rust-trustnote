@@ -5,12 +5,14 @@ use std::hash::Hash;
 
 pub struct FifoCache<K, V> {
     inner: RwLock<indexmap::IndexMap<K, V>>,
+    capacity: usize,
 }
 
 impl<K: Eq + Hash, V: Clone> FifoCache<K, V> {
     pub fn with_capacity(capacity: usize) -> FifoCache<K, V> {
         FifoCache {
             inner: RwLock::new(indexmap::IndexMap::with_capacity(capacity)),
+            capacity,
         }
     }
 
@@ -21,7 +23,11 @@ impl<K: Eq + Hash, V: Clone> FifoCache<K, V> {
 
     #[inline]
     pub fn insert(&self, k: K, v: V) -> Option<V> {
-        self.inner.write().unwrap().insert(k, v)
+        let mut map = self.inner.write().unwrap();
+        while self.capacity - 1 < map.len() {
+            map.pop();
+        }
+        map.insert(k, v)
     }
 
     #[inline]
