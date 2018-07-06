@@ -8,6 +8,7 @@ use object_hash;
 use rusqlite::{Connection, Transaction};
 use serde_json::Value;
 use spec::*;
+use std::collections::HashMap;
 use storage;
 // global address map lock
 lazy_static! {
@@ -930,23 +931,33 @@ fn validate_author(
     validate_state: &mut ValidationState,
 ) -> Result<()> {
     if author.address.len() != 32 {
-        bail!("wrong address length");
+        err!(ValidationError::UnitError {
+            err: "wrong address length".to_owned(),
+        });
     }
     if author.authentifiers.is_empty() && unit.content_hash.is_none() {
-        bail!("no authentifiers");
+        err!(ValidationError::UnitError {
+            err: "no authentifiers".to_owned(),
+        });
     }
     for (_, value) in author.authentifiers.iter() {
         if value.is_empty() {
-            bail!("authentifiers must be nonempty strings");
+            err!(ValidationError::UnitError {
+                err: "authentifiers must be nonempty strings".to_owned(),
+            });
         }
         if value.len() > config::MAX_AUTHENTIFIER_LENGTH {
-            bail!("authentifier too long");
+            err!(ValidationError::UnitError {
+                err: "authentifier too long".to_owned(),
+            });
         }
     }
 
     if author.definition.is_null() {
         if !object_hash::is_chash_valid(&author.address) {
-            bail!("address checksum invalid");
+            err!(ValidationError::UnitError {
+                err: "address checksum invalid".to_owned(),
+            });
         }
         if unit.content_hash.is_some() {
             validate_state.sequence = "final-bad".to_string();
@@ -959,16 +970,16 @@ fn validate_author(
             tx,
             &author.address,
             Some(validate_state.last_ball_mci),
-        ).or_else(|e| {
-            bail!(
-                "definition {} bound to address {} is not defined, err = {}",
-                definition_chash,
-                author.address,
-                e
-            )
+        ).or_else(|e: failure::Error| {
+            err!(ValidationError::UnitError {
+                err: format!(
+                    "definition {} bound to address {} is not defined, err = {}",
+                    definition_chash, author.address, e
+                ),
+            })
         })?;
     }
-    definition::validate_authentifiers(
+    validate_authentifiers(
         tx,
         &author.address,
         &Value::Null,
@@ -979,6 +990,45 @@ fn validate_author(
     )?;
 
     Ok(())
+}
+
+fn validate_authentifiers(
+    db: &Connection,
+    address: &String,
+    asset: &Value,
+    definition: &Value,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+    authentifiers: &HashMap<String, String>,
+) -> Result<()> {
+    definition::validate_authentifiers(
+        db,
+        address,
+        &Value::Null,
+        definition,
+        unit,
+        validate_state,
+        authentifiers,
+    )?;
+    // if (err) // error in address definition
+    // 			return callback(err);
+    // 		if (!res) // wrong signature or the like
+    // 			return callback("authentifier verification failed");
+    check_serial_address_use()?;
+    Ok(())
+}
+
+fn check_serial_address_use() -> Result<()> {
+    let next = checkNoPendingChangeOfDefinitionChash();
+    findConflictingUnits();
+    Ok(())
+}
+
+fn checkNoPendingChangeOfDefinitionChash() -> Result<()> {
+    unimplemented!()
+}
+fn findConflictingUnits() {
+    unimplemented!()
 }
 
 fn validate_messages(
