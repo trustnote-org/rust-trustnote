@@ -1,5 +1,4 @@
 use config;
-use error::Result;
 use graph;
 use joint::Joint;
 use main_chain;
@@ -71,13 +70,31 @@ pub enum ValidationError {
     NeedParentUnits(Vec<String>),
 }
 
+impl From<::failure::Error> for ValidationError {
+    fn from(error: ::failure::Error) -> Self {
+        ValidationError::UnitError {
+            err: error.to_string(),
+        }
+    }
+}
+
+impl From<::rusqlite::Error> for ValidationError {
+    fn from(error: ::rusqlite::Error) -> Self {
+        ValidationError::UnitError {
+            err: error.to_string(),
+        }
+    }
+}
+
+type Result<T> = ::std::result::Result<T, ValidationError>;
+
 #[derive(Debug)]
 pub enum ValidationOk {
     Unsigned(bool),
     Signed(ValidationState, map_lock::LockGuard<'static, String>),
 }
 
-pub fn is_valid_address(address: &String) -> Result<bool> {
+pub fn is_valid_address(address: &String) -> bool {
     let address = address.to_uppercase();
     object_hash::is_chash_valid(&address)
 }
@@ -319,7 +336,7 @@ fn validate_headers_commission_recipients(unit: &Unit) -> Result<()> {
                 err: "recipient list must be sorted by address".to_owned(),
             });
         }
-        if !is_valid_address(&recipient.address)? {
+        if !is_valid_address(&recipient.address) {
             err!(ValidationError::UnitError {
                 err: "invalid recipient address checksum".to_owned(),
             });

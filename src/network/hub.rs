@@ -416,7 +416,6 @@ impl HubConn {
                 }
             },
             Err(err) => {
-                let err: ValidationError = err.downcast()?;
                 match err {
                     ValidationError::UnitError { err } => {
                         warn!("{} validation failed: {}", unit, err);
@@ -538,7 +537,6 @@ impl HubConn {
                 }
             },
             Err(err) => {
-                let err: ValidationError = err.downcast()?;
                 match err {
                     ValidationError::UnitError { err } => {
                         warn!("{} validation failed: {}", unit, err);

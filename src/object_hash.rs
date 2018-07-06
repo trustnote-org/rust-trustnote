@@ -80,8 +80,9 @@ fn get_checksum(data: &[u8]) -> BitVec {
     BitVec::from_bytes(&checksum)
 }
 
-pub fn is_chash_valid(encoded: &str) -> Result<bool> {
-    let chash = base32::decode(base32::Alphabet::RFC4648 { padding: true }, &encoded).unwrap();
+pub fn is_chash_valid(encoded: &str) -> bool {
+    let chash = base32::decode(base32::Alphabet::RFC4648 { padding: true }, &encoded)
+        .expect("base32 decode return None");
 
     let chash = BitVec::from_bytes(&chash);
     let mut checksum = BitVec::new();
@@ -97,7 +98,7 @@ pub fn is_chash_valid(encoded: &str) -> Result<bool> {
         chash_index = chash_index + 1;
     }
 
-    Ok(get_checksum(&clean_data.to_bytes()) == checksum)
+    get_checksum(&clean_data.to_bytes()) == checksum
 }
 
 pub fn get_ball_hash(
@@ -185,6 +186,6 @@ fn test_chash160_validation() {
     let valid = "YFAR4AK2RSRTAWZ3ILRFZOMN7M7QJTJ2";
     let invalid = "NFAR4AK2RSRTAWZ3ILRFZOMN7M7QJTJ2";
 
-    assert_eq!(is_chash_valid(valid).unwrap(), true);
-    assert_eq!(is_chash_valid(invalid).unwrap(), false);
+    assert_eq!(is_chash_valid(valid), true);
+    assert_eq!(is_chash_valid(invalid), false);
 }
