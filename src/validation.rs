@@ -1,4 +1,5 @@
 use config;
+use definition;
 use graph;
 use joint::Joint;
 use main_chain;
@@ -8,7 +9,6 @@ use rusqlite::{Connection, Transaction};
 use serde_json::Value;
 use spec::*;
 use storage;
-
 // global address map lock
 lazy_static! {
     // maybe this is too heavy, could use an optimized hashset<AtomicBool>
@@ -943,9 +943,7 @@ fn validate_author(
             bail!("authentifier too long");
         }
     }
-    let _nonserial = false;
-    use object_hash;
-    use storage;
+
     if author.definition == Value::Null {
         if !object_hash::is_chash_valid(&author.address).unwrap() {
             bail!("address checksum invalid");
@@ -954,17 +952,35 @@ fn validate_author(
             validate_state.sequence = "final-bad".to_string();
             return Ok(());
         }
+
+        let definition_chash = object_hash::get_chash(&author.definition)?;
+
         storage::read_definition_by_address(
             tx,
             &author.address,
             Some(validate_state.last_ball_mci),
+        ).or_else(|e| {
+            bail!(
+                "definition {} bound to address {} is not defined, err = {}",
+                definition_chash,
+                author.address,
+                e
+            )
+        })?;
+    } else {
+        definition::validate_authentifiers(
+            tx,
+            &author.address,
+            &Value::Null,
+            &author.definition,
+            unit,
+            validate_state,
+            &author.authentifiers,
         )?;
+        bail!("bad type of defination");
     }
-    // if !address_defination.is_empty() {
-    //     // validate_authentifiers(address_defination);
-    // }
 
-    unimplemented!()
+    Ok(())
 }
 
 fn validate_messages(
