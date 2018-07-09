@@ -68,11 +68,14 @@ pub enum ValidationError {
     NeedHashTree,
     #[fail(display = "Need Parent Units")]
     NeedParentUnits(Vec<String>),
+    // convert other unkonw error to this one
+    #[fail(display = "Other unknow error")]
+    OtherError { err: String },
 }
 
 impl From<::failure::Error> for ValidationError {
     fn from(error: ::failure::Error) -> Self {
-        ValidationError::UnitError {
+        ValidationError::OtherError {
             err: error.to_string(),
         }
     }
@@ -80,7 +83,7 @@ impl From<::failure::Error> for ValidationError {
 
 impl From<::rusqlite::Error> for ValidationError {
     fn from(error: ::rusqlite::Error) -> Self {
-        ValidationError::UnitError {
+        ValidationError::OtherError {
             err: error.to_string(),
         }
     }

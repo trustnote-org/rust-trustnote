@@ -417,6 +417,10 @@ impl HubConn {
             },
             Err(err) => {
                 match err {
+                    ValidationError::OtherError { err } => {
+                        error!("validation other err={}, unit={}", err, unit);
+                    }
+
                     ValidationError::UnitError { err } => {
                         warn!("{} validation failed: {}", unit, err);
                         self.send_error_result(unit, &err)?;
@@ -538,6 +542,9 @@ impl HubConn {
             },
             Err(err) => {
                 match err {
+                    ValidationError::OtherError { err } => {
+                        error!("validation other err={}, unit={}", err, unit);
+                    }
                     ValidationError::UnitError { err } => {
                         warn!("{} validation failed: {}", unit, err);
                         self.send_error_result(unit, &err)?;
