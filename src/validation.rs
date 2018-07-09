@@ -896,6 +896,7 @@ fn validate_witnesses(
         let mut witness_index = 0;
         let mut prev_witness = unit.witnesses.get(witness_index);
         for curr_witness in unit.witnesses.get(witness_index) {
+            witness_index += 1;
             if object_hash::is_chash_valid(curr_witness).is_err() {
                 bail!("witness address is invalid")
             }
