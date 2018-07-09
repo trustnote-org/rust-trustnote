@@ -81,6 +81,7 @@ pub struct ValidationState {
     pub additional_queries: Vec<String>,
     pub double_spend_inputs: Vec<DoubleSpendInput>,
     pub addresses_with_forked_path: Vec<String>,
+    pub conflicting_units: Vec<String>,
     // input_keys: // what this?
 }
 
@@ -98,6 +99,7 @@ impl ValidationState {
             additional_queries: Vec::new(),
             double_spend_inputs: Vec::new(),
             addresses_with_forked_path: Vec::new(),
+            conflicting_units: Vec::new(),
         }
     }
 }
@@ -966,18 +968,18 @@ fn validate_author(
 
         let definition_chash = object_hash::get_chash(&author.definition)?;
 
-        storage::read_definition_by_address(
-            tx,
-            &author.address,
-            Some(validate_state.last_ball_mci),
-        ).or_else(|e: failure::Error| {
-            err!(ValidationError::UnitError {
-                err: format!(
-                    "definition {} bound to address {} is not defined, err = {}",
-                    definition_chash, author.address, e
-                ),
-            })
-        })?;
+        // storage::read_definition_by_address(
+        //     tx,
+        //     &author.address,
+        //     Some(validate_state.last_ball_mci),
+        // ).or_else(|_| {
+        //     err!(ValidationError::UnitError {
+        //         err: format!(
+        //             "definition {} bound to address {} is not defined, err = ",
+        //             definition_chash, author.address
+        //         ),
+        //     })
+        // })?;
     }
     validate_authentifiers(
         tx,
@@ -1014,22 +1016,148 @@ fn validate_authentifiers(
     // 			return callback(err);
     // 		if (!res) // wrong signature or the like
     // 			return callback("authentifier verification failed");
-    check_serial_address_use()?;
+    check_serial_address_use(
+        db,
+        address,
+        &Value::Null,
+        definition,
+        unit,
+        validate_state,
+        authentifiers,
+    )?;
     Ok(())
 }
 
-fn check_serial_address_use() -> Result<()> {
-    let next = checkNoPendingChangeOfDefinitionChash();
-    findConflictingUnits();
+fn check_serial_address_use(
+    db: &Connection,
+    address: &String,
+    asset: &Value,
+    definition: &Value,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+    authentifiers: &HashMap<String, String>,
+) -> Result<()> {
+    //let next = checkNoPendingChangeOfDefinitionChash();
+    // findConflictingUnits();
+    let cross = if (validate_state.max_known_mci - validate_state.max_parent_limci) < 1000 {
+        "CROSS"
+    } else {
+        ""
+    };
+    struct TempUnit {
+        unit: String,
+        is_stable: u32,
+    }
+    let sql = format!(
+        "SELECT unit, is_stable \
+         FROM units \
+         {} JOIN unit_authors USING(unit) \
+         WHERE address={} AND (main_chain_index>{} OR main_chain_index IS NULL) AND unit != ?",
+        cross,
+        address,
+        validate_state.max_parent_limci,
+        //unit.unit.unwrap()
+    );
+    let mut stmt = db.prepare_cached(&sql)?;
+    let rows = stmt
+        .query_map(&[&unit.unit], |row| TempUnit {
+            unit: row.get(0),
+            is_stable: row.get(1),
+        })?
+        .collect::<::std::result::Result<Vec<TempUnit>, _>>()?;
+
+    let mut conflicting_unit_props = Vec::new();
+    for row in rows {
+        let included = graph::determine_if_included_or_equal(db, &row.unit, &unit.parent_units)?;
+        if !included {
+            conflicting_unit_props.push(row);
+        }
+    }
+    //return confliction_unit_props
+
+    if conflicting_unit_props.is_empty() {
+        if validate_state.sequence.is_empty() {
+            validate_state.sequence = "good".to_owned();
+            check_no_pending_change_of_definition_chash()?;
+            return Ok(());
+        }
+    }
+    let mut conflicting_units = conflicting_unit_props
+        .iter()
+        .map(|x| x.unit.clone())
+        .collect::<Vec<_>>();
+
+    validate_state
+        .addresses_with_forked_path
+        .push(address.to_string());
+
+    validate_state
+        .conflicting_units
+        .append(&mut conflicting_units);
+    //nonserial = true;
+    let unstable_conflicting_unit_props = conflicting_unit_props
+        .iter()
+        .filter(|x| x.is_stable == 0)
+        .collect::<Vec<_>>();
+
+    let mut conflicts_with_stable_units = false;
+    for x in conflicting_unit_props.iter() {
+        if x.is_stable == 1 {
+            conflicts_with_stable_units = true;
+            break;
+        }
+    }
+
+    if validate_state.sequence != "final-bad".to_owned() {
+        validate_state.sequence = if conflicts_with_stable_units {
+            "final-bad".to_owned()
+        } else {
+            "temp-bad".to_owned()
+        };
+    }
+    let unstable_conflicting_units = unstable_conflicting_unit_props
+        .iter()
+        .map(|x| x.unit.clone())
+        .collect::<Vec<_>>();
+
+    if conflicts_with_stable_units {
+        check_no_pending_change_of_definition_chash()?;
+        return Ok(());
+    }
+
+    if unstable_conflicting_units.is_empty() {
+        check_no_pending_change_of_definition_chash()?;
+        return Ok(());
+    }
+
+    validate_state.additional_queries.push("".to_string());
     Ok(())
 }
 
-fn checkNoPendingChangeOfDefinitionChash() -> Result<()> {
+fn check_no_pending_change_of_definition_chash() -> Result<()> {
     unimplemented!()
 }
-fn findConflictingUnits() {
+fn check_no_pending_definition() -> Result<()> {
     unimplemented!()
 }
+fn validate_definition() -> Result<()> {
+    unimplemented!()
+}
+fn handle_duplicate_address_definition() -> Result<()> {
+    unimplemented!()
+}
+// fn findConflictingUnits(
+//     db: &Connection,
+//     address: &String,
+//     asset: &Value,
+//     definition: &Value,
+//     unit: &Unit,
+//     validate_state: &mut ValidationState,
+//     authentifiers: &HashMap<String, String>,
+// ) -> Result<TempUnit> {
+
+//     Ok(conflicting_unit_props)
+// }
 
 fn validate_messages(
     _tx: &Transaction,
