@@ -812,7 +812,7 @@ fn validate_witnesses(
             &unit.clone().last_ball_unit.unwrap(),
             temp_witnesses.to_owned(),
         );
-        if err.is_ok() && validate_state.last_ball_mci >= 512000 {
+        if validate_state.last_ball_mci >= 512000 {
             return err;
         }
         let str_witness: String = temp_witnesses
@@ -853,7 +853,6 @@ fn validate_witnesses(
         let mut stmt = tx.prepare_cached(
             &"SELECT sequence, is_stable, main_chain_index FROM units WHERE unit=?",
         )?;
-
         struct TempUnits {
             sequence: String,
             is_stable: u32,
@@ -894,18 +893,21 @@ fn validate_witnesses(
         }
         validate_witness_list_mutations(&witnesses)?;
     } else if unit.witnesses.len() == config::COUNT_WITNESSES {
-        let mut iter_witness = unit.witnesses.iter();
-        let mut prev_witness = iter_witness.next();
-        for curr_witness in iter_witness.next() {
+        let mut witness_index = 0;
+        let mut prev_witness = unit.witnesses.get(witness_index);
+        for curr_witness in unit.witnesses.get(witness_index) {
             if object_hash::is_chash_valid(curr_witness).is_err() {
                 bail!("witness address is invalid")
+            }
+            if witness_index == 0 {
+                continue;
             }
             if Some(curr_witness) <= prev_witness {
                 bail!("wrong order of witnesses, or duplicates")
             }
             prev_witness = Some(curr_witness);
         }
-        if is_genesis_unit(&unit.clone().unit.unwrap()) {
+        if unit.unit.is_some() && is_genesis_unit(&unit.clone().unit.unwrap()) {
             validate_witness_list_mutations(&unit.witnesses)?;
             return Ok(());
         }
