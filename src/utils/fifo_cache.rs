@@ -18,7 +18,7 @@ impl<K: Eq + Hash, V: Clone> FifoCache<K, V> {
 
     #[inline]
     pub fn get(&self, k: &K) -> Option<V> {
-        self.inner.read().unwrap().get(k).map(|v| v.clone())
+        self.inner.read().unwrap().get(k).cloned()
     }
 
     #[inline]

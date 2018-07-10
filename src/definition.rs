@@ -94,7 +94,7 @@ pub fn validate_definition(definition: &Value, is_asset: bool) -> Result<()> {
 
 pub fn validate_authentifiers(
     _db: &Connection,
-    _address: &String,
+    _address: &str,
     asset: &Value,
     definition: &Value,
     _unit: &Unit,
@@ -135,11 +135,10 @@ pub fn validate_authentifiers(
     }
     validate_definition(definition, is_asset)?;
     let mut used_path = Vec::new();
-    let res = evaluate(definition, "r", &mut used_path)?;
+    evaluate(definition, "r", &mut used_path)?;
     if !is_asset && used_path.len() != authentifiers.len() {
         bail!(
-            "some authentifiers are not used, res= {:?}, used={:?}, passed={:?}",
-            res,
+            "some authentifiers are not used, used={:?}, passed={:?}",
             used_path,
             authentifiers
         );

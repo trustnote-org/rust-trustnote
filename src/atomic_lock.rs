@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct AtomicLock {
     is_locked: AtomicBool,
 }

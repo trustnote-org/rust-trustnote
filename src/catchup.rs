@@ -56,7 +56,7 @@ pub fn prepare_catchup_chain(db: &Connection, catchup_req: CatchupReq) -> Result
     let rows = stmt
         .query_map(&[&last_known_mci], |row| row.get::<_, u32>(0))?
         .collect::<Vec<_>>();
-    if rows.len() == 0 || rows[0].as_ref().unwrap() == &0 {
+    if rows.is_empty() || rows[0].as_ref().unwrap() == &0 {
         return Ok(CatchupChain {
             // already current
             status: Some("current".to_owned()),
@@ -66,7 +66,7 @@ pub fn prepare_catchup_chain(db: &Connection, catchup_req: CatchupReq) -> Result
         });
     }
 
-    let witness_proof = witness_proof::prepare_witness_proof(db, witnesses, last_stable_mci)?;
+    let witness_proof = witness_proof::prepare_witness_proof(db, &witnesses, last_stable_mci)?;
     let mut last_ball_unit = witness_proof.last_ball_unit;
 
     loop {
@@ -131,7 +131,7 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
     );
 
     let mut chain_balls = Vec::<String>::new();
-    for joint in catchup_chain.stable_last_ball_joints.iter() {
+    for joint in &catchup_chain.stable_last_ball_joints {
         ensure!(joint.ball.is_some(), "stable but no ball");
         ensure!(joint.has_valid_hashes(), "invalid hash");
         ensure!(
@@ -379,11 +379,10 @@ pub fn process_hash_tree(db: &mut Connection, balls: Vec<BallProps>) -> Result<(
             if ball_prop.parent_balls.is_empty() {
                 bail!("no parents");
             }
-        } else {
-            if !ball_prop.parent_balls.is_empty() {
-                bail!("genesis with parents?");
-            }
+        } else if !ball_prop.parent_balls.is_empty() {
+            bail!("genesis with parents?");
         }
+
         let ball = ball_prop.ball.as_ref().unwrap();
         if ball != &object_hash::get_ball_hash(
             &ball_prop.unit,

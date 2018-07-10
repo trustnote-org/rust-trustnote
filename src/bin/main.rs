@@ -201,7 +201,7 @@ fn main_run() -> Result<()> {
 
 fn pause() {
     use std::io::{self, Read};
-    io::stdin().read(&mut [0]).unwrap();
+    io::stdin().read(&mut [0]).ok();
 }
 
 fn main() -> Result<()> {

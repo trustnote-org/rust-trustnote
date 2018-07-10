@@ -12,7 +12,7 @@ fn read_my_witnesses() -> Result<Vec<String>> {
     let mut witnesses = db.get_my_witnesses()?;
 
     // if the data base is empty we should wait until
-    if witnesses.len() == 0 {
+    if witnesses.is_empty() {
         witnesses = config::CONFIG.read()?.get::<Vec<String>>("witnesses")?;
         ensure!(
             witnesses.len() == config::COUNT_WITNESSES,

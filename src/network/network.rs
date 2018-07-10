@@ -140,10 +140,10 @@ impl<T> Drop for WsConnection<T> {
         if ::std::thread::panicking() {
             return;
         }
-        self.listener.take(Ordering::Relaxed).map(|h| {
+        if let Some(h) = self.listener.take(Ordering::Relaxed) {
             unsafe { h.coroutine().cancel() };
             h.join().ok();
-        });
+        }
     }
 }
 

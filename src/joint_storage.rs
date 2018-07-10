@@ -47,18 +47,15 @@ pub fn check_new_unit(db: &Connection, unit: &String) -> Result<CheckNewResult> 
 pub fn check_new_joint(db: &Connection, joint: &Joint) -> Result<CheckNewResult> {
     let unit = joint.unit.unit.as_ref().expect("miss unit hash in joint");
     let ret = check_new_unit(db, unit)?;
-    match ret {
-        CheckNewResult::New => {
-            let mut stmt = db.prepare_cached("SELECT error FROM known_bad_joints WHERE joint=?")?;
-            let joint_hash = joint.get_joint_hash();
-            let mut rows = stmt.query(&[&joint_hash])?;
-            if let Some(row) = rows.next() {
-                let error: String = row?.get_checked(0)?;
-                warn!("detect knownbad joint {}, err: {}", joint_hash, error);
-                return Ok(CheckNewResult::KnownBad);
-            }
+    if let CheckNewResult::New = ret {
+        let mut stmt = db.prepare_cached("SELECT error FROM known_bad_joints WHERE joint=?")?;
+        let joint_hash = joint.get_joint_hash();
+        let mut rows = stmt.query(&[&joint_hash])?;
+        if let Some(row) = rows.next() {
+            let error: String = row?.get_checked(0)?;
+            warn!("detect knownbad joint {}, err: {}", joint_hash, error);
+            return Ok(CheckNewResult::KnownBad);
         }
-        _ => {}
     }
     Ok(ret)
 }

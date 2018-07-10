@@ -128,7 +128,7 @@ impl Joint {
 
         let unit_hash = self.get_unit_hash();
         let mut stmt = tx.prepare_cached("INSERT INTO unit_witnesses (unit, address) VALUES(?,?)")?;
-        for address in unit.witnesses.iter() {
+        for address in &unit.witnesses {
             stmt.execute(&[unit_hash, address])?;
         }
         let mut stmt = tx.prepare_cached(
@@ -163,7 +163,7 @@ impl Joint {
                     )?;
                     stmt.execute(&[&author.address])?;
                 }
-            } else if let Some(_) = self.unit.content_hash {
+            } else if self.unit.content_hash.is_some() {
                 let mut stmt = tx.prepare_cached(
                     "INSERT OR IGNORE INTO addresses (address) \
                      VALUES (?)",
@@ -277,7 +277,7 @@ impl Joint {
 
     fn save_header_earnings(&self, tx: &Transaction) -> Result<()> {
         let unit = &self.unit;
-        for recipient in unit.earned_headers_commission_recipients.iter() {
+        for recipient in &unit.earned_headers_commission_recipients {
             let mut stmt = tx.prepare_cached(
                 "INSERT INTO earned_headers_commission_recipients \
                  (unit, address, earned_headers_commission_share) VALUES(?,?,?)",
@@ -536,7 +536,7 @@ impl Joint {
     fn determine_input_address_from_output(
         &self,
         tx: &Transaction,
-        asset: &String,
+        asset: &str,
         denomination: u32,
         input: &Input,
     ) -> Result<String> {
@@ -547,7 +547,7 @@ impl Joint {
         let address = stmt.query_row(
             &[&input.unit, &input.message_index, &input.output_index],
             |row| {
-                ensure!(asset == &row.get::<_, String>(2), "asset doesn't match");
+                ensure!(asset == row.get::<_, String>(2), "asset doesn't match");
                 ensure!(
                     denomination == row.get::<_, u32>(1),
                     "denomination not match"
