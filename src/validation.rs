@@ -935,9 +935,10 @@ fn validate_witnesses(
         let mut stmt = tx.prepare_cached(&sql)?;
         let witness_counts = stmt
             .query_map(&[&validate_state.last_ball_mci], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
-        let count_stable_good_witnesses = witness_counts.first();
-        if count_stable_good_witnesses != Some(&config::COUNT_WITNESSES.to_string()) {
+            .collect::<::std::result::Result<Vec<Option<u16>>, _>>()?;
+        let count_stable_good_witnesses: usize =
+            witness_counts[0].expect("witness_counts is 0").into();
+        if count_stable_good_witnesses != config::COUNT_WITNESSES {
             bail_with_validation_err!(
                 UnitError,
                 "some witnesses are not stable, not serial, or don't come before last ball"
