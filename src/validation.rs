@@ -806,7 +806,7 @@ fn validate_witnesses(
         if unit.parent_units.is_empty() {
             return Ok(());
         }
-        let _err = storage::determine_if_has_witness_list_mutations_along_mc(
+        let determine_result = storage::determine_if_has_witness_list_mutations_along_mc(
             tx,
             unit,
             &unit
@@ -815,10 +815,8 @@ fn validate_witnesses(
                 .expect("last_ball_unit is empty"),
             temp_witnesses.to_owned(),
         );
-        if validate_state.last_ball_mci >= 512000 {
-            err!(ValidationError::UnitError {
-                err: "validate_state.last_ball_mci >= 512000".to_owned()
-            });
+        if determine_result.is_err() && validate_state.last_ball_mci >= 512000 {
+            bail_with_validation_err!(UnitError, "{}", determine_result.err().unwrap())
         }
         let str_witness: String = temp_witnesses
             .iter()
@@ -854,9 +852,10 @@ fn validate_witnesses(
             ])
             .unwrap()
         {
-            err!(ValidationError::UnitError {
-                err: "some witnesses have references in their addresses".to_owned()
-            })
+            bail_with_validation_err!(
+                UnitError,
+                "some witnesses have references in their addresses"
+            )
         }
         Ok(())
     };
@@ -877,25 +876,17 @@ fn validate_witnesses(
             })?
             .collect::<::std::result::Result<Vec<TempUnits>, _>>()?;
         if units.is_empty() {
-            err!(ValidationError::UnitError {
-                err: "referenced witness list unit is empty".to_owned()
-            })
+            bail_with_validation_err!(UnitError, "referenced witness list unit is empty")
         }
         let witness_list_unit_props = &units[0];
         if witness_list_unit_props.sequence != "good" {
-            err!(ValidationError::UnitError {
-                err: "witness list unit is not serial".to_owned()
-            })
+            bail_with_validation_err!(UnitError, "witness list unit is not serialy")
         }
         if witness_list_unit_props.is_stable != 1 {
-            err!(ValidationError::UnitError {
-                err: "witness list unit is not stable".to_owned()
-            })
+            bail_with_validation_err!(UnitError, "witness list unit is not stable")
         }
         if witness_list_unit_props.main_chain_index > Some(validate_state.last_ball_mci) {
-            err!(ValidationError::UnitError {
-                err: "witness list unit must come before last ball".to_owned()
-            })
+            bail_with_validation_err!(UnitError, "witness list unit must come before last ball")
         }
 
         let mut stmt =
@@ -904,14 +895,10 @@ fn validate_witnesses(
             .query_map(&[witness_list_unit], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
         if witnesses.is_empty() {
-            err!(ValidationError::UnitError {
-                err: "referenced witness list unit has no witnesses".to_owned()
-            })
+            bail_with_validation_err!(UnitError, "referenced witness list unit has no witnessesl")
         }
         if witnesses.len() != config::COUNT_WITNESSES {
-            err!(ValidationError::UnitError {
-                err: ("wrong number of witnesses: ".to_owned() + &witnesses.len().to_string())
-            })
+            bail_with_validation_err!(UnitError, "wrong number of witnesses: {}", witnesses.len())
         }
         validate_witness_list_mutations(&witnesses)?;
     } else if unit.witnesses.len() == config::COUNT_WITNESSES {
@@ -919,15 +906,11 @@ fn validate_witnesses(
         let mut prev_witness = witness_iter.next();
         for curr_witness in witness_iter.next() {
             if !object_hash::is_chash_valid(curr_witness) {
-                err!(ValidationError::UnitError {
-                    err: "witness address is invalid".to_owned()
-                })
+                bail_with_validation_err!(UnitError, "witness address is invalid")
             }
 
             if Some(curr_witness) <= prev_witness {
-                err!(ValidationError::UnitError {
-                    err: "wrong order of witnesses, or duplicates".to_owned()
-                })
+                bail_with_validation_err!(UnitError, "wrong order of witnesses, or duplicates")
             }
             prev_witness = Some(curr_witness);
         }
@@ -955,16 +938,14 @@ fn validate_witnesses(
             .collect::<::std::result::Result<Vec<String>, _>>()?;
         let count_stable_good_witnesses = witness_counts.first();
         if count_stable_good_witnesses != Some(&config::COUNT_WITNESSES.to_string()) {
-            err!(ValidationError::UnitError {
-                err: "some witnesses are not stable, not serial, or don't come before last ball"
-                    .to_owned()
-            })
+            bail_with_validation_err!(
+                UnitError,
+                "some witnesses are not stable, not serial, or don't come before last ball"
+            )
         }
         validate_witness_list_mutations(&unit.witnesses)?;
     } else {
-        err!(ValidationError::UnitError {
-            err: "no witnesses or not enough witnesses".to_owned()
-        })
+        bail_with_validation_err!(UnitError, "no witnesses or not enough witnesses")
     }
     Ok(())
 }
