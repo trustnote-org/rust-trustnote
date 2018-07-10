@@ -20,6 +20,52 @@ macro_rules! err {
     };
 }
 
+macro_rules! bail_with_validation_err {
+    (UnitError, $e:expr) => {
+        return Err(ValidationError::UnitError {
+            err: ($e).to_string(),
+        });
+    };
+    (JointError, $e:expr) => {
+        return Err(ValidationError::JointError {
+            err: ($e).to_string(),
+        });
+    };
+    (UnitError, $fmt:expr, $($arg:tt)+) => {
+        return Err(ValidationError::UnitError {
+            err: format!($fmt, $($arg)+)
+        });
+    };
+    (JointError, $fmt:expr, $($arg:tt)+) => {
+        return Err(ValidationError::JointError {
+            err: format!($fmt, $($arg)+)
+        });
+    };
+}
+
+macro_rules! ensure_with_validation_err {
+    ($cond:expr, UnitError, $e:expr) => {
+        if !($cond) {
+            bail_with_validation_err!(UnitError, $e);
+        }
+    };
+    ($cond:expr, JointError, $e:expr) => {
+        if !($cond) {
+            bail_with_validation_err!(JointError, $e);
+        }
+    };
+    ($cond:expr, UnitError, $fmt:expr, $($arg:tt)+) => {
+        if !($cond) {
+            bail_with_validation_err!(UnitError, $fmt, $($arg)+);
+        }
+    };
+    ($cond:expr, JointError, $fmt:expr, $($arg:tt)+) => {
+        if !($cond) {
+            bail_with_validation_err!(JointError, $fmt, $($arg)+);
+        }
+    };
+}
+
 #[derive(Debug)]
 pub struct DoubleSpendInput {
     message_index: u32,
@@ -485,9 +531,7 @@ fn validate_parents(
         .join(", ");
 
     if unit.parent_units.len() > config::MAX_PARENT_PER_UNIT {
-        err!(ValidationError::UnitError {
-            err: format!("too many parents: {}", unit.parent_units.len()),
-        });
+        bail_with_validation_err!(UnitError, "too many parents: {}", unit.parent_units.len());
     }
 
     let mut prev = "".to_owned();
