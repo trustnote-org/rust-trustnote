@@ -179,7 +179,7 @@ pub fn validate_author_signature_without_ref(
 pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
     let unit = &joint.unit;
     // already checked in earlier network processing
-    // ensure!(unit.unit.is_some(), "no unit");
+    // ensure_with_validation_err!(unit.unit.is_some(), "no unit");
 
     let unit_hash = unit.unit.as_ref().unwrap();
     info!("validating joint identified by unit {}", unit_hash);
@@ -1311,7 +1311,7 @@ fn validate_author(
 #[inline]
 fn is_valid_base64(b64: &String, len: usize) -> Result<bool> {
     use base64;
-    let buf = base64::decode(b64)?;
+    let buf = base64::decode(b64).expect("base64 decode failed");
     return Ok(b64.len() == len && base64::encode(&buf) == *b64);
 }
 
@@ -1327,7 +1327,7 @@ fn validate_messages(
     }
 
     //Do not check it since has_base_payment has not been set yet
-    //ensure!(validate_state.has_base_payment, "no base payment message");
+    //ensure_with_validation_err!(validate_state.has_base_payment, "no base payment message");
 
     Ok(())
 }
@@ -1340,14 +1340,16 @@ fn validate_message(
     validate_state: &mut ValidationState,
 ) -> Result<()> {
     //Some quick checks includes spend proofs, payload, payment etc
-    ensure!(
+    ensure_with_validation_err!(
         message.payload_hash.len() == config::HASH_LENGTH,
+        UnitError,
         "wrong payload hash size"
     );
 
     if !message.spend_proofs.is_empty() {
-        ensure!(
+        ensure_with_validation_err!(
             message.spend_proofs.len() <= config::MAX_SPEND_PROOFS_PER_MESSAGE,
+            UnitError,
             "spend_proofs must be non-empty array max {} elements",
             config::MAX_SPEND_PROOFS_PER_MESSAGE
         );
@@ -1360,41 +1362,50 @@ fn validate_message(
 
         //Spend proofs are sorted in the same order as their corresponding inputs
         for spend_proof in message.spend_proofs.iter() {
-            ensure!(
+            ensure_with_validation_err!(
                 is_valid_base64(&spend_proof.spend_proof, config::HASH_LENGTH)?,
+                UnitError,
                 "spend proof {} is not a valid base64",
                 spend_proof.spend_proof
             );
 
             if author_addresses.len() == 1 {
-                ensure!(
+                ensure_with_validation_err!(
                     spend_proof.address.is_none(),
+                    UnitError,
                     "when single-authored, must not put address in spend proof"
                 );
             } else {
-                ensure!(
+                ensure_with_validation_err!(
                     spend_proof.address.is_some(),
+                    UnitError,
                     "when multi-authored, must put address in spend_proofs"
                 );
 
                 let spend_proof_address = spend_proof.address.as_ref().unwrap();
-                ensure!(
+                ensure_with_validation_err!(
                     author_addresses.contains(spend_proof_address),
+                    UnitError,
                     "spend proof address {} is not an author",
                     spend_proof_address
                 );
             }
 
             if validate_state.input_keys.contains(&spend_proof.spend_proof) {
-                bail!("spend proof {} already used", spend_proof.spend_proof);
+                bail_with_validation_err!(
+                    UnitError,
+                    "spend proof {} already used",
+                    spend_proof.spend_proof
+                );
             }
             validate_state
                 .input_keys
                 .push(spend_proof.spend_proof.clone());
         }
 
-        ensure!(
+        ensure_with_validation_err!(
             message.payload_location != "inline",
+            UnitError,
             "you don't need spend proofs when you have inline payload"
         );
     }
@@ -1403,39 +1414,55 @@ fn validate_message(
         && message.payload_location != "uri"
         && message.payload_location != "none"
     {
-        bail!("wrong payload location: {}", message.payload_location);
+        bail_with_validation_err!(
+            UnitError,
+            "wrong payload location: {}",
+            message.payload_location
+        );
     }
 
     if message.payload_location == "uri" {
-        ensure!(message.payload.is_none(), "must not contain payload");
-        ensure!(message.payload_uri.is_some(), "no payload uri");
-        ensure!(message.payload_uri_hash.is_some(), "no payload uri hash");
+        ensure_with_validation_err!(
+            message.payload.is_none(),
+            UnitError,
+            "must not contain payload"
+        );
+        ensure_with_validation_err!(message.payload_uri.is_some(), UnitError, "no payload uri");
+        ensure_with_validation_err!(
+            message.payload_uri_hash.is_some(),
+            UnitError,
+            "no payload uri hash"
+        );
 
         let payload_uri = message.payload_uri.as_ref().unwrap();
         let payload_uri_hash = message.payload_uri_hash.as_ref().unwrap();
-        ensure!(
+        ensure_with_validation_err!(
             payload_uri_hash.len() == config::HASH_LENGTH,
+            UnitError,
             "wrong length of payload uri hash"
         );
-        ensure!(payload_uri.len() <= 500, "payload_uri too long");
-        ensure!(
+        ensure_with_validation_err!(payload_uri.len() <= 500, UnitError, "payload_uri too long");
+        ensure_with_validation_err!(
             object_hash::get_base64_hash(payload_uri)? == *payload_uri_hash,
+            UnitError,
             "wrong payload_uri hash"
         );
     } else {
-        ensure!(
+        ensure_with_validation_err!(
             message.payload_uri.is_none() && message.payload_uri_hash.is_none(),
+            UnitError,
             "must not contain payload_uri and payload_uri_hash"
         );
     }
 
     if message.app == "payment" {
-        ensure!(
+        ensure_with_validation_err!(
             message.payload_location == "inline" || message.payload_location == "none",
+            UnitError,
             "payment location must be inline or none"
         );
         if message.payload_location == "none" && message.spend_proofs.len() == 0 {
-            bail!("private payment must come with spend proof(s)");
+            bail_with_validation_err!(UnitError, "private payment must come with spend proof(s)");
         }
     }
 
@@ -1450,7 +1477,7 @@ fn validate_message(
         "vote",
     ];
     if inline_only_apps.contains(&message.app.as_str()) && message.payload_location != "inline" {
-        bail!("{} must be inline", message.app);
+        bail_with_validation_err!(UnitError, "{} must be inline", message.app);
     }
 
     let _spend_proofs = validate_spend_proofs(tx, message, unit, validate_state)?;
@@ -1533,7 +1560,11 @@ fn check_for_double_spend(
 
     for conflicting_record in rows {
         if author_addresses.contains(&conflicting_record.address) {
-            bail!("conflicting {} spent from another address?", kind);
+            bail_with_validation_err!(
+                UnitError,
+                "conflicting {} spent from another address?",
+                kind
+            );
         }
 
         let included = graph::determine_if_included_or_equal(
@@ -1552,23 +1583,25 @@ fn check_for_double_spend(
             if conflicting_record.main_chain_index > Some(validate_state.last_ball_mci)
                 || conflicting_record.main_chain_index == None
             {
-                bail!(error);
+                bail_with_validation_err!(UnitError, error);
             }
 
             match conflicting_record.sequence.as_str() {
-                "good" => bail!(error),  // in good sequence (final state)
+                "good" => bail_with_validation_err!(UnitError, error), // in good sequence (final state)
                 "final-bad" => continue, // to be voided: can reuse the output
-                _ => bail!(
+                _ => bail_with_validation_err!(
+                    UnitError,
                     "unreachable code, conflicting {} in unit {}",
                     kind,
-                    conflicting_record.unit
+                    conflicting_record.unit,
                 ),
             }
         } else {
-            ensure!(
+            ensure_with_validation_err!(
                 validate_state
                     .addresses_with_forked_path
                     .contains(&conflicting_record.address),
+                UnitError,
                 "double spending {} without double spending address?",
                 kind
             );
