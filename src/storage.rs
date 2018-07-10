@@ -1149,7 +1149,7 @@ fn read_definition_at_mci(
 pub fn determine_best_parents(
     db: &Connection,
     unit: &Unit,
-    witnesses: Vec<String>,
+    witnesses: &[String],
 ) -> Result<Option<String>> {
     let parent_units = unit
         .parent_units
@@ -1194,7 +1194,7 @@ pub fn determine_if_has_witness_list_mutations_along_mc(
     db: &Connection,
     unit: &Unit,
     last_ball_unit: &String,
-    witnesses: Vec<String>,
+    witnesses: &[String],
 ) -> Result<()> {
     //Genesis
     if unit.parent_units.len() == 0 {
@@ -1254,7 +1254,7 @@ fn build_list_of_mc_units_with_potentially_different_witness_lists(
     db: &Connection,
     unit: &Unit,
     last_ball_unit: &String,
-    witnesses: Vec<String>,
+    witnesses: &[String],
 ) -> Result<(Vec<String>)> {
     let mut mc_units = Vec::new();
 

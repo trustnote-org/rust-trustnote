@@ -813,7 +813,7 @@ fn validate_witnesses(
                 .last_ball_unit
                 .as_ref()
                 .expect("last_ball_unit is empty"),
-            temp_witnesses.to_owned(),
+            temp_witnesses,
         );
         if determine_result.is_err() && validate_state.last_ball_mci >= 512000 {
             bail_with_validation_err!(UnitError, "{}", determine_result.err().unwrap())
@@ -844,14 +844,11 @@ fn validate_witnesses(
                 str_witness, str_witness
             );
         let mut stmt = tx.prepare_cached(&sql)?;
-        if stmt
-            .exists(&[
-                &validate_state.last_ball_mci,
-                &validate_state.last_ball_mci,
-                &validate_state.last_ball_mci,
-            ])
-            .unwrap()
-        {
+        if stmt.exists(&[
+            &validate_state.last_ball_mci,
+            &validate_state.last_ball_mci,
+            &validate_state.last_ball_mci,
+        ])? {
             bail_with_validation_err!(
                 UnitError,
                 "some witnesses have references in their addresses"
@@ -859,9 +856,9 @@ fn validate_witnesses(
         }
         Ok(())
     };
-    if let Some(witness_list_unit) = unit.witness_list_unit.iter().next() {
+    if let Some(witness_list_unit) = unit.witness_list_unit.as_ref() {
         let mut stmt = tx.prepare_cached(
-            &"SELECT sequence, is_stable, main_chain_index FROM units WHERE unit=?",
+            "SELECT sequence, is_stable, main_chain_index FROM units WHERE unit=?",
         )?;
         struct TempUnits {
             sequence: String,
@@ -874,7 +871,7 @@ fn validate_witnesses(
                 is_stable: rows.get(1),
                 main_chain_index: rows.get(2),
             })?
-            .collect::<::std::result::Result<Vec<TempUnits>, _>>()?;
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
         if units.is_empty() {
             bail_with_validation_err!(UnitError, "referenced witness list unit is empty")
         }
@@ -890,7 +887,7 @@ fn validate_witnesses(
         }
 
         let mut stmt =
-            tx.prepare_cached(&"SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
+            tx.prepare_cached("SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
         let witnesses = stmt
             .query_map(&[witness_list_unit], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
@@ -904,7 +901,7 @@ fn validate_witnesses(
     } else if unit.witnesses.len() == config::COUNT_WITNESSES {
         let mut witness_iter = unit.witnesses.iter();
         let mut prev_witness = witness_iter.next();
-        for curr_witness in witness_iter.next() {
+        for curr_witness in witness_iter {
             if !object_hash::is_chash_valid(curr_witness) {
                 bail_with_validation_err!(UnitError, "witness address is invalid")
             }
@@ -915,7 +912,7 @@ fn validate_witnesses(
             prev_witness = Some(curr_witness);
         }
 
-        if unit.unit.is_some() && is_genesis_unit(&unit.unit.as_ref().expect("unit hash missing")) {
+        if is_genesis_unit(&unit.unit.as_ref().expect("unit hash missing")) {
             validate_witness_list_mutations(&unit.witnesses)?;
             return Ok(());
         }
@@ -933,12 +930,9 @@ fn validate_witnesses(
             unit_witnesses
         );
         let mut stmt = tx.prepare_cached(&sql)?;
-        let witness_counts = stmt
-            .query_map(&[&validate_state.last_ball_mci], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<Option<u16>>, _>>()?;
-        let count_stable_good_witnesses: usize =
-            witness_counts[0].expect("witness_counts is 0").into();
-        if count_stable_good_witnesses != config::COUNT_WITNESSES {
+        let count_stable_good_witnesses =
+            stmt.query_row(&[&validate_state.last_ball_mci], |row| row.get::<_, u32>(0))?;
+        if count_stable_good_witnesses != config::COUNT_WITNESSES as u32 {
             bail_with_validation_err!(
                 UnitError,
                 "some witnesses are not stable, not serial, or don't come before last ball"
@@ -948,6 +942,7 @@ fn validate_witnesses(
     } else {
         bail_with_validation_err!(UnitError, "no witnesses or not enough witnesses")
     }
+
     Ok(())
 }
 
