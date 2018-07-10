@@ -23,12 +23,12 @@ macro_rules! err {
 macro_rules! bail_with_validation_err {
     (UnitError, $e:expr) => {
         return Err(ValidationError::UnitError {
-            err: ($e).to_owned(),
+            err: ($e).to_string(),
         });
     };
     (JointError, $e:expr) => {
         return Err(ValidationError::JointError {
-            err: ($e).to_owned(),
+            err: ($e).to_string(),
         });
     };
     (UnitError, $fmt:expr, $($arg:tt)+) => {
