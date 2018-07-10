@@ -992,7 +992,25 @@ fn validate_author(
         .addresses_with_forked_path
         .contains(&author.address);
 
-    let validate_definition = || -> Result<()> {
+    let handle_duplicate_address_definition = |nonserial: bool| -> Result<()> {
+        if !nonserial || !is_contain_address {
+            err!(ValidationError::UnitError {
+                err: "authentifier too long".to_owned(),
+            });
+        }
+        //which definition?
+        if object_hash::get_chash(&address_definition).unwrap()
+            != object_hash::get_chash(&author.definition).unwrap()
+        {
+            err!(ValidationError::UnitError {
+                err: "authentifier too long".to_owned(),
+            });
+        }
+
+        Ok(())
+    };
+
+    let validate_definition = |nonserial: bool| -> Result<()> {
         let address_definition = author.definition.clone();
         let definition_chash = object_hash::get_chash(&author.definition)?;
         // storage::read_definition_by_address(
@@ -1007,6 +1025,7 @@ fn validate_author(
         //         ),
         //     })
         // })?;
+        handle_duplicate_address_definition(nonserial)?;
 
         Ok(())
     };
