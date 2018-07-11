@@ -745,9 +745,52 @@ fn validate_parents(
     check_no_same_address_in_different_parents()
 }
 
-fn validate_skip_list(_tx: &Transaction, _skip_list: &Vec<String>) -> Result<()> {
+fn validate_skip_list(tx: &Transaction, skip_list: &Vec<String>) -> Result<()> {
+    for skip_list_unit in skip_list {
+        if skip_list_unit.is_empty() {
+            bail_with_validation_err!(JointError, "skiplist units empty");
+        }
+
+        struct TempUnit {
+            is_stable: u32,
+            is_on_main_chain: Option<u32>,
+            main_chain_index: Option<u32>,
+        }
+        let mut result = tx.prepare(
+            "SELECT unit, is_stable, is_on_main_chain, main_chain_index FROM units WHERE unit=?",
+        )?;
+        let mut rows = result
+            .query_map(&[skip_list_unit], |row| TempUnit {
+                is_stable: row.get(1),
+                is_on_main_chain: row.get(2),
+                main_chain_index: row.get(3),
+            })?
+            .collect::<::std::result::Result<Vec<TempUnit>, _>>()?;
+
+        if rows.is_empty() {
+            bail_with_validation_err!(UnitError, "skiplist unit {} not found", skip_list_unit);
+        }
+
+        let row = rows.iter().nth(0).unwrap();
+        if row.is_stable == 1 {
+            if row.is_on_main_chain != Some(1) {
+                bail_with_validation_err!(
+                    UnitError,
+                    "skiplist unit {} is not on MC",
+                    skip_list_unit
+                );
+            }
+            if row.main_chain_index.map(|v| v % 10) != Some(0) {
+                bail_with_validation_err!(
+                    JointError,
+                    "skiplist unit {} MCI is not divisible by 10",
+                    skip_list_unit
+                );
+            }
+        }
+    }
+
     Ok(())
-    // unimplemented!("validate_skip_list")
 }
 
 fn validate_witnesses(
