@@ -7,6 +7,7 @@ use object_hash;
 use rusqlite::{Connection, Transaction};
 use serde_json::Value;
 use spec::*;
+use storage;
 
 // global address map lock
 lazy_static! {
@@ -797,12 +798,152 @@ fn validate_skip_list(_tx: &Transaction, _skip_list: &Vec<String>) -> Result<()>
 }
 
 fn validate_witnesses(
-    _tx: &Transaction,
-    _unit: &Unit,
-    _validate_state: &mut ValidationState,
+    tx: &Transaction,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
 ) -> Result<()> {
+    let validate_witness_list_mutations = |temp_witnesses: &Vec<String>| -> Result<()> {
+        if unit.parent_units.is_empty() {
+            return Ok(());
+        }
+        let determine_result = storage::determine_if_has_witness_list_mutations_along_mc(
+            tx,
+            unit,
+            &unit
+                .last_ball_unit
+                .as_ref()
+                .expect("last_ball_unit is empty"),
+            temp_witnesses,
+        );
+        if determine_result.is_err() && validate_state.last_ball_mci >= 512000 {
+            bail_with_validation_err!(UnitError, "{}", determine_result.err().unwrap())
+        }
+        let str_witness: String = temp_witnesses
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<String>>()
+            .join(",");
+        let sql = format!(
+                "SELECT 1 \
+			FROM address_definition_changes \
+			JOIN definitions USING(definition_chash) \
+			JOIN units AS change_units USING(unit) \
+			JOIN unit_authors USING(definition_chash) \
+			JOIN units AS definition_units ON unit_authors.unit=definition_units.unit \
+			WHERE address_definition_changes.address IN({}) AND has_references=1 \
+				AND change_units.is_stable=1 AND change_units.main_chain_index<=? AND +change_units.sequence='good' \
+				AND definition_units.is_stable=1 AND definition_units.main_chain_index<=? AND +definition_units.sequence='good' \
+			UNION \
+			SELECT 1 \
+			FROM definitions \
+			CROSS JOIN unit_authors USING(definition_chash) \
+			JOIN units AS definition_units ON unit_authors.unit=definition_units.unit \
+			WHERE definition_chash IN({}) AND has_references=1 \
+				AND definition_units.is_stable=1 AND definition_units.main_chain_index<=? AND +definition_units.sequence='good' \
+			LIMIT 1",
+                str_witness, str_witness
+            );
+        let mut stmt = tx.prepare_cached(&sql)?;
+        if stmt.exists(&[
+            &validate_state.last_ball_mci,
+            &validate_state.last_ball_mci,
+            &validate_state.last_ball_mci,
+        ])? {
+            bail_with_validation_err!(
+                UnitError,
+                "some witnesses have references in their addresses"
+            )
+        }
+        Ok(())
+    };
+    if let Some(witness_list_unit) = unit.witness_list_unit.as_ref() {
+        let mut stmt = tx.prepare_cached(
+            "SELECT sequence, is_stable, main_chain_index FROM units WHERE unit=?",
+        )?;
+        struct TempUnits {
+            sequence: String,
+            is_stable: u32,
+            main_chain_index: Option<u32>,
+        }
+        let units = stmt
+            .query_map(&[witness_list_unit], |rows| TempUnits {
+                sequence: rows.get(0),
+                is_stable: rows.get(1),
+                main_chain_index: rows.get(2),
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
+        if units.is_empty() {
+            bail_with_validation_err!(UnitError, "referenced witness list unit is empty")
+        }
+        let witness_list_unit_props = &units[0];
+        if witness_list_unit_props.sequence != "good" {
+            bail_with_validation_err!(UnitError, "witness list unit is not serialy")
+        }
+        if witness_list_unit_props.is_stable != 1 {
+            bail_with_validation_err!(UnitError, "witness list unit is not stable")
+        }
+        if witness_list_unit_props.main_chain_index > Some(validate_state.last_ball_mci) {
+            bail_with_validation_err!(UnitError, "witness list unit must come before last ball")
+        }
+
+        let mut stmt =
+            tx.prepare_cached("SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
+        let witnesses = stmt
+            .query_map(&[witness_list_unit], |row| row.get(0))?
+            .collect::<::std::result::Result<Vec<String>, _>>()?;
+        if witnesses.is_empty() {
+            bail_with_validation_err!(UnitError, "referenced witness list unit has no witnessesl")
+        }
+        if witnesses.len() != config::COUNT_WITNESSES {
+            bail_with_validation_err!(UnitError, "wrong number of witnesses: {}", witnesses.len())
+        }
+        validate_witness_list_mutations(&witnesses)?;
+    } else if unit.witnesses.len() == config::COUNT_WITNESSES {
+        let mut witness_iter = unit.witnesses.iter();
+        let mut prev_witness = witness_iter.next();
+        for curr_witness in witness_iter {
+            if !object_hash::is_chash_valid(curr_witness) {
+                bail_with_validation_err!(UnitError, "witness address is invalid")
+            }
+
+            if Some(curr_witness) <= prev_witness {
+                bail_with_validation_err!(UnitError, "wrong order of witnesses, or duplicates")
+            }
+            prev_witness = Some(curr_witness);
+        }
+
+        if is_genesis_unit(&unit.unit.as_ref().expect("unit hash missing")) {
+            validate_witness_list_mutations(&unit.witnesses)?;
+            return Ok(());
+        }
+        let unit_witnesses: String = unit
+            .witnesses
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<String>>()
+            .join(",");
+        let sql = format!(
+            "SELECT COUNT(DISTINCT address) AS \
+             count_stable_good_witnesses FROM unit_authors JOIN units USING(unit) \
+             WHERE address=definition_chash AND +sequence='good' AND \
+             is_stable=1 AND main_chain_index<=? AND address IN({})",
+            unit_witnesses
+        );
+        let mut stmt = tx.prepare_cached(&sql)?;
+        let count_stable_good_witnesses =
+            stmt.query_row(&[&validate_state.last_ball_mci], |row| row.get::<_, u32>(0))?;
+        if count_stable_good_witnesses != config::COUNT_WITNESSES as u32 {
+            bail_with_validation_err!(
+                UnitError,
+                "some witnesses are not stable, not serial, or don't come before last ball"
+            )
+        }
+        validate_witness_list_mutations(&unit.witnesses)?;
+    } else {
+        bail_with_validation_err!(UnitError, "no witnesses or not enough witnesses")
+    }
+
     Ok(())
-    // unimplemented!()
 }
 
 fn validate_authors(
