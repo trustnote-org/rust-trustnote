@@ -15,12 +15,6 @@ lazy_static! {
     static ref ADDRESS_LOCK: MapLock<String> = MapLock::new();
 }
 
-macro_rules! err {
-    ($e:expr) => {
-        return Err($e.into());
-    };
-}
-
 macro_rules! bail_with_validation_err {
     (UnitError, $e:expr) => {
         return Err(ValidationError::UnitError {
@@ -183,44 +177,34 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
     info!("validating joint identified by unit {}", unit_hash);
 
     if unit_hash.len() != config::HASH_LENGTH {
-        err!(ValidationError::JointError {
-            err: "wrong unit length".to_owned()
-        });
+        bail_with_validation_err!(JointError, "wrong unit length");
     }
 
     let calc_unit_hash = unit.get_unit_hash();
     if &calc_unit_hash != unit_hash {
-        err!(ValidationError::JointError {
-            err: format!("wrong unit hash: {} != {}", calc_unit_hash, unit_hash),
-        });
+        bail_with_validation_err!(
+            JointError,
+            "wrong unit hash: {} != {}",
+            calc_unit_hash,
+            unit_hash
+        );
     }
 
     if joint.unsigned == Some(true) {
         if joint.ball.is_some() || !joint.skiplist_units.is_empty() {
-            err!(ValidationError::JointError {
-                err: "unknown fields in unsigned unit-joint".to_owned(),
-            });
+            bail_with_validation_err!(JointError, "unknown fields in unsigned unit-joint");
         }
     } else if joint.ball.is_some() {
         let ball = joint.ball.as_ref().unwrap();
         if ball.len() != config::HASH_LENGTH {
-            err!(ValidationError::JointError {
-                err: "wrong ball length".to_owned()
-            });
+            bail_with_validation_err!(JointError, "wrong ball length");
         }
-        // if !joint.skiplist_units.is_empty() {
-        //     err!(ValidationError::JointError {
-        //         err: "empty skiplist array".to_owned(),
-        //     });
-        // }
     }
 
     if unit.content_hash.is_some() {
         let content_hash = unit.content_hash.as_ref().unwrap();
         if content_hash.len() != config::HASH_LENGTH {
-            err!(ValidationError::UnitError {
-                err: "wrong content_hash length".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "wrong content_hash length");
         }
         if unit.earned_headers_commission_recipients.len() > 0
             || unit.headers_commission.is_some()
@@ -228,86 +212,68 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
             || unit.main_chain_index.is_some()
             || !unit.messages.is_empty()
         {
-            err!(ValidationError::UnitError {
-                err: "unknown fields in nonserial unit".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "unknown fields in nonserial unit");
         }
         if joint.ball.is_none() {
-            err!(ValidationError::JointError {
-                err: "content_hash allowed only in finished ball".to_owned(),
-            });
+            bail_with_validation_err!(JointError, "content_hash allowed only in finished ball");
         }
     } else {
         // serial
         if unit.messages.is_empty() {
-            err!(ValidationError::UnitError {
-                err: "missing or empty messages array".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "missing or empty messages array");
         }
 
         if unit.messages.len() > config::MAX_MESSAGES_PER_UNIT {
-            err!(ValidationError::UnitError {
-                err: "too many messages".to_owned()
-            });
+            bail_with_validation_err!(UnitError, "too many messages");
         }
 
         let header_size = unit.get_header_size();
         if unit.headers_commission != Some(header_size) {
-            err!(ValidationError::UnitError {
-                err: format!("wrong headers commission, expected {}", header_size),
-            });
+            bail_with_validation_err!(
+                UnitError,
+                "wrong headers commission, expected {}",
+                header_size
+            );
         }
 
         let payload_size = unit.get_payload_size();
         if unit.payload_commission != Some(payload_size) {
-            err!(ValidationError::UnitError {
-                err: format!("wrong payload commission, expected {}", payload_size),
-            });
+            bail_with_validation_err!(
+                UnitError,
+                "wrong payload commission, expected {}",
+                payload_size
+            );
         }
     }
 
     if unit.authors.is_empty() {
-        err!(ValidationError::UnitError {
-            err: "missing or empty authors array".to_owned(),
-        });
+        bail_with_validation_err!(UnitError, "missing or empty authors array");
     }
 
     if unit.version != config::VERSION {
-        err!(ValidationError::UnitError {
-            err: "wrong version".to_owned()
-        });
+        bail_with_validation_err!(UnitError, "wrong version");
     }
 
     if unit.alt != config::ALT {
-        err!(ValidationError::UnitError {
-            err: "wrong alt".to_owned()
-        });
+        bail_with_validation_err!(UnitError, "wrong alt");
     }
 
     if !unit.is_genesis_unit() {
         if unit.parent_units.is_empty() {
-            err!(ValidationError::UnitError {
-                err: "missing or empty parent units array".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "missing or empty parent units array");
         }
 
         if unit.last_ball.as_ref().map(|s| s.len()).unwrap_or(0) != config::HASH_LENGTH {
-            err!(ValidationError::UnitError {
-                err: "wrong length of last ball".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "wrong length of last ball");
         }
 
         if unit.last_ball_unit.as_ref().map(|s| s.len()).unwrap_or(0) != config::HASH_LENGTH {
-            err!(ValidationError::UnitError {
-                err: "wrong length of last ball unit".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "wrong length of last ball unit");
         }
     }
 
     if unit.witness_list_unit.is_some() && !unit.witnesses.is_empty() {
-        err!(ValidationError::UnitError {
-            err: "ambiguous witnesses".to_owned()
-        });
+        bail_with_validation_err!(UnitError, "ambiguous witnesses");
     }
 
     let mut validate_state = ValidationState::new();
@@ -354,19 +320,17 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
 fn check_duplicate(tx: &Transaction, unit: &String) -> Result<()> {
     let mut stmt = tx.prepare_cached("SELECT 1 FROM units WHERE unit=?")?;
     if stmt.exists(&[unit])? {
-        err!(ValidationError::JointError {
-            err: format!("unit {} already exist", unit),
-        });
+        bail_with_validation_err!(JointError, "unit {} already exist", unit);
     }
     Ok(())
 }
 
 fn validate_headers_commission_recipients(unit: &Unit) -> Result<()> {
     if unit.authors.len() > 1 && unit.earned_headers_commission_recipients.is_empty() {
-        err!(ValidationError::UnitError {
-            err: "must specify earned_headers_commission_recipients when more than 1 author"
-                .to_owned(),
-        });
+        bail_with_validation_err!(
+            UnitError,
+            "must specify earned_headers_commission_recipients when more than 1 author"
+        );
     }
 
     if unit.earned_headers_commission_recipients.is_empty() {
@@ -377,28 +341,26 @@ fn validate_headers_commission_recipients(unit: &Unit) -> Result<()> {
     let mut prev_address = "".to_owned();
     for recipient in &unit.earned_headers_commission_recipients {
         if recipient.earned_headers_commission_share < 0 {
-            err!(ValidationError::UnitError {
-                err: "earned_headers_commission_share must be positive integer".to_owned(),
-            });
+            bail_with_validation_err!(
+                UnitError,
+                "earned_headers_commission_share must be positive integer"
+            );
         }
         if recipient.address <= prev_address {
-            err!(ValidationError::UnitError {
-                err: "recipient list must be sorted by address".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "recipient list must be sorted by address");
         }
         if !is_valid_address(&recipient.address) {
-            err!(ValidationError::UnitError {
-                err: "invalid recipient address checksum".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "invalid recipient address checksum");
         }
         total_earned_headers_commission_share += recipient.earned_headers_commission_share;
         prev_address = recipient.address.clone();
     }
 
     if total_earned_headers_commission_share != 100 {
-        err!(ValidationError::UnitError {
-            err: "sum of earned_headers_commission_share is not 100".to_owned(),
-        });
+        bail_with_validation_err!(
+            UnitError,
+            "sum of earned_headers_commission_share is not 100"
+        );
     }
 
     Ok(())
@@ -422,13 +384,16 @@ fn validate_hash_tree(
     let row = rows.next();
     if row.is_none() {
         info!("ball {} is not known in hash tree", ball);
-        err!(ValidationError::NeedHashTree);
+        return Err(ValidationError::NeedHashTree);
     }
     let row = row.unwrap()?;
     if unit_hash != &row.get::<_, String>(0) {
-        err!(ValidationError::JointError {
-            err: format!("ball {} unit {} contradicts hash tree", ball, unit_hash),
-        });
+        bail_with_validation_err!(
+            JointError,
+            "ball {} unit {} contradicts hash tree",
+            ball,
+            unit_hash
+        );
     }
 
     let parent_units = unit
@@ -450,9 +415,10 @@ fn validate_hash_tree(
         .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if parent_balls.len() != unit.parent_units.len() {
-        err!(ValidationError::JointError {
-            err: "some parents not found in balls nor in hash tree".to_owned(),
-        });
+        bail_with_validation_err!(
+            JointError,
+            "some parents not found in balls nor in hash tree"
+        );
     }
 
     fn validate_ball_hash(
@@ -465,9 +431,7 @@ fn validate_hash_tree(
         let ball_hash =
             object_hash::get_ball_hash(unit_hash, parent_balls, skiplist_balls, is_valide);
         if &ball_hash != ball {
-            err!(ValidationError::JointError {
-                err: format!("ball hash is wrong, expect {}", ball_hash),
-            });
+            bail_with_validation_err!(JointError, "ball hash is wrong, expect {}", ball_hash);
         }
         return Ok(());
     }
@@ -502,9 +466,7 @@ fn validate_hash_tree(
         .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if skiplist_balls.len() != joint.skiplist_units.len() {
-        err!(ValidationError::JointError {
-            err: "some skiplist balls not found".to_owned(),
-        });
+        bail_with_validation_err!(JointError, "some skiplist balls not found");
     }
     validate_state.skiplist_balls = skiplist_balls;
 
@@ -545,14 +507,14 @@ fn validate_parents(
     let mut missing_parent_units = Vec::new();
     let mut prev_parent_unit_props = Vec::new();
     validate_state.max_parent_limci = 0;
-    fn joint_err(e: String) -> ValidationError {
-        ValidationError::JointError { err: e }
+    fn joint_err(e: String) -> Result<()> {
+        Err(ValidationError::JointError { err: e })
     }
-    fn unit_err(e: String) -> ValidationError {
-        ValidationError::JointError { err: e }
+    fn unit_err(e: String) -> Result<()> {
+        Err(ValidationError::JointError { err: e })
     }
     let (join, feild);
-    let create_err: fn(String) -> ValidationError;
+    let create_err: fn(String) -> Result<()>;
     if joint.ball.is_some() {
         join = "LEFT JOIN balls USING(unit) LEFT JOIN hash_tree_balls ON units.unit=hash_tree_balls.unit";
         feild = ", IFNULL(balls.ball, hash_tree_balls.ball) AS ball";
@@ -565,7 +527,7 @@ fn validate_parents(
 
     for parent_unit in &unit.parent_units {
         if parent_unit <= &prev {
-            err!(create_err("parent units not ordered".to_owned()));
+            return create_err("parent units not ordered".to_owned());
         }
         prev = parent_unit.clone();
         let sql = format!(
@@ -593,9 +555,11 @@ fn validate_parents(
 
         let parent_unit_props = rows.swap_remove(0);
         if joint.ball.is_some() && parent_unit_props.ball.is_none() {
-            err!(ValidationError::JointError {
-                err: format!("no ball corresponding to parent unit {}", parent_unit),
-            });
+            bail_with_validation_err!(
+                JointError,
+                "no ball corresponding to parent unit {}",
+                parent_unit
+            );
         }
 
         let parent_unit_props = parent_unit_props.unit_props;
@@ -609,10 +573,10 @@ fn validate_parents(
             if ret.is_none() {
                 continue;
             }
-            err!(create_err(format!(
+            return create_err(format!(
                 "parent unit {} is related to one of the other parent units",
                 parent_unit
-            )));
+            ));
         }
         prev_parent_unit_props.push(parent_unit_props);
     }
@@ -629,11 +593,9 @@ fn validate_parents(
         );
         let mut stmt = tx.prepare(&sql)?;
         if stmt.exists(&[])? {
-            err!(create_err(
-                "some of the unit's parents are known bad".to_owned()
-            ));
+            return create_err("some of the unit's parents are known bad".to_owned());
         }
-        err!(ValidationError::NeedParentUnits(missing_parent_units));
+        return Err(ValidationError::NeedParentUnits(missing_parent_units));
     }
 
     let mut stmt = tx.prepare_cached("SELECT is_stable, is_on_main_chain, main_chain_index, ball, (SELECT MAX(main_chain_index) FROM units) AS max_known_mci \n\
@@ -658,42 +620,36 @@ fn validate_parents(
         .collect::<::std::result::Result<Vec<LastBallUnitProps>, _>>()?;
 
     if rows.len() != 1 {
-        err!(create_err(format!(
-            "last ball unit {} not found",
-            last_ball_unit
-        )));
+        return create_err(format!("last ball unit {} not found", last_ball_unit));
     }
 
     let last_ball_unit_props = rows.swap_remove(0);
     if last_ball_unit_props.ball.is_none() && last_ball_unit_props.is_stable == 1 {
-        err!(create_err(format!(
+        return create_err(format!(
             "last ball unit {} is stable but has no ball",
             last_ball_unit
-        )));
+        ));
     }
 
     if last_ball_unit_props.is_on_main_chain != 1 {
-        err!(create_err(format!(
-            "last ball {:?} is not on MC",
-            last_ball
-        )));
+        return create_err(format!("last ball {:?} is not on MC", last_ball));
     }
 
     if last_ball_unit_props.ball.is_some() && &last_ball_unit_props.ball != last_ball {
-        err!(create_err(format!(
+        return create_err(format!(
             "last_ball {:?} and last_ball_unit {} do not match",
             last_ball, last_ball_unit
-        )));
+        ));
     }
 
     validate_state.last_ball_mci = last_ball_unit_props.main_chain_index;
     validate_state.max_known_mci = last_ball_unit_props.max_known_mci;
 
     if validate_state.max_parent_limci < validate_state.last_ball_mci {
-        err!(create_err(format!(
+        return create_err(format!(
             "last ball unit {} is not included in parents, unit {}",
             last_ball_unit, unit_hash
-        )));
+        ));
     }
 
     let check_last_ball_did_not_restart = || {
@@ -708,12 +664,11 @@ fn validate_parents(
             .query_map(&[], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
         if max_parent_last_ball_mci[0] > Some(validate_state.last_ball_mci) {
-            err!(ValidationError::JointError {
-                err: format!(
-                    "last ball mci must not retreat, parents: {:?}",
-                    parent_units
-                ),
-            });
+            bail_with_validation_err!(
+                JointError,
+                "last ball mci must not retreat, parents: {:?}",
+                parent_units
+            );
         }
         Ok(())
     };
@@ -728,9 +683,7 @@ fn validate_parents(
         );
         let mut stmt = tx.prepare(&sql)?;
         if stmt.exists(&[])? {
-            err!(ValidationError::JointError {
-                err: "some addresses found more than once in parents".to_owned()
-            });
+            bail_with_validation_err!(JointError, "some addresses found more than once in parents");
         }
         check_last_ball_did_not_restart()
     };
@@ -738,10 +691,10 @@ fn validate_parents(
     if last_ball_unit_props.is_stable == 1 {
         // if it were not stable, we wouldn't have had the ball at all
         if &last_ball_unit_props.ball != last_ball {
-            err!(create_err(format!(
+            return create_err(format!(
                 "stable: last_ball {:?} and last_ball_unit {} do not match",
                 last_ball, last_ball_unit
-            )));
+            ));
         }
 
         // FIXME: what's this!!!
@@ -767,10 +720,10 @@ fn validate_parents(
         return check_no_same_address_in_different_parents();
     }
     if !is_stable {
-        err!(create_err(format!(
+        return create_err(format!(
             "{}: last ball unit {} is not stable in view of your parents {:?}",
             unit_hash, last_ball_unit, unit.parent_units
-        )))
+        ));
     }
 
     let mut stmt = tx.prepare_cached("SELECT ball FROM balls WHERE unit=?")?;
@@ -778,16 +731,16 @@ fn validate_parents(
         .query_map(&[unit_hash], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if balls.is_empty() {
-        err!(create_err(format!(
+        return create_err(format!(
             "last ball unit {} just became stable but ball not found",
             last_ball_unit
-        )))
+        ));
     }
     if last_ball.as_ref() != Some(&balls[0]) {
-        err!(create_err(format!(
+        return create_err(format!(
             "last_ball {:?} and last_ball_unit {} do not match after advancing stability point",
             last_ball, last_ball_unit
-        )))
+        ));
     }
     check_no_same_address_in_different_parents()
 }
