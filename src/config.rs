@@ -14,7 +14,8 @@ pub const ALT: &str = "1";
 pub const STALLED_TIMEOUT: usize = 10;
 pub const MAX_MESSAGES_PER_UNIT: usize = 128;
 pub const MAX_PARENT_PER_UNIT: usize = 16;
-
+pub const MAX_AUTHORS_PER_UNIT: usize = 16;
+pub const MAX_AUTHENTIFIER_LENGTH: usize = 4096;
 pub const COUNT_MC_BALLS_FOR_PAID_WITNESSING: u32 = 100;
 
 pub const MAX_ITEMS_IN_CACHE: usize = 1000;
