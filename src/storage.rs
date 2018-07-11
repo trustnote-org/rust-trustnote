@@ -1139,11 +1139,13 @@ fn read_definition_at_mci(
          CROSS JOIN unit_authors USING(definition_chash) CROSS JOIN units USING(unit) \
          WHERE definition_chash=? AND is_stable=1 AND sequence='good' AND main_chain_index<=?",
     )?;
-    let definition: String = stmt.query_row(&[definition_chash, &max_mci], |row| row.get(0))?;
-    Ok(serde_json::from_str(&definition).context(format!(
-        "failed to read definition at mci: definition_chash={}, max_mci={}",
-        definition_chash, max_mci
-    ))?)
+    let definition: String = stmt
+        .query_row(&[definition_chash, &max_mci], |row| row.get(0))
+        .context(format!(
+            "failed to read definition at mci: definition_chash={}, max_mci={}",
+            definition_chash, max_mci
+        ))?;
+    Ok(serde_json::from_str(&definition)?)
 }
 
 pub fn determine_best_parents(

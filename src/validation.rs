@@ -8,7 +8,6 @@ use object_hash;
 use rusqlite::{Connection, Transaction};
 use serde_json::Value;
 use spec::*;
-use std::collections::HashMap;
 use storage;
 // global address map lock
 lazy_static! {
@@ -38,7 +37,6 @@ macro_rules! bail_with_validation_err {
         });
     };
 }
-
 macro_rules! ensure_with_validation_err {
     ($cond:expr, UnitError, $e:expr) => {
         if !($cond) {
@@ -910,17 +908,17 @@ fn validate_authors(
     validate_state: &mut ValidationState,
 ) -> Result<()> {
     if unit.authors.len() > config::MAX_AUTHORS_PER_UNIT {
-        bail!("too many authors");
+        bail_with_validation_err!(UnitError, "too many authors");
     }
     let mut prev_address = String::from("");
-    for author in unit.authors.iter() {
+    for author in &unit.authors {
         if author.address <= prev_address {
-            bail!("author addresses not sorted");
+            bail_with_validation_err!(UnitError, "author addresses not sorted");
         }
         prev_address = author.address.clone();
     }
     validate_state.unit_hash_to_sign = Some(unit.get_unit_hash_to_sign());
-    for author in unit.authors.iter() {
+    for author in &unit.authors {
         validate_author(tx, author, unit, validate_state)?;
     }
     Ok(())
@@ -933,25 +931,17 @@ fn validate_author(
     validate_state: &mut ValidationState,
 ) -> Result<()> {
     if author.address.len() != 32 {
-        err!(ValidationError::UnitError {
-            err: "wrong address length".to_owned(),
-        });
+        bail_with_validation_err!(UnitError, "wrong address length");
     }
     if author.authentifiers.is_empty() && unit.content_hash.is_none() {
-        err!(ValidationError::UnitError {
-            err: "no authentifiers".to_owned(),
-        });
+        bail_with_validation_err!(UnitError, "no authentifiers");
     }
-    for (_, value) in author.authentifiers.iter() {
+    for (_, value) in &author.authentifiers {
         if value.is_empty() {
-            err!(ValidationError::UnitError {
-                err: "authentifiers must be nonempty strings".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "authentifiers must be nonempty strings");
         }
         if value.len() > config::MAX_AUTHENTIFIER_LENGTH {
-            err!(ValidationError::UnitError {
-                err: "authentifier too long".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "authentifier too long");
         }
     }
 
@@ -960,29 +950,25 @@ fn validate_author(
 
     if address_definition.is_null() {
         if !object_hash::is_chash_valid(&author.address) {
-            err!(ValidationError::UnitError {
-                err: "address checksum invalid".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "address checksum invalid");
         }
         if unit.content_hash.is_some() {
             validate_state.sequence = "final-bad".to_owned();
             return Ok(());
         }
 
-        let _definition_chash = object_hash::get_chash(&author.definition)?;
-
-        // storage::read_definition_by_address(
-        //     tx,
-        //     &author.address,
-        //     Some(validate_state.last_ball_mci),
-        // ).or_else(|_| {
-        //     err!(ValidationError::UnitError {
-        //         err: format!(
-        //             "definition {} bound to address {} is not defined, err = ",
-        //             definition_chash, author.address
-        //         ),
-        //     })
-        // })?;
+        let tmp_address_definition = storage::read_definition_by_address(
+            tx,
+            &author.address,
+            Some(validate_state.last_ball_mci),
+        );
+        if tmp_address_definition.is_err() {
+            bail_with_validation_err!(
+                UnitError,
+                "definition_chash bound to address {} is not defined",
+                author.address
+            );
+        }
     }
 
     //to avoid multiple borrow
@@ -992,75 +978,73 @@ fn validate_author(
         .addresses_with_forked_path
         .contains(&author.address);
 
-    let handle_duplicate_address_definition = |nonserial: bool| -> Result<()> {
-        if !nonserial || !is_contain_address {
-            err!(ValidationError::UnitError {
-                err: "authentifier too long".to_owned(),
-            });
-        }
-        //which definition?
-        if object_hash::get_chash(&address_definition).unwrap()
-            != object_hash::get_chash(&author.definition).unwrap()
-        {
-            err!(ValidationError::UnitError {
-                err: "authentifier too long".to_owned(),
-            });
-        }
+    let handle_duplicate_address_definition =
+        |address_definition: Value, nonserial: bool| -> Result<()> {
+            if !nonserial || !is_contain_address {
+                bail_with_validation_err!(
+                    UnitError,
+                    "duplicate definition of address {}, bNonserial={}",
+                    author.address,
+                    nonserial
+                );
+            }
 
-        Ok(())
-    };
+            if object_hash::get_chash(&address_definition).unwrap()
+                != object_hash::get_chash(&author.definition).unwrap()
+            {
+                bail_with_validation_err!(
+                    UnitError,
+                    "unit definition doesn't match the stored definition"
+                );
+            }
+
+            Ok(())
+        };
 
     let validate_definition = |nonserial: bool| -> Result<()> {
         let address_definition = author.definition.clone();
-        let definition_chash = object_hash::get_chash(&author.definition)?;
-        // storage::read_definition_by_address(
-        //     tx,
-        //     &author.address,
-        //     Some(validate_state.last_ball_mci),
-        // ).or_else(|_| {
-        //     err!(ValidationError::UnitError {
-        //         err: format!(
-        //             "definition {} bound to address {} is not defined, err = ",
-        //             definition_chash, author.address
-        //         ),
-        //     })
-        // })?;
-        handle_duplicate_address_definition(nonserial)?;
+        if address_definition.is_null() {
+            return Ok(());
+        }
+
+        let ret_definition =
+            storage::read_definition_by_address(tx, &author.address, Some(last_ball_mci));
+
+        if ret_definition.is_err() {
+            return Ok(());
+        }
+
+        handle_duplicate_address_definition(ret_definition.unwrap(), nonserial)?;
 
         Ok(())
     };
 
     let check_no_pending_definition = |nonserial: bool| -> Result<()> {
-        //next = validate_definition
         let cross = if max_known_mci - last_ball_mci < 1000 {
             "CROSS"
         } else {
             ""
         };
         let sql = format!("SELECT unit FROM units {} JOIN unit_authors USING(unit) \
-			WHERE address={} AND definition_chash IS NOT NULL AND ( /* is_stable=0 OR */ main_chain_index>{} OR main_chain_index IS NULL)",cross,author.address, last_ball_mci);
-        let mut stmt = tx.prepare_cached(&sql).unwrap();
+			WHERE address='{}' AND definition_chash IS NOT NULL AND ( main_chain_index>{} OR main_chain_index IS NULL)",cross,author.address, last_ball_mci);
+        let mut stmt = tx.prepare(&sql)?;
         let rows = stmt
             .query_map(&[], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
 
         if rows.is_empty() {
-            validate_definition()?;
+            validate_definition(nonserial)?;
             return Ok(());
         }
         if !nonserial || !is_contain_address {
-            err!(ValidationError::UnitError {
-                err: "you can't send anything before your last definition is stable and before last ball".to_owned(),
-            });
+            bail_with_validation_err!(UnitError, "you can't send anything before your last definition is stable and before last ball");
         }
         for row in rows.into_iter() {
             let included = graph::determine_if_included_or_equal(tx, &row, &unit.parent_units)?;
             if included {
-                err!(ValidationError::UnitError {
-                err: "you can't send anything before your last included definition is stable and before last ball (self is nonserial)".to_owned(),
-            });
+                bail_with_validation_err!(UnitError, "you can't send anything before your last included definition is stable and before last ball (self is nonserial)");
             } else {
-                validate_definition()?;
+                validate_definition(nonserial)?;
             }
         }
 
@@ -1068,13 +1052,12 @@ fn validate_author(
     };
 
     let check_no_pending_change_of_definition_chash = |nonserial: bool| -> Result<()> {
-        //next = check_no_pending_definition
         let sql = format!(
             "SELECT unit FROM address_definition_changes JOIN units USING(unit) \
-             WHERE address={} AND (is_stable=0 OR main_chain_index>{} OR main_chain_index IS NULL)",
+             WHERE address='{}' AND (is_stable=0 OR main_chain_index>{} OR main_chain_index IS NULL)",
             author.address, last_ball_mci
         );
-        let mut stmt = tx.prepare_cached(&sql).unwrap();
+        let mut stmt = tx.prepare(&sql)?;
         let rows = stmt
             .query_map(&[], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
@@ -1084,17 +1067,16 @@ fn validate_author(
             return Ok(());
         }
         if !nonserial || !is_contain_address {
-            err!(ValidationError::UnitError {
-                err: "you can't send anything before your last keychange is stable and before last ball".to_owned(),
-            });
+            bail_with_validation_err!(
+                UnitError,
+                "you can't send anything before your last keychange is stable and before last ball"
+            );
         }
 
         for row in rows.into_iter() {
             let included = graph::determine_if_included_or_equal(tx, &row, &unit.parent_units)?;
             if included {
-                err!(ValidationError::UnitError {
-                err: "you can't send anything before your last included keychange is stable and before last ball (self is nonserial)".to_owned(),
-            });
+                bail_with_validation_err!(UnitError, "you can't send anything before your last included keychange is stable and before last ball (self is nonserial)");
             } else {
                 check_no_pending_definition(nonserial)?;
             }
@@ -1103,14 +1085,15 @@ fn validate_author(
         Ok(())
     };
 
-    let mut check_serial_address_use = |validate_state: &mut ValidationState| -> Result<()> {
-        //let next = checkNoPendingChangeOfDefinitionChash();
-        // findConflictingUnits();
+    let check_serial_address_use = |validate_state: &mut ValidationState,
+                                    nonserial: &mut bool|
+     -> Result<()> {
         let cross = if (validate_state.max_known_mci - validate_state.max_parent_limci) < 1000 {
             "CROSS"
         } else {
             ""
         };
+
         struct TempUnit {
             unit: String,
             is_stable: u32,
@@ -1119,36 +1102,33 @@ fn validate_author(
             "SELECT unit, is_stable \
              FROM units \
              {} JOIN unit_authors USING(unit) \
-             WHERE address={} AND (main_chain_index>{} OR main_chain_index IS NULL) AND unit != ?",
-            cross,
-            author.address,
-            validate_state.max_parent_limci,
-            //unit.unit.unwrap()
+             WHERE address='{}' AND (main_chain_index>{} OR main_chain_index IS NULL) AND unit != ?",
+            cross, author.address, validate_state.max_parent_limci
         );
-        let mut stmt = tx.prepare_cached(&sql)?;
+
+        let mut stmt = tx.prepare(&sql)?;
         let rows = stmt
             .query_map(&[&unit.unit], |row| TempUnit {
                 unit: row.get(0),
                 is_stable: row.get(1),
             })?
-            .collect::<::std::result::Result<Vec<TempUnit>, _>>()?;
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         let mut conflicting_unit_props = Vec::new();
-        for row in rows {
+        for row in &rows {
             let included =
                 graph::determine_if_included_or_equal(tx, &row.unit, &unit.parent_units)?;
             if !included {
                 conflicting_unit_props.push(row);
             }
         }
-        //return confliction_unit_props
 
         if conflicting_unit_props.is_empty() {
             if validate_state.sequence.is_empty() {
                 validate_state.sequence = "good".to_owned();
-                check_no_pending_change_of_definition_chash(nonserial)?;
-                return Ok(());
             }
+            check_no_pending_change_of_definition_chash(*nonserial)?;
+            return Ok(());
         }
         let mut conflicting_units = conflicting_unit_props
             .iter()
@@ -1162,22 +1142,22 @@ fn validate_author(
         validate_state
             .conflicting_units
             .append(&mut conflicting_units);
-        nonserial = true;
+        *nonserial = true;
         let unstable_conflicting_unit_props = conflicting_unit_props
             .iter()
             .filter(|x| x.is_stable == 0)
             .collect::<Vec<_>>();
 
-        let mut conflicts_with_stable_units = false;
-        for x in conflicting_unit_props.iter() {
-            if x.is_stable == 1 {
-                conflicts_with_stable_units = true;
+        let mut is_conflicts_with_stable_units = false;
+        for tmp in conflicting_unit_props.iter() {
+            if tmp.is_stable == 1 {
+                is_conflicts_with_stable_units = true;
                 break;
             }
         }
 
         if validate_state.sequence != "final-bad".to_owned() {
-            validate_state.sequence = if conflicts_with_stable_units {
+            validate_state.sequence = if is_conflicts_with_stable_units {
                 "final-bad".to_owned()
             } else {
                 "temp-bad".to_owned()
@@ -1188,13 +1168,13 @@ fn validate_author(
             .map(|x| x.unit.clone())
             .collect::<Vec<_>>();
 
-        if conflicts_with_stable_units {
-            check_no_pending_change_of_definition_chash(nonserial)?;
+        if is_conflicts_with_stable_units {
+            check_no_pending_change_of_definition_chash(*nonserial)?;
             return Ok(());
         }
 
         if unstable_conflicting_units.is_empty() {
-            check_no_pending_change_of_definition_chash(nonserial)?;
+            check_no_pending_change_of_definition_chash(*nonserial)?;
             return Ok(());
         }
         let units_list = unstable_conflicting_units
@@ -1206,56 +1186,34 @@ fn validate_author(
             "UPDATE units SET sequence='temp-bad' WHERE unit IN {} AND +sequence='good'",
             units_list
         );
+
         validate_state.additional_queries.push(sql);
 
-        check_no_pending_change_of_definition_chash(nonserial)?;
+        check_no_pending_change_of_definition_chash(*nonserial)?;
         Ok(())
     };
 
-    let mut validate_authentifiers =
-        |address_definition: &Value, validate_state: &mut ValidationState| -> Result<()> {
-            definition::validate_authentifiers(
-                tx,
-                &author.address,
-                &Value::Null,
-                &address_definition,
-                unit,
-                validate_state,
-                &author.authentifiers,
-            )?;
-            // if (err) // error in address definition
-            // 			return callback(err);
-            // 		if (!res) // wrong signature or the like
-            // 			return callback("authentifier verification failed");
-            check_serial_address_use(validate_state)?;
-            Ok(())
-        };
-    validate_authentifiers(&address_definition, validate_state)?;
+    let validate_authentifiers = |address_definition: &Value,
+                                  validate_state: &mut ValidationState,
+                                  nonserial: &mut bool|
+     -> Result<()> {
+        definition::validate_authentifiers(
+            tx,
+            &author.address,
+            &Value::Null,
+            &address_definition,
+            unit,
+            validate_state,
+            &author.authentifiers,
+        )?;
+
+        check_serial_address_use(validate_state, nonserial)?;
+        Ok(())
+    };
+    validate_authentifiers(&address_definition, validate_state, &mut nonserial)?;
 
     Ok(())
 }
-
-fn check_no_pending_definition() -> Result<()> {
-    unimplemented!()
-}
-fn validate_definition() -> Result<()> {
-    unimplemented!()
-}
-fn handle_duplicate_address_definition() -> Result<()> {
-    unimplemented!()
-}
-// fn findConflictingUnits(
-//     db: &Connection,
-//     address: &String,
-//     asset: &Value,
-//     definition: &Value,
-//     unit: &Unit,
-//     validate_state: &mut ValidationState,
-//     authentifiers: &HashMap<String, String>,
-// ) -> Result<TempUnit> {
-
-//     Ok(conflicting_unit_props)
-// }
 
 fn validate_messages(
     _tx: &Transaction,
