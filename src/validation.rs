@@ -977,27 +977,29 @@ fn validate_author(
         Ok(())
     };
 
-    let validate_definition = |validate_state: &mut ValidationState,
-                               nonserial: bool|
-     -> Result<()> {
-        if author.definition.is_null() {
-            return Ok(());
-        }
+    let validate_definition =
+        |validate_state: &mut ValidationState, nonserial: bool| -> Result<()> {
+            if author.definition.is_null() {
+                return Ok(());
+            }
 
-        let ret_definition = storage::read_definition_by_address(
-            tx,
-            &author.address,
-            Some(validate_state.last_ball_mci),
-        );
+            let ret_definition = storage::read_definition_by_address(
+                tx,
+                &author.address,
+                Some(validate_state.last_ball_mci),
+            ).or_else(|e| {
+                bail_with_validation_err!(
+                    UnitError,
+                    "wrong definition : {}, err={}",
+                    author.definition,
+                    e
+                )
+            })?;
 
-        if ret_definition.is_err() {
-            return Ok(());
-        }
+            handle_duplicate_address_definition(validate_state, ret_definition, nonserial)?;
 
-        handle_duplicate_address_definition(validate_state, ret_definition.unwrap(), nonserial)?;
-
-        Ok(())
-    };
+            Ok(())
+        };
 
     let check_no_pending_definition = |validate_state: &mut ValidationState,
                                        nonserial: bool|
