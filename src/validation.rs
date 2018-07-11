@@ -80,6 +80,8 @@ pub struct ValidationState {
     pub double_spend_inputs: Vec<DoubleSpendInput>,
     pub addresses_with_forked_path: Vec<String>,
     pub conflicting_units: Vec<String>,
+    pub addresses_with_forked_path: Vec<String>,
+    pub conflicting_units: Vec<String>,
     pub input_keys: Vec<String>, //It could be spendproof in Spendproof or some input related customized string
     pub has_base_payment: bool,
     pub addresses_with_forked_path: Vec<String>,
