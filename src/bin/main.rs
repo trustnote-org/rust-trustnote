@@ -171,8 +171,14 @@ fn log_init() {
 
 #[allow(dead_code)]
 fn test_ws_client() -> Result<()> {
+    fn get_remote_hub_url() -> String {
+        let cfg = config::CONFIG.read().unwrap();
+        cfg.get::<String>("remote_hub")
+            .unwrap_or_else(|_| "127.0.0.1:6655".to_owned())
+    }
+
     use network::hub;
-    hub::create_outbound_conn(("127.0.0.1", 6655))?;
+    hub::create_outbound_conn(get_remote_hub_url())?;
     hub::start_catchup()?;
     Ok(())
 }
