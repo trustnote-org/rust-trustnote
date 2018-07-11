@@ -85,6 +85,7 @@ pub struct ValidationState {
     pub input_keys: Vec<String>, //It could be spendproof in Spendproof or some input related customized string
     pub has_base_payment: bool,
     pub addresses_with_forked_path: Vec<String>,
+    pub has_data_feed: bool,
 }
 
 impl ValidationState {
@@ -105,6 +106,7 @@ impl ValidationState {
             input_keys: Vec::new(),
             has_base_payment: false,
             addresses_with_forked_path: Vec::new(),
+            has_data_feed: false,
         }
     }
 }
@@ -1311,10 +1313,10 @@ fn validate_author(
 }
 
 #[inline]
-fn is_valid_base64(b64: &String, len: usize) -> Result<bool> {
+fn is_valid_base64(b64: &String, len: usize) -> bool {
     use base64;
     let buf = base64::decode(b64).expect("base64 decode failed");
-    return Ok(b64.len() == len && base64::encode(&buf) == *b64);
+    return b64.len() == len && base64::encode(&buf) == *b64;
 }
 
 fn validate_messages(
@@ -1365,7 +1367,7 @@ fn validate_message(
         //Spend proofs are sorted in the same order as their corresponding inputs
         for spend_proof in message.spend_proofs.iter() {
             ensure_with_validation_err!(
-                is_valid_base64(&spend_proof.spend_proof, config::HASH_LENGTH)?,
+                is_valid_base64(&spend_proof.spend_proof, config::HASH_LENGTH),
                 UnitError,
                 "spend proof {} is not a valid base64",
                 spend_proof.spend_proof
@@ -1615,11 +1617,73 @@ fn check_for_double_spend(
 }
 
 fn validate_payload(
-    _tx: &Transaction,
-    _message: &Message,
-    _message_index: usize,
-    _unit: &Unit,
-    _validate_state: &mut ValidationState,
+    tx: &Transaction,
+    message: &Message,
+    message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    if message.payload_location == "inline" {
+        let _ = validate_inline_payload(tx, message, message_index, unit, validate_state)?;
+    } else {
+        ensure_with_validation_err!(
+            is_valid_base64(&message.payload_hash, config::HASH_LENGTH),
+            UnitError,
+            "wrong payload hash"
+        );
+    }
+
+    Ok(())
+}
+
+fn validate_inline_payload(
+    tx: &Transaction,
+    message: &Message,
+    message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    let ref payload = message.payload.as_ref();
+
+    ensure_with_validation_err!(payload.is_some(), UnitError, "no inline payload");
+
+    let payload_hash = object_hash::get_base64_hash(payload)?;
+    ensure_with_validation_err!(
+        payload_hash == message.payload_hash,
+        UnitError,
+        "wrong payload hash: expected {}, got {}",
+        payload_hash,
+        message.payload_hash
+    );
+
+    match message.app.as_str() {
+        "text" => match payload {
+            Some(Payload::Text(ref _s)) => {}
+            _ => bail_with_validation_err!(UnitError, "payload must be string"),
+        },
+        "payment" => if let Some(Payload::Payment(ref payment)) = payload {
+            let _ = validate_payment(tx, payment, message_index, unit, validate_state)?;
+        },
+        "data_feed" => {
+            if validate_state.has_data_feed {
+                bail_with_validation_err!(UnitError, "can be only one data feed")
+            }
+            validate_state.has_data_feed = true;
+
+            //TODO: Validate the data feed payload
+        }
+        _ => unimplemented!(),
+    }
+
+    Ok(())
+}
+
+fn validate_payment(
+    tx: &Transaction,
+    payment: &Payment,
+    message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
 ) -> Result<()> {
     Ok(())
 }
