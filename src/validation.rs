@@ -1685,5 +1685,256 @@ fn validate_payment(
     unit: &Unit,
     validate_state: &mut ValidationState,
 ) -> Result<()> {
+    //Base currency
+    if payment.asset.is_none() {
+        ensure_with_validation_err!(
+            payment.address.is_none()
+                && payment.definition_chash.is_none()
+                && payment.denomination.is_none(),
+            UnitError,
+            "unknown fields in payment message"
+        );
+
+        ensure_with_validation_err!(
+            !validate_state.has_base_payment,
+            UnitError,
+            "can have only one base payment"
+        );
+
+        validate_state.has_base_payment = true;
+
+        return validate_payment_inputs_and_outputs(
+            tx,
+            payment,
+            None,
+            message_index,
+            unit,
+            validate_state,
+        );
+    }
+
+    //We do not handle assets for now
+    unimplemented!();
+}
+
+fn validate_payment_inputs_and_outputs(
+    tx: &Transaction,
+    payment: &Payment,
+    asset: Option<String>,
+    message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    let denomination = payment.denomination.unwrap_or(1);
+
+    let author_addresses = unit
+        .authors
+        .iter()
+        .map(|a| a.address.clone())
+        .collect::<Vec<_>>();
+
+    ensure_with_validation_err!(
+        payment.inputs.len() <= config::MAX_INPUTS_PER_PAYMENT_MESSAGE,
+        UnitError,
+        "too many inputs"
+    );
+    ensure_with_validation_err!(
+        payment.outputs.len() <= config::MAX_OUTPUTS_PER_PAYMENT_MESSAGE,
+        UnitError,
+        "too many outputs"
+    );
+
+    let mut input_addresses = Vec::new();
+    let mut output_addresses = Vec::new();
+    let mut total_input = 0;
+    let mut total_output = 0;
+    let mut prev_address = String::new();
+    let mut prev_amount = 0;
+    let mut count_open_outputs = 0;
+
+    for output in &payment.outputs {
+        ensure_with_validation_err!(
+            output.amount.is_some() && output.amount.unwrap() > 0,
+            UnitError,
+            "amount must be positive integer, found {:?}",
+            output.amount
+        );
+
+        ensure_with_validation_err!(output.address.is_some(), UnitError, "no output address");
+
+        let amount = output.amount.unwrap();
+        let address = output.address.as_ref().unwrap();
+
+        ensure_with_validation_err!(
+            object_hash::is_chash_valid(address),
+            UnitError,
+            "output address {} invalid",
+            address,
+        );
+
+        if &prev_address > address {
+            bail_with_validation_err!(UnitError, "output addresses not sorted");
+        } else if &prev_address == address && prev_amount > amount {
+            bail_with_validation_err!(UnitError, "output amounts for same address not sorted");
+        }
+
+        prev_address = address.clone();
+        prev_amount = amount;
+
+        if !output_addresses.contains(address) {
+            output_addresses.push(address.clone());
+        }
+
+        total_output += amount;
+    }
+
+    let mut b_issue = false;
+    let mut b_have_headers_commissions = false;
+    let mut b_have_witnessing = false;
+
+    for (index, input) in payment.inputs.iter().enumerate() {
+        //Non-asset case
+        let transfer = String::from("transfer");
+        let kind = input.kind.as_ref().unwrap_or(&transfer);
+        ensure_with_validation_err!(!kind.is_empty(), UnitError, "bad input type");
+
+        match kind.as_str() {
+            "issue" => {
+                ensure_with_validation_err!(index == 0, UnitError, "issue must come first");
+
+                //Should we make Input as a enum and all types as its variants?
+                ensure_with_validation_err!(
+                    input.from_main_chain_index.is_none()
+                        && input.message_index.is_none()
+                        && input.output_index.is_none()
+                        && input.to_main_chain_index.is_none()
+                        && input.unit.is_none(),
+                    UnitError,
+                    "unknown fields in issue input"
+                );
+
+                ensure_with_validation_err!(
+                    input.amount.unwrap_or(0) > 0,
+                    UnitError,
+                    "amount must be positive"
+                );
+
+                //serial_number is a u32!
+                ensure_with_validation_err!(
+                    input.serial_number.unwrap_or(0) > 0,
+                    UnitError,
+                    "serial_number must be positive"
+                );
+
+                //if (!objAsset || objAsset.cap)
+                ensure_with_validation_err!(
+                    input.serial_number.unwrap_or(0) == 1,
+                    UnitError,
+                    "for capped asset serial_number must be 1"
+                );
+
+                ensure_with_validation_err!(
+                    !b_issue,
+                    UnitError,
+                    "only one issue per message allowed"
+                );
+                b_issue = true;
+
+                let address = if author_addresses.len() == 1 {
+                    ensure_with_validation_err!(
+                        input.address.is_none(),
+                        UnitError,
+                        "when single-authored, must not put address in issue input"
+                    );
+
+                    &author_addresses[0]
+                } else {
+                    ensure_with_validation_err!(
+                        input.address.is_some(),
+                        UnitError,
+                        "when multi-authored, must put address in issue input"
+                    );
+
+                    let input_address = input.address.as_ref().unwrap();
+                    ensure_with_validation_err!(
+                        author_addresses.contains(input_address),
+                        UnitError,
+                        "issue input address {} is not an author",
+                        input_address
+                    );
+
+                    input_address
+                };
+
+                input_addresses.push(address.clone());
+
+                //Why not checking this first?
+                ensure_with_validation_err!(
+                    unit.is_genesis_unit(),
+                    UnitError,
+                    "only genesis can issue base asset"
+                );
+
+                ensure_with_validation_err!(
+                    input.amount == Some(config::TOTAL_WHITEBYTES),
+                    UnitError,
+                    "issue must be equal to cap"
+                );
+
+                total_input += input.amount.unwrap_or(0);
+
+                let input_key = format!(
+                    "base-{}-{}-{}",
+                    denomination,
+                    address,
+                    input.serial_number.unwrap_or(0),
+                );
+
+                ensure_with_validation_err!(
+                    !validate_state.input_keys.contains(&input_key),
+                    UnitError,
+                    "input {} already used",
+                    input_key
+                );
+                validate_state.input_keys.push(input_key);
+
+                // let double_spend_where = "type='issue'";
+                // let double_spend_vars = [];
+                // check_input_double_spend()?;
+
+                //onAcceptedDoublespends
+            }
+            "transfer" => {
+                let address = String::new();
+
+                if !input_addresses.contains(&address) {
+                    input_addresses.push(address);
+                }
+            }
+            "headers_commission" | "witnessing" => {}
+            _ => bail_with_validation_err!(UnitError, "unrecognized input type: {}", kind),
+        }
+    }
+
+    info!(
+        "inputs done {:?} {:?} {:?}",
+        asset, input_addresses, output_addresses
+    );
+
+    // ensure_with_validation_err!(
+    //     total_input
+    //         == total_output
+    //             + unit.headers_commission.unwrap_or(0) as i64
+    //             + unit.payload_commission.unwrap_or(0) as i64,
+    //     UnitError,
+    //     "inputs and outputs do not balance: {} != {} + {} + {}",
+    //     total_input,
+    //     total_output,
+    //     unit.headers_commission.unwrap_or(0),
+    //     unit.payload_commission.unwrap_or(0)
+    // );
+
+    info!("validatePaymentInputsAndOutputs done");
+
     Ok(())
 }
