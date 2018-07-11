@@ -1238,6 +1238,7 @@ fn validate_author(
                 author.address
             );
         }
+
         validate_authentifiers(
             &tmp_address_definition.unwrap(),
             validate_state,
