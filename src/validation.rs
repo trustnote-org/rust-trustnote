@@ -2048,7 +2048,7 @@ fn validate_payment_inputs_and_outputs(
                 ensure_with_validation_err!(
                     payment.asset == src_output.asset,
                     UnitError,
-                    "src output amount is not a number"
+                    "asset mismatch"
                 );
 
                 if src_output.main_chain_index > Some(validate_state.last_ball_mci)
