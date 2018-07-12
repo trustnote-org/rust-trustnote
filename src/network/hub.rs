@@ -126,17 +126,17 @@ impl WsConnections {
 
     fn get_ws(&self, conn: &HubConn) -> Arc<HubConn> {
         let g = self.outbound.read().unwrap();
-        for i in 0..g.len() {
-            if g[i].conn_eq(&conn) {
-                return g[i].clone();
+        for c in &*g {
+            if c.conn_eq(&conn) {
+                return c.clone();
             }
         }
         drop(g);
 
         let g = self.inbound.read().unwrap();
-        for i in 0..g.len() {
-            if g[i].conn_eq(&conn) {
-                return g[i].clone();
+        for c in &*g {
+            if c.conn_eq(&conn) {
+                return c.clone();
             }
         }
 
@@ -181,17 +181,17 @@ impl WsConnections {
 
     pub fn get_connection_by_name(&self, peer: &str) -> Option<Arc<HubConn>> {
         let g = self.outbound.read().unwrap();
-        for i in 0..g.len() {
-            if g[i].get_peer() == peer {
-                return Some(g[i].clone());
+        for c in &*g {
+            if c.get_peer() == peer {
+                return Some(c.clone());
             }
         }
         drop(g);
 
         let g = self.inbound.read().unwrap();
-        for i in 0..g.len() {
-            if g[i].get_peer() == peer {
-                return Some(g[i].clone());
+        for c in &*g {
+            if c.get_peer() == peer {
+                return Some(c.clone());
             }
         }
 
@@ -291,7 +291,7 @@ impl HubConn {
         // TODO: is it necessary to detect the self connection? (#63)
         let _subscription_id = param["subscription_id"]
             .as_str()
-            .ok_or(format_err!("no subscription_id"))?;
+            .ok_or_else(|| format_err!("no subscription_id"))?;
 
         self.set_subscribed();
         Ok(json!("subscribed"))
@@ -452,7 +452,7 @@ impl HubConn {
                         // we are not saving the joint so that in case requestCatchup() fails,
                         // the joint will be requested again via findLostJoints,
                         // which will trigger another attempt to request catchup
-                        try_go!(move || start_catchup());
+                        try_go!(start_catchup);
                     }
                     ValidationError::NeedParentUnits(missing_units) => {
                         let info = format!("unresolved dependencies: {}", missing_units.join(", "));
@@ -619,8 +619,8 @@ impl HubConn {
             let mut stmt = db.prepare_cached(&sql)?;
             stmt.execute(&[host])?;
 
-            let sql = format!("INSERT INTO peer_events (peer_host, event) VALUES (?, ?)");
-            let mut stmt = db.prepare_cached(&sql)?;
+            let mut stmt =
+                db.prepare_cached("INSERT INTO peer_events (peer_host, event) VALUES (?, ?)")?;
             stmt.execute(&[host, &event_string])?;
         }
 
@@ -637,10 +637,10 @@ impl HubConn {
             return Ok(());
         }
         joint_storage::purge_joint_and_dependencies(db, joint, err, |unit, peer, error| {
-            WSS.get_connection_by_name(peer).map(|ws| {
+            if let Some(ws) = WSS.get_connection_by_name(peer) {
                 let error = format!("error on (indirect) parent unit {}: {} ", unit, error);
                 ws.send_error_result(unit, &error).ok();
-            });
+            }
         })?;
         Ok(())
     }
@@ -694,9 +694,8 @@ impl HubConn {
         // print out unsupported messages!
         for j in &catchup_chain.stable_last_ball_joints {
             for m in &j.unit.messages {
-                match &m.payload {
-                    Some(::spec::Payload::Other(v)) => error!("app = {}, v = {}", m.app, v),
-                    _ => {}
+                if let Some(::spec::Payload::Other(v)) = &m.payload {
+                    error!("app = {}, v = {}", m.app, v);
                 }
             }
         }
@@ -862,7 +861,7 @@ impl HubConn {
             match &joint.unit.unit {
                 None => bail!("no unit"),
                 Some(unit_hash) => {
-                    if unit_hash != &unit {
+                    if unit_hash != unit {
                         let err = format!("I didn't request this unit from you: {}", unit_hash);
                         return ws.send_error(json!(err));
                     }
