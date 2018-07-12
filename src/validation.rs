@@ -1311,8 +1311,14 @@ fn validate_author(
 #[inline]
 fn is_valid_base64(b64: &String, len: usize) -> bool {
     use base64;
-    let buf = base64::decode(b64).expect("base64 decode failed");
-    return b64.len() == len && base64::encode(&buf) == *b64;
+    if b64.len() != len {
+        return false;
+    }
+    match base64::decode(b64) {
+        // FIXME: how is this possible
+        Ok(v) => b64 == &base64::encode(&v),
+        _ => false,
+    }
 }
 
 fn validate_messages(
@@ -1662,11 +1668,47 @@ fn validate_inline_payload(
         },
         "data_feed" => {
             if validate_state.has_data_feed {
-                bail_with_validation_err!(UnitError, "can be only one data feed")
+                bail_with_validation_err!(UnitError, "can be only one data feed");
             }
             validate_state.has_data_feed = true;
-
-            //TODO: Validate the data feed payload
+            match payload {
+                Some(Payload::Other(ref v)) => {
+                    if let Some(map) = v.as_object() {
+                        if map.is_empty() {
+                            bail_with_validation_err!(
+                                UnitError,
+                                "data feed payload is empty object"
+                            )
+                        }
+                        for (k, v) in map {
+                            if k.len() > config::MAX_DATA_FEED_NAME_LENGTH {
+                                bail_with_validation_err!(UnitError, "feed name {} too long", k);
+                            }
+                            if let Some(s) = v.as_str() {
+                                if s.len() > config::MAX_DATA_FEED_VALUE_LENGTH {
+                                    bail_with_validation_err!(UnitError, "value {} too long", s);
+                                }
+                            } else if v.is_number() {
+                                if v.is_f64() {
+                                    bail_with_validation_err!(
+                                        UnitError,
+                                        "fractional numbers not allowed in data feeds"
+                                    );
+                                }
+                            } else {
+                                bail_with_validation_err!(
+                                    UnitError,
+                                    "data feed {} must be string or number",
+                                    k
+                                );
+                            }
+                        }
+                    } else {
+                        bail_with_validation_err!(UnitError, "data feed payload is not object")
+                    }
+                }
+                _ => bail_with_validation_err!(UnitError, "data feed payload is not data_feed"),
+            }
         }
         _ => unimplemented!(),
     }

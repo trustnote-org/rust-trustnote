@@ -21,7 +21,8 @@ pub const MAX_INPUTS_PER_PAYMENT_MESSAGE: usize = 128;
 pub const MAX_OUTPUTS_PER_PAYMENT_MESSAGE: usize = 128;
 pub const MAX_AUTHENTIFIER_LENGTH: usize = 4096;
 pub const COUNT_MC_BALLS_FOR_PAID_WITNESSING: u32 = 100;
-
+pub const MAX_DATA_FEED_NAME_LENGTH: usize = 64;
+pub const MAX_DATA_FEED_VALUE_LENGTH: usize = 64;
 pub const MAX_ITEMS_IN_CACHE: usize = 1000;
 
 lazy_static! {
