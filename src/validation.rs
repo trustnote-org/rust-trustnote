@@ -1,10 +1,13 @@
 use config;
 use definition;
 use graph;
+use headers_commission;
 use joint::Joint;
 use main_chain;
 use map_lock::{self, MapLock};
+use mc_outputs;
 use object_hash;
+use paid_witnessing;
 use rusqlite::{Connection, Transaction};
 use serde_json::Value;
 use spec::*;
@@ -2085,7 +2088,139 @@ fn validate_payment_inputs_and_outputs(
 
                 //checkInputDoubleSpend
             }
-            "headers_commission" | "witnessing" => {}
+            "headers_commission" | "witnessing" => {
+                if kind == "headers_commission" {
+                    ensure_with_validation_err!(
+                        !b_have_witnessing,
+                        UnitError,
+                        "all headers commissions must come before witnessings"
+                    );
+                    b_have_headers_commissions = true;
+                } else {
+                    b_have_witnessing = true;
+                }
+                ensure_with_validation_err!(
+                    input.kind.is_none()
+                        && input.from_main_chain_index.is_none()
+                        && input.to_main_chain_index.is_none()
+                        && input.address.is_none(),
+                    UnitError,
+                    "unknown fields in witnessing input"
+                );
+
+                ensure_with_validation_err!(
+                    input.from_main_chain_index.is_some(),
+                    UnitError,
+                    "from_main_chain_index must be nonnegative int"
+                );
+                ensure_with_validation_err!(
+                    input.to_main_chain_index.is_some(),
+                    UnitError,
+                    "to_main_chain_index must be nonnegative int"
+                );
+                ensure_with_validation_err!(
+                    input.from_main_chain_index > input.to_main_chain_index,
+                    UnitError,
+                    "input.from_main_chain_index > input.to_main_chain_index"
+                );
+                ensure_with_validation_err!(
+                    input.to_main_chain_index > Some(validate_state.last_ball_mci),
+                    UnitError,
+                    "input.to_main_chain_index > objValidationState.last_ball_mci"
+                );
+                ensure_with_validation_err!(
+                    input.from_main_chain_index > Some(validate_state.last_ball_mci),
+                    UnitError,
+                    "input.from_main_chain_index > objValidationState.last_ball_mci"
+                );
+                let address = if author_addresses.len() == 1 {
+                    ensure_with_validation_err!(
+                        input.address.is_none(),
+                        UnitError,
+                        "when single-authored, must not put address in {} input",
+                        kind
+                    );
+                    author_addresses[0].clone()
+                } else {
+                    let tmp_input_address = input.address.clone().unwrap();
+                    ensure_with_validation_err!(
+                        author_addresses.contains(&tmp_input_address),
+                        UnitError,
+                        "{} input address {} is not an author",
+                        kind,
+                        tmp_input_address
+                    );
+                    input.address.clone().unwrap()
+                };
+                let input_key = format!(
+                    "{}-{}-{}",
+                    kind,
+                    address,
+                    input.from_main_chain_index.unwrap()
+                );
+                ensure_with_validation_err!(
+                    !validate_state.input_keys.contains(&input_key),
+                    UnitError,
+                    "input {} already used",
+                    input_key
+                );
+                validate_state.input_keys.push(input_key);
+
+                // double_spend_where =
+                //     "type=? AND from_main_chain_index=? AND address=? AND asset IS NULL".to_owned();
+                //doubleSpendVars = [type, input.from_main_chain_index, address];
+
+                let next_spendable_mc_index = mc_outputs::read_next_spendable_mc_index(
+                    tx,
+                    kind,
+                    &address,
+                    &validate_state.conflicting_units,
+                )?;
+
+                ensure_with_validation_err!(
+                    input.from_main_chain_index >= Some(next_spendable_mc_index),
+                    UnitError,
+                    "{} ranges must not overlap",
+                    kind
+                );
+
+                let max_mci = if kind == "headers_commission" {
+                    Some(headers_commission::get_max_spendable_mci_for_last_ball_mci(
+                        validate_state.last_ball_mci,
+                    ))
+                } else {
+                    paid_witnessing::get_max_spendable_mci_for_last_ball_mci(
+                        validate_state.last_ball_mci,
+                    )
+                };
+                ensure_with_validation_err!(
+                    input.to_main_chain_index <= max_mci,
+                    UnitError,
+                    "{} to_main_chain_index is too large",
+                    kind
+                );
+
+                let commission = if kind == "headers_commission" {
+                    mc_outputs::calc_earnings(
+                        tx,
+                        kind,
+                        input.from_main_chain_index.unwrap(),
+                        input.to_main_chain_index.unwrap(),
+                        &address,
+                    )?
+                } else {
+                    paid_witnessing::calc_witness_earnings(
+                        tx,
+                        kind,
+                        input.from_main_chain_index.unwrap(),
+                        input.to_main_chain_index.unwrap(),
+                        &address,
+                    )?
+                };
+                ensure_with_validation_err!(commission != 0, UnitError, "zero {} commission", kind);
+                total_input += commission as i64;
+                //TODO: check_input_double_spend()
+            }
             _ => bail_with_validation_err!(UnitError, "unrecognized input type: {}", kind),
         }
     }
