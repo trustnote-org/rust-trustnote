@@ -1,10 +1,13 @@
 use config;
 use definition;
 use graph;
+use headers_commission;
 use joint::Joint;
 use main_chain;
 use map_lock::{self, MapLock};
+use mc_outputs;
 use object_hash;
+use paid_witnessing;
 use rusqlite::{Connection, Transaction};
 use serde_json::Value;
 use spec::*;
@@ -80,7 +83,9 @@ pub struct ValidationState {
     pub double_spend_inputs: Vec<DoubleSpendInput>,
     pub addresses_with_forked_path: Vec<String>,
     pub conflicting_units: Vec<String>,
-    // input_keys: // what this?
+    pub input_keys: Vec<String>, //It could be spendproof in Spendproof or some input related customized string
+    pub has_base_payment: bool,
+    pub has_data_feed: bool,
 }
 
 impl ValidationState {
@@ -98,6 +103,9 @@ impl ValidationState {
             double_spend_inputs: Vec::new(),
             addresses_with_forked_path: Vec::new(),
             conflicting_units: Vec::new(),
+            input_keys: Vec::new(),
+            has_base_payment: false,
+            has_data_feed: false,
         }
     }
 }
@@ -174,7 +182,7 @@ pub fn validate_author_signature_without_ref(
 pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
     let unit = &joint.unit;
     // already checked in earlier network processing
-    // ensure!(unit.unit.is_some(), "no unit");
+    // ensure_with_validation_err!(unit.unit.is_some(), "no unit");
 
     let unit_hash = unit.unit.as_ref().unwrap();
     info!("validating joint identified by unit {}", unit_hash);
@@ -1303,11 +1311,934 @@ fn validate_author(
     Ok(())
 }
 
+#[inline]
+fn is_valid_base64(b64: &String, len: usize) -> bool {
+    use base64;
+    if b64.len() != len {
+        return false;
+    }
+    match base64::decode(b64) {
+        // FIXME: how is this possible
+        Ok(v) => b64 == &base64::encode(&v),
+        _ => false,
+    }
+}
+
 fn validate_messages(
-    _tx: &Transaction,
-    _unit: &Unit,
-    _validate_state: &mut ValidationState,
+    tx: &Transaction,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
 ) -> Result<()> {
+    info!("validateMessages {:?}", unit.unit);
+
+    for (message_index, message) in unit.messages.iter().enumerate() {
+        validate_message(tx, &message, message_index, unit, validate_state)?;
+    }
+
+    //Do not check it since has_base_payment has not been set yet
+    //ensure_with_validation_err!(validate_state.has_base_payment, "no base payment message");
+
     Ok(())
-    // unimplemented!()
+}
+
+fn validate_message(
+    tx: &Transaction,
+    message: &Message,
+    message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    //Some quick checks includes spend proofs, payload, payment etc
+    ensure_with_validation_err!(
+        message.payload_hash.len() == config::HASH_LENGTH,
+        UnitError,
+        "wrong payload hash size"
+    );
+
+    if !message.spend_proofs.is_empty() {
+        ensure_with_validation_err!(
+            message.spend_proofs.len() <= config::MAX_SPEND_PROOFS_PER_MESSAGE,
+            UnitError,
+            "spend_proofs must be non-empty array max {} elements",
+            config::MAX_SPEND_PROOFS_PER_MESSAGE
+        );
+
+        let author_addresses = unit
+            .authors
+            .iter()
+            .map(|a| a.address.clone())
+            .collect::<Vec<_>>();
+
+        //Spend proofs are sorted in the same order as their corresponding inputs
+        for spend_proof in message.spend_proofs.iter() {
+            ensure_with_validation_err!(
+                is_valid_base64(&spend_proof.spend_proof, config::HASH_LENGTH),
+                UnitError,
+                "spend proof {} is not a valid base64",
+                spend_proof.spend_proof
+            );
+
+            if author_addresses.len() == 1 {
+                ensure_with_validation_err!(
+                    spend_proof.address.is_none(),
+                    UnitError,
+                    "when single-authored, must not put address in spend proof"
+                );
+            } else {
+                ensure_with_validation_err!(
+                    spend_proof.address.is_some(),
+                    UnitError,
+                    "when multi-authored, must put address in spend_proofs"
+                );
+
+                let spend_proof_address = spend_proof.address.as_ref().unwrap();
+                ensure_with_validation_err!(
+                    author_addresses.contains(spend_proof_address),
+                    UnitError,
+                    "spend proof address {} is not an author",
+                    spend_proof_address
+                );
+            }
+
+            if validate_state.input_keys.contains(&spend_proof.spend_proof) {
+                bail_with_validation_err!(
+                    UnitError,
+                    "spend proof {} already used",
+                    spend_proof.spend_proof
+                );
+            }
+            validate_state
+                .input_keys
+                .push(spend_proof.spend_proof.clone());
+        }
+
+        ensure_with_validation_err!(
+            message.payload_location != "inline",
+            UnitError,
+            "you don't need spend proofs when you have inline payload"
+        );
+    }
+
+    if message.payload_location != "inline"
+        && message.payload_location != "uri"
+        && message.payload_location != "none"
+    {
+        bail_with_validation_err!(
+            UnitError,
+            "wrong payload location: {}",
+            message.payload_location
+        );
+    }
+
+    if message.payload_location == "uri" {
+        ensure_with_validation_err!(
+            message.payload.is_none(),
+            UnitError,
+            "must not contain payload"
+        );
+        ensure_with_validation_err!(message.payload_uri.is_some(), UnitError, "no payload uri");
+        ensure_with_validation_err!(
+            message.payload_uri_hash.is_some(),
+            UnitError,
+            "no payload uri hash"
+        );
+
+        let payload_uri = message.payload_uri.as_ref().unwrap();
+        let payload_uri_hash = message.payload_uri_hash.as_ref().unwrap();
+        ensure_with_validation_err!(
+            payload_uri_hash.len() == config::HASH_LENGTH,
+            UnitError,
+            "wrong length of payload uri hash"
+        );
+        ensure_with_validation_err!(payload_uri.len() <= 500, UnitError, "payload_uri too long");
+        ensure_with_validation_err!(
+            object_hash::get_base64_hash(payload_uri)? == *payload_uri_hash,
+            UnitError,
+            "wrong payload_uri hash"
+        );
+    } else {
+        ensure_with_validation_err!(
+            message.payload_uri.is_none() && message.payload_uri_hash.is_none(),
+            UnitError,
+            "must not contain payload_uri and payload_uri_hash"
+        );
+    }
+
+    if message.app == "payment" {
+        ensure_with_validation_err!(
+            message.payload_location == "inline" || message.payload_location == "none",
+            UnitError,
+            "payment location must be inline or none"
+        );
+        if message.payload_location == "none" && message.spend_proofs.len() == 0 {
+            bail_with_validation_err!(UnitError, "private payment must come with spend proof(s)");
+        }
+    }
+
+    let inline_only_apps = vec![
+        "address_definition_change",
+        "data_feed",
+        "definition_template",
+        "asset",
+        "asset_attestors",
+        "attestation",
+        "poll",
+        "vote",
+    ];
+    if inline_only_apps.contains(&message.app.as_str()) && message.payload_location != "inline" {
+        bail_with_validation_err!(UnitError, "{} must be inline", message.app);
+    }
+
+    let _spend_proofs = validate_spend_proofs(tx, message, unit, validate_state)?;
+
+    let _payload = validate_payload(tx, message, message_index, unit, validate_state)?;
+
+    Ok(())
+}
+
+fn validate_spend_proofs(
+    tx: &Transaction,
+    message: &Message,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    if message.spend_proofs.is_empty() {
+        return Ok(());
+    }
+
+    let eqs = message
+        .spend_proofs
+        .iter()
+        .map(|s| {
+            let address = if s.address.is_some() {
+                s.address.as_ref().unwrap()
+            } else {
+                &unit.authors[0].address
+            };
+            format!("spend_proof='{}' AND address='{}'", s.spend_proof, address)
+        })
+        .collect::<Vec<_>>()
+        .join(" OR ");
+
+    let sql = format!(
+        "SELECT address, unit, main_chain_index, sequence \
+         FROM spend_proofs JOIN units USING(unit) WHERE unit != {} AND ({})",
+        unit.unit.as_ref().unwrap(),
+        eqs
+    );
+
+    let _check = check_for_double_spend(tx, "spend proof", &sql, unit, validate_state)?;
+
+    Ok(())
+}
+
+fn check_for_double_spend(
+    tx: &Transaction,
+    kind: &str,
+    sql: &String,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    let mut stmt = tx.prepare(sql)?;
+
+    struct ConflictingRecord {
+        address: String,
+        unit: String,
+        main_chain_index: Option<u32>,
+        sequence: String,
+    };
+
+    let rows = stmt
+        .query_map(&[], |row| ConflictingRecord {
+            address: row.get("address"),
+            unit: row.get("unit"),
+            main_chain_index: row.get("main_chain_index"),
+            sequence: row.get("sequence"),
+        })?
+        .collect::<::std::result::Result<Vec<ConflictingRecord>, _>>()?;
+
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    let author_addresses = unit.authors.iter().map(|a| &a.address).collect::<Vec<_>>();
+
+    for conflicting_record in rows {
+        if author_addresses.contains(&&conflicting_record.address) {
+            bail_with_validation_err!(
+                UnitError,
+                "conflicting {} spent from another address?",
+                kind
+            );
+        }
+
+        let included = graph::determine_if_included_or_equal(
+            &*tx,
+            &conflicting_record.unit,
+            &unit.parent_units,
+        )?;
+
+        if included {
+            let error = format!(
+                "{:?}: conflicting {} in inner unit {}",
+                unit.unit, kind, conflicting_record.unit
+            );
+
+            // too young (serial or nonserial)
+            if conflicting_record.main_chain_index > Some(validate_state.last_ball_mci)
+                || conflicting_record.main_chain_index == None
+            {
+                bail_with_validation_err!(UnitError, error);
+            }
+
+            match conflicting_record.sequence.as_str() {
+                "good" => bail_with_validation_err!(UnitError, error), // in good sequence (final state)
+                "final-bad" => continue, // to be voided: can reuse the output
+                _ => bail_with_validation_err!(
+                    UnitError,
+                    "unreachable code, conflicting {} in unit {}",
+                    kind,
+                    conflicting_record.unit,
+                ),
+            }
+        } else {
+            ensure_with_validation_err!(
+                validate_state
+                    .addresses_with_forked_path
+                    .contains(&conflicting_record.address),
+                UnitError,
+                "double spending {} without double spending address?",
+                kind
+            );
+            continue;
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_payload(
+    tx: &Transaction,
+    message: &Message,
+    message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    if message.payload_location == "inline" {
+        let _ = validate_inline_payload(tx, message, message_index, unit, validate_state)?;
+    } else {
+        ensure_with_validation_err!(
+            is_valid_base64(&message.payload_hash, config::HASH_LENGTH),
+            UnitError,
+            "wrong payload hash"
+        );
+    }
+
+    Ok(())
+}
+
+fn validate_inline_payload(
+    tx: &Transaction,
+    message: &Message,
+    message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    let ref payload = message.payload.as_ref();
+
+    ensure_with_validation_err!(payload.is_some(), UnitError, "no inline payload");
+
+    let payload_hash = object_hash::get_base64_hash(payload)?;
+    ensure_with_validation_err!(
+        payload_hash == message.payload_hash,
+        UnitError,
+        "wrong payload hash: expected {}, got {}",
+        payload_hash,
+        message.payload_hash
+    );
+
+    match message.app.as_str() {
+        "text" => match payload {
+            Some(Payload::Text(ref _s)) => {}
+            _ => bail_with_validation_err!(UnitError, "payload must be string"),
+        },
+        "payment" => if let Some(Payload::Payment(ref payment)) = payload {
+            let _ = validate_payment(tx, payment, message_index, unit, validate_state)?;
+        },
+        "data_feed" => {
+            if validate_state.has_data_feed {
+                bail_with_validation_err!(UnitError, "can be only one data feed");
+            }
+            validate_state.has_data_feed = true;
+            match payload {
+                Some(Payload::Other(ref v)) => {
+                    if let Some(map) = v.as_object() {
+                        if map.is_empty() {
+                            bail_with_validation_err!(
+                                UnitError,
+                                "data feed payload is empty object"
+                            )
+                        }
+                        for (k, v) in map {
+                            if k.len() > config::MAX_DATA_FEED_NAME_LENGTH {
+                                bail_with_validation_err!(UnitError, "feed name {} too long", k);
+                            }
+                            if let Some(s) = v.as_str() {
+                                if s.len() > config::MAX_DATA_FEED_VALUE_LENGTH {
+                                    bail_with_validation_err!(UnitError, "value {} too long", s);
+                                }
+                            } else if v.is_number() {
+                                if v.is_f64() {
+                                    bail_with_validation_err!(
+                                        UnitError,
+                                        "fractional numbers not allowed in data feeds"
+                                    );
+                                }
+                            } else {
+                                bail_with_validation_err!(
+                                    UnitError,
+                                    "data feed {} must be string or number",
+                                    k
+                                );
+                            }
+                        }
+                    } else {
+                        bail_with_validation_err!(UnitError, "data feed payload is not object")
+                    }
+                }
+                _ => bail_with_validation_err!(UnitError, "data feed payload is not data_feed"),
+            }
+        }
+        _ => unimplemented!(),
+    }
+
+    Ok(())
+}
+
+fn validate_payment(
+    tx: &Transaction,
+    payment: &Payment,
+    message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    //Base currency
+    if payment.asset.is_none() {
+        ensure_with_validation_err!(
+            payment.address.is_none()
+                && payment.definition_chash.is_none()
+                && payment.denomination.is_none(),
+            UnitError,
+            "unknown fields in payment message"
+        );
+
+        ensure_with_validation_err!(
+            !validate_state.has_base_payment,
+            UnitError,
+            "can have only one base payment"
+        );
+
+        validate_state.has_base_payment = true;
+
+        return validate_payment_inputs_and_outputs(
+            tx,
+            payment,
+            None,
+            message_index,
+            unit,
+            validate_state,
+        );
+    }
+
+    //We do not handle assets for now
+    unimplemented!();
+}
+
+fn validate_payment_inputs_and_outputs(
+    tx: &Transaction,
+    payment: &Payment,
+    asset: Option<String>,
+    _message_index: usize,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+) -> Result<()> {
+    let denomination = payment.denomination.unwrap_or(1);
+
+    let author_addresses = unit.authors.iter().map(|a| &a.address).collect::<Vec<_>>();
+
+    ensure_with_validation_err!(
+        payment.inputs.len() <= config::MAX_INPUTS_PER_PAYMENT_MESSAGE,
+        UnitError,
+        "too many inputs"
+    );
+    ensure_with_validation_err!(
+        payment.outputs.len() <= config::MAX_OUTPUTS_PER_PAYMENT_MESSAGE,
+        UnitError,
+        "too many outputs"
+    );
+
+    let mut input_addresses = Vec::new();
+    let mut output_addresses = Vec::new();
+    let mut total_input = 0;
+    let mut total_output = 0;
+    let mut prev_address = String::new();
+    let mut prev_amount = 0;
+    // let mut count_open_outputs = 0;
+
+    for output in &payment.outputs {
+        ensure_with_validation_err!(
+            output.amount > Some(0),
+            UnitError,
+            "amount must be positive integer, found {:?}",
+            output.amount
+        );
+
+        // TODO: add asset check, we don't support private asset payment
+
+        ensure_with_validation_err!(output.address.is_some(), UnitError, "no output address");
+
+        let amount = output.amount.unwrap();
+        let address = output.address.as_ref().unwrap();
+
+        ensure_with_validation_err!(
+            object_hash::is_chash_valid(address),
+            UnitError,
+            "output address {} invalid",
+            address,
+        );
+
+        if &prev_address > address {
+            bail_with_validation_err!(UnitError, "output addresses not sorted");
+        } else if &prev_address == address && prev_amount > amount {
+            bail_with_validation_err!(UnitError, "output amounts for same address not sorted");
+        }
+
+        prev_address = address.clone();
+        prev_amount = amount;
+
+        if !output_addresses.contains(address) {
+            output_addresses.push(address.clone());
+        }
+
+        total_output += amount;
+    }
+
+    let mut b_issue = false;
+    let mut b_have_headers_commissions = false;
+    let mut b_have_witnessing = false;
+
+    for (index, input) in payment.inputs.iter().enumerate() {
+        //Non-asset case
+        let transfer = String::from("transfer");
+        let kind = input.kind.as_ref().unwrap_or(&transfer);
+        ensure_with_validation_err!(!kind.is_empty(), UnitError, "bad input type");
+
+        match kind.as_str() {
+            "issue" => {
+                ensure_with_validation_err!(index == 0, UnitError, "issue must come first");
+
+                //Should we make Input as a enum and all types as its variants?
+                ensure_with_validation_err!(
+                    input.from_main_chain_index.is_none()
+                        && input.message_index.is_none()
+                        && input.output_index.is_none()
+                        && input.to_main_chain_index.is_none()
+                        && input.unit.is_none(),
+                    UnitError,
+                    "unknown fields in issue input"
+                );
+
+                ensure_with_validation_err!(
+                    input.amount > Some(0),
+                    UnitError,
+                    "amount must be positive"
+                );
+
+                //serial_number is a u32!
+                // ensure_with_validation_err!(
+                //     input.serial_number > Some(0),
+                //     UnitError,
+                //     "serial_number must be positive"
+                // );
+
+                //if (!objAsset || objAsset.cap)
+                ensure_with_validation_err!(
+                    input.serial_number == Some(1),
+                    UnitError,
+                    "for capped asset serial_number must be 1"
+                );
+
+                ensure_with_validation_err!(
+                    !b_issue,
+                    UnitError,
+                    "only one issue per message allowed"
+                );
+                b_issue = true;
+
+                let address = if author_addresses.len() == 1 {
+                    ensure_with_validation_err!(
+                        input.address.is_none(),
+                        UnitError,
+                        "when single-authored, must not put address in issue input"
+                    );
+
+                    &author_addresses[0]
+                } else {
+                    ensure_with_validation_err!(
+                        input.address.is_some(),
+                        UnitError,
+                        "when multi-authored, must put address in issue input"
+                    );
+
+                    let input_address = input.address.as_ref().unwrap();
+                    ensure_with_validation_err!(
+                        author_addresses.contains(&input_address),
+                        UnitError,
+                        "issue input address {} is not an author",
+                        input_address
+                    );
+
+                    input_address
+                };
+
+                input_addresses.push(address.clone());
+
+                //Why not checking this first?
+                ensure_with_validation_err!(
+                    unit.is_genesis_unit(),
+                    UnitError,
+                    "only genesis can issue base asset"
+                );
+
+                ensure_with_validation_err!(
+                    input.amount == Some(config::TOTAL_WHITEBYTES),
+                    UnitError,
+                    "issue must be equal to cap"
+                );
+
+                total_input += input.amount.unwrap_or(0);
+
+                let input_key = format!(
+                    "base-{}-{}-{}",
+                    denomination,
+                    address,
+                    input.serial_number.unwrap_or(0),
+                );
+
+                ensure_with_validation_err!(
+                    !validate_state.input_keys.contains(&input_key),
+                    UnitError,
+                    "input {} already used",
+                    input_key
+                );
+                validate_state.input_keys.push(input_key);
+
+                // let double_spend_where = "type='issue'";
+                // let double_spend_vars = [];
+                // check_input_double_spend()?;
+
+                //onAcceptedDoublespends
+            }
+            "transfer" => {
+                if b_have_headers_commissions || b_have_witnessing {
+                    bail_with_validation_err!(
+                        UnitError,
+                        "all transfers must come before hc and witnessings"
+                    );
+                }
+
+                ensure_with_validation_err!(
+                    input.address.is_none()
+                        && input.amount.is_none()
+                        && input.from_main_chain_index.is_none()
+                        && input.serial_number.is_none()
+                        && input.to_main_chain_index.is_none(),
+                    UnitError,
+                    "unknown fields in payment input"
+                );
+
+                ensure_with_validation_err!(
+                    input.unit.is_some()
+                        && input.unit.as_ref().unwrap().len() == config::HASH_LENGTH,
+                    UnitError,
+                    "wrong unit length in payment input"
+                );
+
+                ensure_with_validation_err!(
+                    input.message_index.is_some(),
+                    UnitError,
+                    "no message_index in payment input"
+                );
+
+                ensure_with_validation_err!(
+                    input.output_index.is_some(),
+                    UnitError,
+                    "no output_index in payment input"
+                );
+
+                let input_unit = input.unit.as_ref().unwrap();
+                let input_message_index = input.message_index.unwrap();
+                let input_output_index = input.output_index.unwrap();
+
+                let input_key = format!(
+                    "base-{}-{}-{}",
+                    input_unit, input_message_index, input_output_index,
+                );
+
+                ensure_with_validation_err!(
+                    !validate_state.input_keys.contains(&input_key),
+                    UnitError,
+                    "input {} already used",
+                    input_key
+                );
+                validate_state.input_keys.push(input_key);
+
+                let mut stmt = tx.prepare_cached(
+                    "SELECT amount, is_stable, sequence, address, main_chain_index, denomination, asset \
+                        FROM outputs \
+                        JOIN units USING(unit) \
+                        WHERE outputs.unit=? AND message_index=? AND output_index=?",
+                )?;
+
+                struct OutputTemp {
+                    amount: Option<i64>,
+                    // is_stable: u32,
+                    sequence: String,
+                    address: String,
+                    main_chain_index: Option<u32>,
+                    denomination: u32,
+                    asset: Option<String>,
+                }
+
+                let rows = stmt
+                    .query_map(
+                        &[input_unit, &input_message_index, &input_output_index],
+                        |row| OutputTemp {
+                            amount: row.get(0),
+                            // is_stable: row.get(1),
+                            sequence: row.get(2),
+                            address: row.get(3),
+                            main_chain_index: row.get(4),
+                            denomination: row.get(5),
+                            asset: row.get(6),
+                        },
+                    )?
+                    .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+                if rows.len() > 1 {
+                    bail_with_validation_err!(UnitError, "more than 1 src output");
+                }
+
+                if rows.is_empty() {
+                    bail_with_validation_err!(UnitError, "input unit {} not found", input_unit);
+                }
+
+                let src_output = &rows[0];
+
+                ensure_with_validation_err!(
+                    src_output.amount.is_some(),
+                    UnitError,
+                    "src output amount is not a number"
+                );
+
+                //Now the payment.asset is None
+                ensure_with_validation_err!(
+                    payment.asset == src_output.asset,
+                    UnitError,
+                    "src output amount is not a number"
+                );
+
+                if src_output.main_chain_index > Some(validate_state.last_ball_mci)
+                    || src_output.main_chain_index.is_none()
+                {
+                    bail_with_validation_err!(UnitError, "src output must be before last ball");
+                }
+
+                ensure_with_validation_err!(
+                    src_output.sequence == "good",
+                    UnitError,
+                    "input unit {} is not serial",
+                    input_unit
+                );
+
+                let owner_address = &src_output.address;
+                ensure_with_validation_err!(
+                    author_addresses.contains(&owner_address),
+                    UnitError,
+                    "output owner is not among authors"
+                );
+
+                ensure_with_validation_err!(
+                    denomination == src_output.denomination,
+                    UnitError,
+                    "denomination mismatch"
+                );
+
+                if !input_addresses.contains(owner_address) {
+                    input_addresses.push(owner_address.clone());
+                }
+
+                total_input += src_output.amount.unwrap_or(0);
+
+                //checkInputDoubleSpend
+            }
+            "headers_commission" | "witnessing" => {
+                if kind == "headers_commission" {
+                    ensure_with_validation_err!(
+                        !b_have_witnessing,
+                        UnitError,
+                        "all headers commissions must come before witnessings"
+                    );
+                    b_have_headers_commissions = true;
+                } else {
+                    b_have_witnessing = true;
+                }
+                ensure_with_validation_err!(
+                    input.amount.is_none()
+                        && input.serial_number.is_none()
+                        && input.message_index.is_none()
+                        && input.output_index.is_none()
+                        && input.unit.is_none(),
+                    UnitError,
+                    "unknown fields in witnessing input"
+                );
+
+                ensure_with_validation_err!(
+                    input.from_main_chain_index.is_some(),
+                    UnitError,
+                    "from_main_chain_index must be nonnegative int"
+                );
+                ensure_with_validation_err!(
+                    input.to_main_chain_index.is_some(),
+                    UnitError,
+                    "to_main_chain_index must be nonnegative int"
+                );
+                ensure_with_validation_err!(
+                    input.from_main_chain_index > input.to_main_chain_index,
+                    UnitError,
+                    "input.from_main_chain_index > input.to_main_chain_index"
+                );
+                ensure_with_validation_err!(
+                    input.to_main_chain_index > Some(validate_state.last_ball_mci),
+                    UnitError,
+                    "input.to_main_chain_index > objValidationState.last_ball_mci"
+                );
+                ensure_with_validation_err!(
+                    input.from_main_chain_index > Some(validate_state.last_ball_mci),
+                    UnitError,
+                    "input.from_main_chain_index > objValidationState.last_ball_mci"
+                );
+                let address = if author_addresses.len() == 1 {
+                    ensure_with_validation_err!(
+                        input.address.is_none(),
+                        UnitError,
+                        "when single-authored, must not put address in {} input",
+                        kind
+                    );
+                    author_addresses[0].clone()
+                } else {
+                    let tmp_input_address = input.address.clone().unwrap();
+                    ensure_with_validation_err!(
+                        author_addresses.contains(&&tmp_input_address),
+                        UnitError,
+                        "{} input address {} is not an author",
+                        kind,
+                        tmp_input_address
+                    );
+                    input.address.clone().unwrap()
+                };
+                let input_key = format!(
+                    "{}-{}-{}",
+                    kind,
+                    address,
+                    input.from_main_chain_index.unwrap()
+                );
+                ensure_with_validation_err!(
+                    !validate_state.input_keys.contains(&input_key),
+                    UnitError,
+                    "input {} already used",
+                    input_key
+                );
+                validate_state.input_keys.push(input_key);
+
+                // double_spend_where =
+                //     "type=? AND from_main_chain_index=? AND address=? AND asset IS NULL".to_owned();
+                //doubleSpendVars = [type, input.from_main_chain_index, address];
+
+                let next_spendable_mc_index = mc_outputs::read_next_spendable_mc_index(
+                    tx,
+                    kind,
+                    &address,
+                    &validate_state.conflicting_units,
+                )?;
+
+                ensure_with_validation_err!(
+                    input.from_main_chain_index >= Some(next_spendable_mc_index),
+                    UnitError,
+                    "{} ranges must not overlap",
+                    kind
+                );
+
+                let max_mci = if kind == "headers_commission" {
+                    Some(headers_commission::get_max_spendable_mci_for_last_ball_mci(
+                        validate_state.last_ball_mci,
+                    ))
+                } else {
+                    paid_witnessing::get_max_spendable_mci_for_last_ball_mci(
+                        validate_state.last_ball_mci,
+                    )
+                };
+                ensure_with_validation_err!(
+                    input.to_main_chain_index <= max_mci,
+                    UnitError,
+                    "{} to_main_chain_index is too large",
+                    kind
+                );
+
+                let commission = if kind == "headers_commission" {
+                    mc_outputs::calc_earnings(
+                        tx,
+                        kind,
+                        input.from_main_chain_index.unwrap(),
+                        input.to_main_chain_index.unwrap(),
+                        &address,
+                    )?
+                } else {
+                    paid_witnessing::calc_witness_earnings(
+                        tx,
+                        kind,
+                        input.from_main_chain_index.unwrap(),
+                        input.to_main_chain_index.unwrap(),
+                        &address,
+                    )?
+                };
+                ensure_with_validation_err!(commission != 0, UnitError, "zero {} commission", kind);
+                total_input += commission as i64;
+                //TODO: check_input_double_spend()
+            }
+            _ => bail_with_validation_err!(UnitError, "unrecognized input type: {}", kind),
+        }
+    }
+
+    info!(
+        "inputs done {:?} {:?} {:?}",
+        asset, input_addresses, output_addresses
+    );
+
+    ensure_with_validation_err!(
+        total_input
+            == total_output
+                + unit.headers_commission.unwrap_or(0) as i64
+                + unit.payload_commission.unwrap_or(0) as i64,
+        UnitError,
+        "inputs and outputs do not balance: {} != {} + {} + {}",
+        total_input,
+        total_output,
+        unit.headers_commission.unwrap_or(0),
+        unit.payload_commission.unwrap_or(0)
+    );
+
+    info!("validatePaymentInputsAndOutputs done");
+
+    Ok(())
 }
