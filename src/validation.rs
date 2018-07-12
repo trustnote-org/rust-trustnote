@@ -1824,8 +1824,8 @@ fn validate_payment_inputs_and_outputs(
     }
 
     let mut b_issue = false;
-    let b_have_headers_commissions = false;
-    let b_have_witnessing = false;
+    let mut b_have_headers_commissions = false;
+    let mut b_have_witnessing = false;
 
     for (index, input) in payment.inputs.iter().enumerate() {
         //Non-asset case
@@ -2139,7 +2139,7 @@ fn validate_payment_inputs_and_outputs(
                 } else {
                     let tmp_input_address = input.address.clone().unwrap();
                     ensure_with_validation_err!(
-                        author_addresses.contains(&tmp_input_address),
+                        author_addresses.contains(&&tmp_input_address),
                         UnitError,
                         "{} input address {} is not an author",
                         kind,
