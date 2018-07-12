@@ -12,7 +12,7 @@ pub struct UnitProps {
     pub is_free: u32,
 }
 
-pub fn compare_units(db: &Connection, unit1: &String, unit2: &String) -> Result<Option<i32>> {
+pub fn compare_units(db: &Connection, unit1: &str, unit2: &str) -> Result<Option<i32>> {
     if unit1 == unit2 {
         return Ok(Some(0));
     }
@@ -133,7 +133,7 @@ pub fn compare_unit_props(
         //GoUp()
         start_units.push(later_unit.unit.clone());
 
-        'go_up: loop {
+        loop {
             let start_unit_list = start_units
                 .iter()
                 .map(|s| format!("'{}'", s))
@@ -169,7 +169,7 @@ pub fn compare_unit_props(
                 }
             }
 
-            if new_start_units.len() > 0 {
+            if !new_start_units.is_empty() {
                 start_units = new_start_units;
             } else {
                 return Ok(None);;
@@ -179,7 +179,7 @@ pub fn compare_unit_props(
         // GoDown
         start_units.push(earlier_unit.unit.clone());
 
-        'go_down: loop {
+        loop {
             let start_unit_list = start_units
                 .iter()
                 .map(|s| format!("'{}'", s))
@@ -215,7 +215,7 @@ pub fn compare_unit_props(
                 }
             }
 
-            if new_start_units.len() > 0 {
+            if !new_start_units.is_empty() {
                 start_units = new_start_units;
             } else {
                 return Ok(None);
@@ -240,7 +240,10 @@ pub fn determine_if_included(
         return Ok(false);
     }
 
-    ensure!(later_units_props.len() > 0, "no later unit props were read");
+    ensure!(
+        !later_units_props.is_empty(),
+        "no later unit props were read"
+    );
 
     //spec::UnitProps.latest_included_mc_index and spec::UnitProps.main_chain_index is not Option
     let max_later_limci = later_units_props
@@ -266,7 +269,7 @@ pub fn determine_if_included(
 
     let mut start_units = later_units.to_vec();
 
-    'go_up: loop {
+    loop {
         let start_unit_list = start_units
             .iter()
             .map(|s| format!("'{}'", s))
@@ -302,7 +305,7 @@ pub fn determine_if_included(
             }
         }
 
-        if new_start_units.len() > 0 {
+        if !new_start_units.is_empty() {
             new_start_units.sort();
             new_start_units.dedup();
             start_units = new_start_units;
@@ -368,7 +371,7 @@ pub fn read_descendant_units_by_authors_before_mc_index(
     let mut start_units = Vec::new();
     start_units.push(earlier_unit.unit.clone());
 
-    'go_down: loop {
+    loop {
         let start_unit_list = start_units
             .iter()
             .map(|s| format!("'{}'", s))
@@ -411,7 +414,7 @@ pub fn read_descendant_units_by_authors_before_mc_index(
             }
         }
 
-        if new_start_units.len() > 0 {
+        if !new_start_units.is_empty() {
             start_units = new_start_units;
         } else {
             return Ok(units);

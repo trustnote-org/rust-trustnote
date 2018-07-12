@@ -479,7 +479,7 @@ pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
 
         let conflict_units = find_stable_conflicting_units(db, &unit_props)?;
 
-        let sequence = if conflict_units.len() > 0 {
+        let sequence = if !conflict_units.is_empty() {
             String::from("final-bad")
         } else {
             String::from("good")
@@ -545,7 +545,7 @@ pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
         let mut skiplist_balls = Vec::new();
         let mut skiplist_units = Vec::new();
 
-        if unit_props.is_on_main_chain == Some(1) && similar_mcis.len() > 0 {
+        if unit_props.is_on_main_chain == Some(1) && !similar_mcis.is_empty() {
             let similar_mcis_list = similar_mcis
                 .iter()
                 .map(|s| format!("'{}'", s))
@@ -610,7 +610,7 @@ pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
         let mut stmt = db.prepare_cached("DELETE FROM hash_tree_balls WHERE ball=?")?;
         stmt.execute(&[&ball])?;
 
-        if skiplist_units.len() > 0 {
+        if !skiplist_units.is_empty() {
             let value_list = skiplist_units
                 .iter()
                 .map(|s| format!("('{}','{}')", unit, s))
@@ -654,7 +654,7 @@ fn read_last_stable_mc_unit(db: &Connection) -> Result<String> {
 fn create_list_of_best_children(db: &Connection, parent_units: Vec<String>) -> Result<Vec<String>> {
     let mut best_children = parent_units.clone();
 
-    if parent_units.len() > 0 {
+    if !parent_units.is_empty() {
         //Go down and collect best children
         let mut units_list = parent_units
             .iter()
@@ -690,7 +690,7 @@ fn create_list_of_best_children(db: &Connection, parent_units: Vec<String>) -> R
                 }
             }
 
-            if next_units.len() == 0 {
+            if next_units.is_empty() {
                 break;
             } else {
                 units_list = next_units
@@ -767,7 +767,7 @@ fn update_latest_included_mc_index(
 
     info!("{} rows", rows.len());
 
-    if rows.len() == 0 && rebuild_mc {
+    if rows.is_empty() && rebuild_mc {
         bail!(
             "no latest_included_mc_index updated, last_mci={}, affected={}",
             last_main_chain_index,
@@ -775,7 +775,7 @@ fn update_latest_included_mc_index(
         );
     }
 
-    for row in rows.iter() {
+    for row in &rows {
         info!("{} {}", row.1, row.0);
 
         let mut stmt =
@@ -798,11 +798,11 @@ fn update_latest_included_mc_index(
             .query_map(&[&last_main_chain_index], |row| (row.get(0), row.get(1)))?
             .collect::<::std::result::Result<Vec<(u32, String)>, _>>()?;
 
-        if rows.len() == 0 {
+        if rows.is_empty() {
             break;
         }
 
-        for row in rows.iter() {
+        for row in &rows {
             let mut stmt =
                 db.prepare_cached("UPDATE units SET latest_included_mc_index=? WHERE unit=?")?;
             stmt.execute(&[&row.0, &row.1])?;
@@ -819,7 +819,7 @@ fn update_latest_included_mc_index(
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     ensure!(
-        rows.len() == 0,
+        rows.is_empty(),
         "{} units have latest_included_mc_index=NULL, e.g. unit {}",
         rows.len(),
         rows[0]
@@ -866,7 +866,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
             .collect::<::std::result::Result<Vec<TempUnitProp>, _>>()?;
 
         ensure!(
-            best_children.len() > 0,
+            !best_children.is_empty(),
             "no best children of last stable MC unit {}",
             last_stable_mc_unit
         );
@@ -924,7 +924,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
         };
 
         let mut stable = false;
-        if alt_branch_root_units.len() == 0 {
+        if alt_branch_root_units.is_empty() {
             // no alt branches
             if min_mc_wl >= first_unstable_mc_level {
                 stable = true;
@@ -998,9 +998,9 @@ fn go_down_and_update_main_chain_index(db: &Connection, last_main_chain_index: u
         .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
-    ensure!(rows.len() > 0, "no unindexed MC units?");
+    ensure!(!rows.is_empty(), "no unindexed MC units?");
 
-    for row in rows.iter() {
+    for row in &rows {
         main_chain_index += 1;
         let mut children_units = Vec::new();
         let mut units = vec![row.clone()];
@@ -1024,7 +1024,7 @@ fn go_down_and_update_main_chain_index(db: &Connection, last_main_chain_index: u
                 .query_map(&[], |row| row.get(0))?
                 .collect::<::std::result::Result<Vec<String>, _>>()?;
 
-            if children_rows.len() == 0 {
+            if children_rows.is_empty() {
                 break;
             } else {
                 children_units_list = children_rows

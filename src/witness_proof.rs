@@ -138,7 +138,7 @@ pub struct ProcessWitnessProof {
 
 pub fn process_witness_proof(
     db: &Connection,
-    unstable_mc_joints: Vec<Joint>,
+    unstable_mc_joints: &[Joint],
     witness_change_and_definition: Vec<Joint>,
     from_current: bool,
 ) -> Result<ProcessWitnessProof> {
@@ -148,7 +148,7 @@ pub fn process_witness_proof(
     let mut assoc_last_ball_by_last_ball_unit = HashMap::<String, String>::new();
     let mut witness_joints = Vec::new();
 
-    for joint in &unstable_mc_joints {
+    for joint in unstable_mc_joints {
         let unit = &joint.unit;
         let unit_hash = joint.get_unit_hash();
         ensure!(joint.ball.is_none(), "unstable mc but has ball");

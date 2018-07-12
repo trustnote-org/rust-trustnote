@@ -85,7 +85,7 @@ pub fn find_mc_index_interval_to_target_amount(
     //     target_amount = 1e15;
 
     //Original js has another implementation for mysql
-    let min_mc_output = if kind == "witnessing" { 11.0 } else { 344.0 };
+    let min_mc_output = if *kind == "witnessing" { 11.0 } else { 344.0 };
     let max_count_outputs = (f64::from(target_amount) / min_mc_output).ceil() as u32;
 
     let sql = format!(

@@ -435,6 +435,7 @@ impl Joint {
                 let src_unit = some_if!(kind == "transfer", input.unit.clone());
                 let src_message_index = some_if_option!(kind == "transfer", input.message_index);
                 let src_output_index = some_if_option!(kind == "transfer", input.output_index);
+
                 let from_main_chain_index = some_if_option!(
                     kind == "witnessing" || kind == "headers_commission",
                     input.from_main_chain_index
