@@ -1901,11 +1901,147 @@ fn validate_payment_inputs_and_outputs(
                 //onAcceptedDoublespends
             }
             "transfer" => {
-                let address = String::new();
-
-                if !input_addresses.contains(&address) {
-                    input_addresses.push(address);
+                if b_have_headers_commissions || b_have_witnessing {
+                    bail_with_validation_err!(
+                        UnitError,
+                        "all transfers must come before hc and witnessings"
+                    );
                 }
+
+                ensure_with_validation_err!(
+                    input.address.is_none()
+                        && input.amount.is_none()
+                        && input.from_main_chain_index.is_none()
+                        && input.serial_number.is_none()
+                        && input.to_main_chain_index.is_none(),
+                    UnitError,
+                    "unknown fields in payment input"
+                );
+
+                ensure_with_validation_err!(
+                    input.unit.is_some()
+                        && input.unit.as_ref().unwrap().len() == config::HASH_LENGTH,
+                    UnitError,
+                    "wrong unit length in payment input"
+                );
+
+                ensure_with_validation_err!(
+                    input.message_index.is_some(),
+                    UnitError,
+                    "no message_index in payment input"
+                );
+
+                ensure_with_validation_err!(
+                    input.output_index.is_some(),
+                    UnitError,
+                    "no output_index in payment input"
+                );
+
+                let input_unit = input.unit.as_ref().unwrap();
+                let input_message_index = input.message_index.unwrap();
+                let input_output_index = input.output_index.unwrap();
+
+                let input_key = format!(
+                    "base-{}-{}-{}",
+                    input_unit, input_message_index, input_output_index,
+                );
+
+                ensure_with_validation_err!(
+                    !validate_state.input_keys.contains(&input_key),
+                    UnitError,
+                    "input {} already used",
+                    input_key
+                );
+                validate_state.input_keys.push(input_key);
+
+                let mut stmt = tx.prepare_cached(
+                    "SELECT amount, is_stable, sequence, address, main_chain_index, denomination, asset \
+                        FROM outputs \
+                        JOIN units USING(unit) \
+                        WHERE outputs.unit=? AND message_index=? AND output_index=?",
+                )?;
+
+                struct OutputTemp {
+                    amount: Option<i64>,
+                    is_stable: u32,
+                    sequence: String,
+                    address: String,
+                    main_chain_index: Option<u32>,
+                    denomination: u32,
+                    asset: Option<String>,
+                }
+
+                let rows = stmt
+                    .query_map(
+                        &[input_unit, &input_message_index, &input_output_index],
+                        |row| OutputTemp {
+                            amount: row.get(0),
+                            is_stable: row.get(1),
+                            sequence: row.get(2),
+                            address: row.get(3),
+                            main_chain_index: row.get(4),
+                            denomination: row.get(5),
+                            asset: row.get(6),
+                        },
+                    )?
+                    .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+                if rows.len() > 1 {
+                    bail_with_validation_err!(UnitError, "more than 1 src output");
+                }
+
+                if rows.is_empty() {
+                    bail_with_validation_err!(UnitError, "input unit {} not found", input_unit);
+                }
+
+                let src_output = &rows[0];
+
+                ensure_with_validation_err!(
+                    src_output.amount.is_some(),
+                    UnitError,
+                    "src output amount is not a number"
+                );
+
+                //Now the payment.asset is None
+                ensure_with_validation_err!(
+                    payment.asset == src_output.asset,
+                    UnitError,
+                    "src output amount is not a number"
+                );
+
+                if src_output.main_chain_index > Some(validate_state.last_ball_mci)
+                    || src_output.main_chain_index.is_none()
+                {
+                    bail_with_validation_err!(UnitError, "src output must be before last ball");
+                }
+
+                ensure_with_validation_err!(
+                    src_output.sequence == "good",
+                    UnitError,
+                    "input unit {} is not serial",
+                    input_unit
+                );
+
+                let owner_address = &src_output.address;
+                ensure_with_validation_err!(
+                    author_addresses.contains(&owner_address),
+                    UnitError,
+                    "output owner is not among authors"
+                );
+
+                ensure_with_validation_err!(
+                    denomination == src_output.denomination,
+                    UnitError,
+                    "denomination mismatch"
+                );
+
+                if !input_addresses.contains(owner_address) {
+                    input_addresses.push(owner_address.clone());
+                }
+
+                total_input += src_output.amount.unwrap_or(0);
+
+                //checkInputDoubleSpend
             }
             "headers_commission" | "witnessing" => {}
             _ => bail_with_validation_err!(UnitError, "unrecognized input type: {}", kind),
@@ -1917,18 +2053,18 @@ fn validate_payment_inputs_and_outputs(
         asset, input_addresses, output_addresses
     );
 
-    // ensure_with_validation_err!(
-    //     total_input
-    //         == total_output
-    //             + unit.headers_commission.unwrap_or(0) as i64
-    //             + unit.payload_commission.unwrap_or(0) as i64,
-    //     UnitError,
-    //     "inputs and outputs do not balance: {} != {} + {} + {}",
-    //     total_input,
-    //     total_output,
-    //     unit.headers_commission.unwrap_or(0),
-    //     unit.payload_commission.unwrap_or(0)
-    // );
+    ensure_with_validation_err!(
+        total_input
+            == total_output
+                + unit.headers_commission.unwrap_or(0) as i64
+                + unit.payload_commission.unwrap_or(0) as i64,
+        UnitError,
+        "inputs and outputs do not balance: {} != {} + {} + {}",
+        total_input,
+        total_output,
+        unit.headers_commission.unwrap_or(0),
+        unit.payload_commission.unwrap_or(0)
+    );
 
     info!("validatePaymentInputsAndOutputs done");
 
