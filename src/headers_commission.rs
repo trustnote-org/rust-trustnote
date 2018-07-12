@@ -116,7 +116,7 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
 
         let amount_map = assoc_won_amounts
             .entry(child_unit)
-            .or_insert(HashMap::<String, u32>::new());
+            .or_insert_with(HashMap::<String, u32>::new);
         amount_map.insert(payer_unit.to_string(), headers_commission);
     }
 

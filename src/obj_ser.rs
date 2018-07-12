@@ -32,7 +32,7 @@ impl error::Error for Error {
 
 impl ser::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        Error::Custom(msg.to_string()).into()
+        Error::Custom(msg.to_string())
     }
 }
 
@@ -503,7 +503,9 @@ impl<'a> ser::SerializeMap for MapSerializer<'a> {
         value.serialize(&mut serializer)?;
         let mut value = serializer.output;
         let key = self.last_key.take().unwrap();
-        self.entries.get_mut(&key).map(|v| v.append(&mut value));
+        if let Some(v) = self.entries.get_mut(&key) {
+            v.append(&mut value);
+        }
         self.size += serializer.size;
         Ok(())
     }

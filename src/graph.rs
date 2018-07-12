@@ -52,7 +52,7 @@ pub fn compare_units(db: &Connection, unit1: &str, unit2: &str) -> Result<Option
         unit2
     );
 
-    let (unit_props1, unit_props2) = if &unit_props[0].unit == unit1 {
+    let (unit_props1, unit_props2) = if unit_props[0].unit == unit1 {
         (&unit_props[0], &unit_props[1])
     } else {
         (&unit_props[1], &unit_props[0])
@@ -98,18 +98,14 @@ pub fn compare_unit_props(
 
     if unit_props1.level <= unit_props2.level
         && unit_props1.latest_included_mc_index <= unit_props2.latest_included_mc_index
-        && (unit_props1.main_chain_index <= unit_props2.main_chain_index
-            && unit_props1.main_chain_index != None
-            && unit_props2.main_chain_index != None
-            || unit_props1.main_chain_index == None
-            || unit_props2.main_chain_index == None)
+        && (unit_props1.main_chain_index == None
+            || unit_props2.main_chain_index == None
+            || unit_props1.main_chain_index <= unit_props2.main_chain_index)
         || unit_props1.level >= unit_props2.level
             && unit_props1.latest_included_mc_index >= unit_props2.latest_included_mc_index
-            && (unit_props1.main_chain_index >= unit_props2.main_chain_index
-                && unit_props1.main_chain_index != None
-                && unit_props2.main_chain_index != None
-                || unit_props1.main_chain_index == None
-                || unit_props2.main_chain_index == None)
+            && (unit_props1.main_chain_index == None
+                || unit_props2.main_chain_index == None
+                || unit_props1.main_chain_index >= unit_props2.main_chain_index)
     {
         // still can be comparable
     } else {

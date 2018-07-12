@@ -64,7 +64,7 @@ lazy_static! {
         let mut offset = 0;
         let mut set = HashSet::new();
         for i in pi.iter() {
-            if i > &0 {
+            if *i > 0 {
                 offset += i;
                 set.insert(offset);
             }
@@ -101,21 +101,27 @@ pub fn is_chash_valid(encoded: &str) -> bool {
 }
 
 pub fn get_ball_hash(
-    unit: &String,
-    parent_balls: &Vec<String>,
-    skiplist_balls: &Vec<String>,
+    unit: &str,
+    parent_balls: &[String],
+    skiplist_balls: &[String],
     is_nonserial: bool,
 ) -> String {
+    #[inline]
+    fn is_empty<T>(arr: &[T]) -> bool {
+        arr.is_empty()
+    }
+
     #[derive(Serialize)]
     struct BallHashObj<'a> {
-        unit: &'a String,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        parent_balls: &'a Vec<String>,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        skiplist_balls: &'a Vec<String>,
+        unit: &'a str,
+        #[serde(skip_serializing_if = "is_empty")]
+        parent_balls: &'a [String],
+        #[serde(skip_serializing_if = "is_empty")]
+        skiplist_balls: &'a [String],
         #[serde(skip_serializing_if = "Option::is_none")]
         is_nonserial: Option<bool>,
     }
+
     let is_nonserial = if is_nonserial { Some(true) } else { None };
     let ball = BallHashObj {
         unit,
