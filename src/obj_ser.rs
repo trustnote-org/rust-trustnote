@@ -32,7 +32,7 @@ impl error::Error for Error {
 
 impl ser::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        Error::Custom(msg.to_string()).into()
+        Error::Custom(msg.to_string())
     }
 }
 
@@ -126,15 +126,15 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     // will be serialized the same. Other formats, especially compact binary
     // formats, may need independent logic for the different sizes.
     fn serialize_i8(self, v: i8) -> Result<()> {
-        self.serialize_i64(v as i64)
+        self.serialize_i64(i64::from(v))
     }
 
     fn serialize_i16(self, v: i16) -> Result<()> {
-        self.serialize_i64(v as i64)
+        self.serialize_i64(i64::from(v))
     }
 
     fn serialize_i32(self, v: i32) -> Result<()> {
-        self.serialize_i64(v as i64)
+        self.serialize_i64(i64::from(v))
     }
 
     // Not particularly efficient but this is example code anyway. A more
@@ -147,15 +147,15 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u8(self, v: u8) -> Result<()> {
-        self.serialize_u64(v as u64)
+        self.serialize_u64(u64::from(v))
     }
 
     fn serialize_u16(self, v: u16) -> Result<()> {
-        self.serialize_u64(v as u64)
+        self.serialize_u64(u64::from(v))
     }
 
     fn serialize_u32(self, v: u32) -> Result<()> {
-        self.serialize_u64(v as u64)
+        self.serialize_u64(u64::from(v))
     }
 
     fn serialize_u64(self, v: u64) -> Result<()> {
@@ -166,7 +166,7 @@ impl<'a> ser::Serializer for &'a mut Serializer {
     }
 
     fn serialize_f32(self, v: f32) -> Result<()> {
-        self.serialize_f64(v as f64)
+        self.serialize_f64(f64::from(v))
     }
 
     fn serialize_f64(self, v: f64) -> Result<()> {
@@ -503,7 +503,9 @@ impl<'a> ser::SerializeMap for MapSerializer<'a> {
         value.serialize(&mut serializer)?;
         let mut value = serializer.output;
         let key = self.last_key.take().unwrap();
-        self.entries.get_mut(&key).map(|v| v.append(&mut value));
+        if let Some(v) = self.entries.get_mut(&key) {
+            v.append(&mut value);
+        }
         self.size += serializer.size;
         Ok(())
     }

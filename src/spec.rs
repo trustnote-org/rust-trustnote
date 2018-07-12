@@ -169,17 +169,17 @@ lazy_static! {
         .expect("failed to read genesis unit");
 }
 
-pub fn is_genesis_unit(unit: &String) -> bool {
-    unit == &*GENESIS_UNIT
+pub fn is_genesis_unit(unit: &str) -> bool {
+    unit == *GENESIS_UNIT
 }
 
-pub fn is_genesis_ball(ball: &String) -> bool {
+pub fn is_genesis_ball(ball: &str) -> bool {
     lazy_static! {
         //GENESIS_UNIT's parent and skiplist is null
         static ref GENESIS_BALL: String =
             ::object_hash::get_ball_hash(&GENESIS_UNIT, &Vec::new(), &Vec::new(), false);
     }
-    ball == &*GENESIS_BALL
+    ball == *GENESIS_BALL
 }
 
 impl Unit {
@@ -198,7 +198,7 @@ impl Unit {
         naked_unit.main_chain_index = None;
         naked_unit.timestamp = None;
 
-        for message in naked_unit.messages.iter_mut() {
+        for message in &mut naked_unit.messages {
             message.payload = None;
             message.payload_uri = None;
         }
@@ -263,7 +263,7 @@ impl Unit {
             stripped_unit.witnesses = self.witnesses.clone();
         }
 
-        if self.parent_units.len() > 0 {
+        if !self.parent_units.is_empty() {
             stripped_unit.last_ball = self.last_ball.clone();
             stripped_unit.last_ball_unit = self.last_ball_unit.clone();
         }
@@ -275,7 +275,7 @@ impl Unit {
         use sha2::{Digest, Sha256};
 
         let mut naked_unit = self.get_naked_unit();
-        for author in naked_unit.authors.iter_mut() {
+        for author in &mut naked_unit.authors {
             author.authentifiers.clear();
         }
 

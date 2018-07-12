@@ -447,9 +447,9 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         }
 
         authors.push(Author {
-            address: address,
-            authentifiers: authentifiers,
-            definition: definition,
+            address,
+            authentifiers,
+            definition,
         });
     }
 
@@ -548,7 +548,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             })?
                             .collect::<::std::result::Result<Vec<InputTemp>, _>>()?;
 
-                        if rows.len() > 0 {
+                        if !rows.is_empty() {
                             //Record the first one for later ones to check against
                             prev_asset = rows[0].asset.clone();
                             prev_denomination = rows[0].denomination;
@@ -561,7 +561,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                 }
                             }
 
-                            for row in rows.iter_mut() {
+                            for row in &mut rows {
                                 let mut input = row;
 
                                 ensure!(
@@ -667,34 +667,34 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                     asset: payload_asset,
                     definition_chash: None,
                     denomination: payload_denomination,
-                    inputs: inputs,
-                    outputs: outputs,
+                    inputs,
+                    outputs,
                 })),
                 payload_hash: msg.payload_hash,
                 payload_location: msg.payload_location,
                 payload_uri: msg.payload_uri,
                 payload_uri_hash: msg.payload_uri_hash,
-                spend_proofs: spend_proofs,
+                spend_proofs,
             });
         }
     }
 
     let unit = Unit {
         alt: unit.alt,
-        authors: authors,
+        authors,
         content_hash: unit.content_hash,
-        earned_headers_commission_recipients: earned_headers_commission_recipients,
+        earned_headers_commission_recipients,
         headers_commission: unit.headers_commission,
         last_ball: unit.last_ball,
         last_ball_unit: unit.last_ball_unit,
         main_chain_index: unit.main_chain_index,
-        messages: messages,
-        parent_units: parent_units,
+        messages,
+        parent_units,
         payload_commission: unit.payload_commission,
         timestamp: unit.timestamp,
         unit: unit.unit,
         version: unit.version,
-        witnesses: witnesses,
+        witnesses,
         witness_list_unit: None,
     };
 
@@ -707,9 +707,9 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
     );
 
     let joint = Joint {
-        unit: unit,
-        ball: ball,
-        skiplist_units: skiplist_units,
+        unit,
+        ball,
+        skiplist_units,
         unsigned: None,
     };
 
@@ -757,7 +757,7 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
 
     let mut queries = db::DbQueries::new();
 
-    for unit_row in unit_rows.iter() {
+    for unit_row in &unit_rows {
         let unit = &unit_row.unit;
         ensure!(
             unit_row.content_hash.is_some(),
@@ -1207,7 +1207,7 @@ pub fn determine_if_has_witness_list_mutations_along_mc(
     witnesses: &[String],
 ) -> Result<()> {
     //Genesis
-    if unit.parent_units.len() == 0 {
+    if unit.parent_units.is_empty() {
         return Ok(());
     }
 
@@ -1226,7 +1226,7 @@ pub fn determine_if_has_witness_list_mutations_along_mc(
 
     info!("###### MC units {:?}", mc_units);
 
-    if mc_units.len() == 0 {
+    if mc_units.is_empty() {
         return Ok(());
     }
 

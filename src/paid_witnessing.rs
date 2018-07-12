@@ -80,7 +80,7 @@ fn read_mc_unit_witnesses(db: &Connection, main_chain_index: u32) -> Result<Vec<
 fn build_paid_witnesses(
     db: &Connection,
     unit_prop: graph::UnitProps,
-    witnesses: &Vec<String>,
+    witnesses: &[String],
 ) -> Result<()> {
     let main_chain_index = unit_prop.main_chain_index.unwrap_or(0);
     let to_main_chain_index = main_chain_index + config::COUNT_MC_BALLS_FOR_PAID_WITNESSING;
@@ -108,7 +108,7 @@ fn build_paid_witnesses(
     let mut paid_witnesses = Vec::new();
     let value_list;
 
-    if units.len() > 0 {
+    if !units.is_empty() {
         let sql = format!(
             "SELECT address, MIN(main_chain_index-{}) AS delay FROM units \
              LEFT JOIN unit_authors USING(unit) \
@@ -216,7 +216,7 @@ fn build_paid_witnesses_for_main_chain_index(db: &Connection, main_chain_index: 
                 .and_then(|mut stmt| stmt.execute(&[]));
         }
     }
-    let _tmp_table = TablePaidWitnessEventsTmp { db: db };
+    let _tmp_table = TablePaidWitnessEventsTmp { db };
 
     //In build_paid_witnesses(), graph::UnitProp only use some of the columns, no need to select * and parse them all
     let mut stmt = db.prepare_cached(
@@ -266,7 +266,7 @@ fn build_paid_witnesses_till_main_chain_index(
     let mut main_chain_index = stmt.query_row(&[], |row| row.get(0))?;
     while main_chain_index <= to_main_chain_index {
         build_paid_witnesses_for_main_chain_index(db, main_chain_index)?;
-        main_chain_index = main_chain_index + 1;
+        main_chain_index += 1;
     }
 
     Ok(())

@@ -28,7 +28,7 @@ fn get_initial_db_path() -> String {
     };
 
     cfg.get::<String>("initial_db_path")
-        .unwrap_or("db/initial.trustnote.sqlite".to_owned())
+        .unwrap_or_else(|_| "db/initial.trustnote.sqlite".to_owned())
 }
 
 pub fn create_database_if_necessary() -> Result<()> {
@@ -56,6 +56,12 @@ pub fn create_database_if_necessary() -> Result<()> {
 pub struct DatabasePool {
     db_rx: Receiver<Connection>,
     db_tx: Sender<Connection>,
+}
+
+impl Default for DatabasePool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DatabasePool {
@@ -155,6 +161,7 @@ impl<F: FnOnce(&Connection) -> Result<()>> FnQuery for F {
     }
 }
 
+#[derive(Default)]
 pub struct DbQueries {
     queries: Vec<Box<FnQuery>>,
 }

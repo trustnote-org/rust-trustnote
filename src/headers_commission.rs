@@ -102,22 +102,21 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
         );
 
         info.children.push(ChildInfo {
-            child_unit: child_unit,
+            child_unit,
             next_mc_unit: row.next_mc_unit,
         })
     }
 
     //Create a nested HashMap, first key by child_unit then key by payer_unit
     let mut assoc_won_amounts = HashMap::new();
-    for (payer_unit, children_info) in assoc_children_infos.iter_mut() {
+    for (payer_unit, children_info) in &mut assoc_children_infos {
         let headers_commission = children_info.headers_commission;
         let winner_child_info = get_winner_info(&mut children_info.children);
         let child_unit = &winner_child_info?.child_unit;
 
         let amount_map = assoc_won_amounts
             .entry(child_unit)
-            .or_insert(HashMap::<String, u32>::new());
-
+            .or_insert_with(HashMap::<String, u32>::new);
         amount_map.insert(payer_unit.to_string(), headers_commission);
     }
 
@@ -181,7 +180,8 @@ pub fn calc_headers_commissions(db: &Connection) -> Result<()> {
                 let amount = if row.earned_headers_commission_share == 100 {
                     full_amount
                 } else {
-                    (full_amount as f64 * row.earned_headers_commission_share as f64 / 100.0)
+                    (f64::from(full_amount) * f64::from(row.earned_headers_commission_share)
+                        / 100.0)
                         .round() as u32
                 };
 

@@ -29,18 +29,20 @@ extern crate sha2;
 
 macro_rules! some_if {
     ($condition:expr, $some:expr) => {{
-        match $condition {
-            true => Some($some),
-            _ => None,
+        if $condition {
+            Some($some)
+        } else {
+            None
         }
     }};
 }
 
 macro_rules! some_if_option {
     ($condition:expr, $some:expr) => {{
-        match $condition {
-            true => $some,
-            _ => None,
+        if $condition {
+            $some
+        } else {
+            None
         }
     }};
 }

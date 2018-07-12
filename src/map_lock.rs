@@ -44,7 +44,7 @@ impl<T: Clone + Hash + Eq> Inner<T> {
     fn task_dequeue(&mut self) -> Option<Task<T>> {
         let mut idx = 0;
         let mut is_found = false;
-        for task in self.tasks.iter() {
+        for task in &self.tasks {
             // find the first task that is ready to go
             if !self.keys_is_locked(&task.keys) {
                 is_found = true;
@@ -136,10 +136,7 @@ impl<T: Clone + Hash + Eq> MapLock<T> {
         g.keys_lock(&keys);
 
         // return the guard
-        Some(LockGuard {
-            owner: self,
-            keys: keys,
-        })
+        Some(LockGuard { owner: self, keys })
     }
 
     pub fn lock(&self, keys: Vec<T>) -> LockGuard<T> {
@@ -160,10 +157,7 @@ impl<T: Clone + Hash + Eq> MapLock<T> {
             // ok, the keys are not in use
             // mark the keys as in use
             g.keys_lock(&keys);
-            return LockGuard {
-                owner: self,
-                keys: keys,
-            };
+            return LockGuard { owner: self, keys };
         }
 
         // put the blocker in the waiting queue
@@ -185,10 +179,7 @@ impl<T: Clone + Hash + Eq> MapLock<T> {
         }
 
         // we comeback, it's safe to say that our keys are locked
-        LockGuard {
-            owner: self,
-            keys: keys,
-        }
+        LockGuard { owner: self, keys }
     }
 }
 

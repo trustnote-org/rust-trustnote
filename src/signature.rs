@@ -1,6 +1,6 @@
-use error::Result;
-
 use base64;
+use error::Result;
+use failure::ResultExt;
 use secp256k1::{key, Message, Secp256k1, Signature};
 
 lazy_static! {
@@ -27,7 +27,9 @@ pub fn sign(hash: &[u8], priv_key: &[u8]) -> Result<String> {
     let priv_key = key::SecretKey::from_slice(&SECP256K1, priv_key)?;
 
     //Sign it with the secret key
-    let recoverable = SECP256K1.sign_recoverable(&msg, &priv_key)?;
+    let recoverable = SECP256K1
+        .sign_recoverable(&msg, &priv_key)
+        .context("SECP256K1 sign failed")?;
     let (_, sig) = recoverable.serialize_compact(&SECP256K1);
     Ok(base64::encode(&sig[..]))
 }
@@ -39,6 +41,10 @@ pub fn verify(hash: &[u8], b64_sig: &str, b64_pub_key: &str) -> Result<()> {
     let pub_key = key::PublicKey::from_slice(&SECP256K1, &base64::decode(b64_pub_key)?)?;
 
     // verify the signature
-    let signature = Signature::from_compact(&SECP256K1, sig)?;
-    Ok(SECP256K1.verify(&msg, &signature, &pub_key)?)
+    let signature =
+        Signature::from_compact(&SECP256K1, sig).context("invalid SECP256K1 signature")?;
+    SECP256K1
+        .verify(&msg, &signature, &pub_key)
+        .context("SECP256K1 verify failed")?;
+    Ok(())
 }

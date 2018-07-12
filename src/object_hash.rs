@@ -36,12 +36,12 @@ where
     while chash_index < chash.len() {
         if CHECKSUM_OFFSETS.contains(&chash_index) {
             chash.set(chash_index, checksum[checksum_index]);
-            checksum_index = checksum_index + 1;
+            checksum_index += 1;
         } else {
             chash.set(chash_index, clean_data[clean_data_index]);
-            clean_data_index = clean_data_index + 1;
+            clean_data_index += 1;
         }
-        chash_index = chash_index + 1;
+        chash_index += 1;
     }
 
     Ok(base32::encode(
@@ -64,8 +64,8 @@ lazy_static! {
         let mut offset = 0;
         let mut set = HashSet::new();
         for i in pi.iter() {
-            if i > &0 {
-                offset = offset + i;
+            if *i > 0 {
+                offset += i;
                 set.insert(offset);
             }
         }
@@ -88,35 +88,40 @@ pub fn is_chash_valid(encoded: &str) -> bool {
     let mut checksum = BitVec::new();
     let mut clean_data = BitVec::new();
 
-    let mut chash_index = 0;
-    for bit in chash.iter() {
+    //let mut chash_index = 0;
+    for (chash_index, bit) in chash.iter().enumerate() {
         if CHECKSUM_OFFSETS.contains(&chash_index) {
             checksum.push(bit);
         } else {
             clean_data.push(bit);
         }
-        chash_index = chash_index + 1;
     }
 
     get_checksum(&clean_data.to_bytes()) == checksum
 }
 
 pub fn get_ball_hash(
-    unit: &String,
-    parent_balls: &Vec<String>,
-    skiplist_balls: &Vec<String>,
+    unit: &str,
+    parent_balls: &[String],
+    skiplist_balls: &[String],
     is_nonserial: bool,
 ) -> String {
+    #[inline]
+    fn is_empty<T>(arr: &[T]) -> bool {
+        arr.is_empty()
+    }
+
     #[derive(Serialize)]
     struct BallHashObj<'a> {
-        unit: &'a String,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        parent_balls: &'a Vec<String>,
-        #[serde(skip_serializing_if = "Vec::is_empty")]
-        skiplist_balls: &'a Vec<String>,
+        unit: &'a str,
+        #[serde(skip_serializing_if = "is_empty")]
+        parent_balls: &'a [String],
+        #[serde(skip_serializing_if = "is_empty")]
+        skiplist_balls: &'a [String],
         #[serde(skip_serializing_if = "Option::is_none")]
         is_nonserial: Option<bool>,
     }
+
     let is_nonserial = if is_nonserial { Some(true) } else { None };
     let ball = BallHashObj {
         unit,

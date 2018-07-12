@@ -6,6 +6,6 @@ pub fn now() -> usize {
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards");
 
-    let ret = dur.as_secs() * 1000 + dur.subsec_nanos() as u64 / 1_000_000;
+    let ret = dur.as_secs() * 1000 + u64::from(dur.subsec_nanos()) / 1_000_000;
     ret as usize
 }
