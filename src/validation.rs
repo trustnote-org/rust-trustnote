@@ -1738,7 +1738,7 @@ fn validate_payment_inputs_and_outputs(
     tx: &Transaction,
     payment: &Payment,
     asset: Option<String>,
-    _message_index: usize,
+    message_index: usize,
     unit: &Unit,
     validate_state: &mut ValidationState,
 ) -> Result<()> {
@@ -1763,7 +1763,6 @@ fn validate_payment_inputs_and_outputs(
     let mut total_output = 0;
     let mut prev_address = String::new();
     let mut prev_amount = 0;
-    // let mut count_open_outputs = 0;
 
     for output in &payment.outputs {
         ensure_with_validation_err!(
@@ -1913,11 +1912,15 @@ fn validate_payment_inputs_and_outputs(
                 );
                 validate_state.input_keys.push(input_key);
 
-                // let double_spend_where = "type='issue'";
-                // let double_spend_vars = [];
-                // check_input_double_spend()?;
-
-                //onAcceptedDoublespends
+                let double_spend_where = format!("type='issue'");
+                let _ = check_input_double_spend(
+                    tx,
+                    &double_spend_where,
+                    unit,
+                    validate_state,
+                    message_index,
+                    index,
+                )?;
             }
             "transfer" => {
                 if b_have_headers_commissions || b_have_witnessing {
@@ -2025,7 +2028,7 @@ fn validate_payment_inputs_and_outputs(
                 ensure_with_validation_err!(
                     payment.asset == src_output.asset,
                     UnitError,
-                    "src output amount is not a number"
+                    "asset mismatch"
                 );
 
                 if src_output.main_chain_index > Some(validate_state.last_ball_mci)
@@ -2060,7 +2063,18 @@ fn validate_payment_inputs_and_outputs(
 
                 total_input += src_output.amount.unwrap_or(0);
 
-                //checkInputDoubleSpend
+                let double_spend_where = format!(
+                    "type='{}' AND src_unit='{}' AND src_message_index={} AND src_output_index={}",
+                    kind, input_unit, input_message_index, input_output_index
+                );
+                let _ = check_input_double_spend(
+                    tx,
+                    &double_spend_where,
+                    unit,
+                    validate_state,
+                    message_index,
+                    index,
+                )?;
             }
             "headers_commission" | "witnessing" => {
                 if kind == "headers_commission" {
@@ -2141,10 +2155,6 @@ fn validate_payment_inputs_and_outputs(
                 );
                 validate_state.input_keys.push(input_key);
 
-                // double_spend_where =
-                //     "type=? AND from_main_chain_index=? AND address=? AND asset IS NULL".to_owned();
-                //doubleSpendVars = [type, input.from_main_chain_index, address];
-
                 let next_spendable_mc_index = mc_outputs::read_next_spendable_mc_index(
                     tx,
                     kind,
@@ -2194,7 +2204,21 @@ fn validate_payment_inputs_and_outputs(
                 };
                 ensure_with_validation_err!(commission != 0, UnitError, "zero {} commission", kind);
                 total_input += commission as i64;
-                //TODO: check_input_double_spend()
+
+                let double_spend_where = format!(
+                    "type='{}' AND from_main_chain_index={} AND address={} AND asset IS NULL",
+                    kind,
+                    input.from_main_chain_index.unwrap(),
+                    address
+                );
+                let _ = check_input_double_spend(
+                    tx,
+                    &double_spend_where,
+                    unit,
+                    validate_state,
+                    message_index,
+                    index,
+                )?;
             }
             _ => bail_with_validation_err!(UnitError, "unrecognized input type: {}", kind),
         }
@@ -2219,6 +2243,41 @@ fn validate_payment_inputs_and_outputs(
     );
 
     info!("validatePaymentInputsAndOutputs done");
+
+    Ok(())
+}
+
+fn check_input_double_spend(
+    tx: &Transaction,
+    double_spend_where: &String,
+    unit: &Unit,
+    validate_state: &mut ValidationState,
+    message_index: usize,
+    input_index: usize,
+) -> Result<()> {
+    let sql = format!(
+        "SELECT unit, address, message_index, input_index, main_chain_index, sequence, is_stable \
+         from inputs JOIN units USING(unit) WHERE {} AND unit !='{}' AND asset IS NULL",
+        double_spend_where,
+        unit.unit.as_ref().unwrap(),
+    );
+
+    let _ = check_for_double_spend(tx, "divisible input", &sql, unit, validate_state)?;
+
+    //acceptDoublespends
+    info!("--- accepting doublespend on unit {:?}", unit.unit);
+
+    let sql = format!(
+        "UPDATE inputs SET is_unique=NULL WHERE {}
+        AND (SELECT is_stable FROM units WHERE units.unit=inputs.unit)=0",
+        double_spend_where
+    );
+
+    validate_state.additional_queries.push(sql);
+    validate_state.double_spend_inputs.push(DoubleSpendInput {
+        message_index: message_index as u32,
+        input_index: input_index as u32,
+    });
 
     Ok(())
 }
