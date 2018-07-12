@@ -41,7 +41,7 @@ pub fn calc_witness_earnings(
     )
 }
 
-fn get_max_spendable_mci_for_last_ball_mci(last_ball_mci: u32) -> Option<u32> {
+pub fn get_max_spendable_mci_for_last_ball_mci(last_ball_mci: u32) -> Option<u32> {
     last_ball_mci.checked_sub(1 + config::COUNT_MC_BALLS_FOR_PAID_WITNESSING)
 }
 
