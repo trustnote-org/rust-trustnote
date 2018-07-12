@@ -2100,10 +2100,11 @@ fn validate_payment_inputs_and_outputs(
                     b_have_witnessing = true;
                 }
                 ensure_with_validation_err!(
-                    input.kind.is_none()
-                        && input.from_main_chain_index.is_none()
-                        && input.to_main_chain_index.is_none()
-                        && input.address.is_none(),
+                    input.amount.is_none()
+                        && input.serial_number.is_none()
+                        && input.message_index.is_none()
+                        && input.output_index.is_none()
+                        && input.unit.is_none(),
                     UnitError,
                     "unknown fields in witnessing input"
                 );
