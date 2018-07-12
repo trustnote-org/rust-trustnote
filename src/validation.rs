@@ -1561,14 +1561,10 @@ fn check_for_double_spend(
         return Ok(());
     }
 
-    let author_addresses = unit
-        .authors
-        .iter()
-        .map(|a| a.address.clone())
-        .collect::<Vec<_>>();
+    let author_addresses = unit.authors.iter().map(|a| &a.address).collect::<Vec<_>>();
 
     for conflicting_record in rows {
-        if author_addresses.contains(&conflicting_record.address) {
+        if author_addresses.contains(&&conflicting_record.address) {
             bail_with_validation_err!(
                 UnitError,
                 "conflicting {} spent from another address?",
@@ -1762,17 +1758,13 @@ fn validate_payment_inputs_and_outputs(
     tx: &Transaction,
     payment: &Payment,
     asset: Option<String>,
-    message_index: usize,
+    _message_index: usize,
     unit: &Unit,
     validate_state: &mut ValidationState,
 ) -> Result<()> {
     let denomination = payment.denomination.unwrap_or(1);
 
-    let author_addresses = unit
-        .authors
-        .iter()
-        .map(|a| a.address.clone())
-        .collect::<Vec<_>>();
+    let author_addresses = unit.authors.iter().map(|a| &a.address).collect::<Vec<_>>();
 
     ensure_with_validation_err!(
         payment.inputs.len() <= config::MAX_INPUTS_PER_PAYMENT_MESSAGE,
@@ -1791,15 +1783,17 @@ fn validate_payment_inputs_and_outputs(
     let mut total_output = 0;
     let mut prev_address = String::new();
     let mut prev_amount = 0;
-    let mut count_open_outputs = 0;
+    // let mut count_open_outputs = 0;
 
     for output in &payment.outputs {
         ensure_with_validation_err!(
-            output.amount.is_some() && output.amount.unwrap() > 0,
+            output.amount > Some(0),
             UnitError,
             "amount must be positive integer, found {:?}",
             output.amount
         );
+
+        // TODO: add asset check, we don't support private asset payment
 
         ensure_with_validation_err!(output.address.is_some(), UnitError, "no output address");
 
@@ -1830,8 +1824,8 @@ fn validate_payment_inputs_and_outputs(
     }
 
     let mut b_issue = false;
-    let mut b_have_headers_commissions = false;
-    let mut b_have_witnessing = false;
+    let b_have_headers_commissions = false;
+    let b_have_witnessing = false;
 
     for (index, input) in payment.inputs.iter().enumerate() {
         //Non-asset case
@@ -1855,21 +1849,21 @@ fn validate_payment_inputs_and_outputs(
                 );
 
                 ensure_with_validation_err!(
-                    input.amount.unwrap_or(0) > 0,
+                    input.amount > Some(0),
                     UnitError,
                     "amount must be positive"
                 );
 
                 //serial_number is a u32!
-                ensure_with_validation_err!(
-                    input.serial_number.unwrap_or(0) > 0,
-                    UnitError,
-                    "serial_number must be positive"
-                );
+                // ensure_with_validation_err!(
+                //     input.serial_number > Some(0),
+                //     UnitError,
+                //     "serial_number must be positive"
+                // );
 
                 //if (!objAsset || objAsset.cap)
                 ensure_with_validation_err!(
-                    input.serial_number.unwrap_or(0) == 1,
+                    input.serial_number == Some(1),
                     UnitError,
                     "for capped asset serial_number must be 1"
                 );
@@ -1898,7 +1892,7 @@ fn validate_payment_inputs_and_outputs(
 
                     let input_address = input.address.as_ref().unwrap();
                     ensure_with_validation_err!(
-                        author_addresses.contains(input_address),
+                        author_addresses.contains(&input_address),
                         UnitError,
                         "issue input address {} is not an author",
                         input_address
@@ -2008,7 +2002,7 @@ fn validate_payment_inputs_and_outputs(
 
                 struct OutputTemp {
                     amount: Option<i64>,
-                    is_stable: u32,
+                    // is_stable: u32,
                     sequence: String,
                     address: String,
                     main_chain_index: Option<u32>,
@@ -2021,7 +2015,7 @@ fn validate_payment_inputs_and_outputs(
                         &[input_unit, &input_message_index, &input_output_index],
                         |row| OutputTemp {
                             amount: row.get(0),
-                            is_stable: row.get(1),
+                            // is_stable: row.get(1),
                             sequence: row.get(2),
                             address: row.get(3),
                             main_chain_index: row.get(4),
