@@ -1030,16 +1030,26 @@ fn validate_author(
                 tx,
                 &author.address,
                 Some(validate_state.last_ball_mci),
-            ).or_else(|e| {
-                bail_with_validation_err!(
-                    UnitError,
-                    "wrong definition : {}, err={}",
-                    author.definition,
-                    e
-                )
-            })?;
+            )?;
 
-            handle_duplicate_address_definition(validate_state, ret_definition, nonserial)?;
+            let definition = match ret_definition {
+                Ok(v) => v,
+                Err(chash) => {
+                    let definition_chash = object_hash::get_chash(&author.definition)?;
+                    if definition_chash != chash {
+                        bail_with_validation_err!(
+                            UnitError,
+                            "wrong definition {}: chash {} != {}",
+                            author.definition,
+                            definition_chash,
+                            chash,
+                        );
+                    }
+                    return Ok(());
+                }
+            };
+
+            handle_duplicate_address_definition(validate_state, definition, nonserial)?;
 
             Ok(())
         };
@@ -1275,20 +1285,20 @@ fn validate_author(
             tx,
             &author.address,
             Some(validate_state.last_ball_mci),
-        );
-        if tmp_address_definition.is_err() {
-            bail_with_validation_err!(
-                UnitError,
-                "definition_chash bound to address {} is not defined",
-                author.address
-            );
-        }
-
-        validate_authentifiers(
-            &tmp_address_definition.unwrap(),
-            validate_state,
-            &mut nonserial,
         )?;
+        let definition = match tmp_address_definition {
+            Ok(v) => v,
+            Err(chash) => {
+                bail_with_validation_err!(
+                    UnitError,
+                    "definition {} bound to address {} is not defined",
+                    chash,
+                    author.address
+                );
+            }
+        };
+
+        validate_authentifiers(&definition, validate_state, &mut nonserial)?;
     }
     Ok(())
 }

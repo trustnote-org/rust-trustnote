@@ -1115,7 +1115,7 @@ pub fn read_definition_by_address(
     db: &Connection,
     address: &String,
     max_mci: Option<u32>,
-) -> Result<Value> {
+) -> Result<::std::result::Result<Value, String>> {
     let max_mci = max_mci.unwrap_or(::std::u32::MAX);
     let mut stmt = db.prepare_cached(
         "SELECT definition_chash FROM address_definition_changes CROSS JOIN units USING(unit) \
@@ -1126,26 +1126,34 @@ pub fn read_definition_by_address(
         .query_map(&[address, &max_mci], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     let definition_chash = if rows.is_empty() { address } else { &rows[0] };
-    read_definition_at_mci(db, definition_chash, max_mci)
+    let ret = read_definition_at_mci(db, definition_chash, max_mci)?;
+    Ok(ret.ok_or_else(|| definition_chash.clone()))
 }
 
 fn read_definition_at_mci(
     db: &Connection,
     definition_chash: &String,
     max_mci: u32,
-) -> Result<Value> {
+) -> Result<Option<Value>> {
     let mut stmt = db.prepare_cached(
         "SELECT definition FROM definitions \
          CROSS JOIN unit_authors USING(definition_chash) CROSS JOIN units USING(unit) \
          WHERE definition_chash=? AND is_stable=1 AND sequence='good' AND main_chain_index<=?",
     )?;
-    let definition: String = stmt
-        .query_row(&[definition_chash, &max_mci], |row| row.get(0))
+    let definition = stmt
+        .query_map(&[definition_chash, &max_mci], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()
         .context(format!(
             "failed to read definition at mci: definition_chash={}, max_mci={}",
             definition_chash, max_mci
         ))?;
-    Ok(serde_json::from_str(&definition)?)
+
+    // not found
+    if definition.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(serde_json::from_str(&definition[0])?))
 }
 
 pub fn determine_best_parents(

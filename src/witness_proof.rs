@@ -222,7 +222,7 @@ pub fn process_witness_proof(
     }
 
     for address in MY_WITNESSES.iter() {
-        match storage::read_definition_by_address(db, address, None) {
+        match storage::read_definition_by_address(db, address, None)? {
             // if found
             Ok(definition) => {
                 let definition_chash = object_hash::get_chash(&definition)?;
@@ -230,9 +230,8 @@ pub fn process_witness_proof(
                 assoc_definition_chashes.insert(address.clone(), definition_chash);
             }
             // if NotFound
-            Err(e) => {
-                warn!("definition {} not found, err={}", address, e);
-                assoc_definition_chashes.insert(address.clone(), address.clone());
+            Err(chash) => {
+                assoc_definition_chashes.insert(address.clone(), chash);
             }
         }
     }
