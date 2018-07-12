@@ -144,7 +144,7 @@ pub enum ValidationOk {
     Signed(ValidationState, map_lock::LockGuard<'static, String>),
 }
 
-pub fn is_valid_address(address: &String) -> bool {
+pub fn is_valid_address(address: &str) -> bool {
     let address = address.to_uppercase();
     object_hash::is_chash_valid(&address)
 }
@@ -222,7 +222,7 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
                 err: "wrong content_hash length".to_owned(),
             });
         }
-        if unit.earned_headers_commission_recipients.len() > 0
+        if !unit.earned_headers_commission_recipients.is_empty()
             || unit.headers_commission.is_some()
             || unit.payload_commission.is_some()
             || unit.main_chain_index.is_some()
@@ -469,7 +469,7 @@ fn validate_hash_tree(
                 err: format!("ball hash is wrong, expect {}", ball_hash),
             });
         }
-        return Ok(());
+        Ok(())
     }
 
     if joint.skiplist_units.is_empty() {
@@ -552,16 +552,15 @@ fn validate_parents(
         ValidationError::JointError { err: e }
     }
     let (join, feild);
-    let create_err: fn(String) -> ValidationError;
-    if joint.ball.is_some() {
+    let create_err = if joint.ball.is_some() {
         join = "LEFT JOIN balls USING(unit) LEFT JOIN hash_tree_balls ON units.unit=hash_tree_balls.unit";
         feild = ", IFNULL(balls.ball, hash_tree_balls.ball) AS ball";
-        create_err = joint_err;
+        joint_err
     } else {
         join = "";
         feild = "";
-        create_err = unit_err;
-    }
+        unit_err
+    };
 
     for parent_unit in &unit.parent_units {
         if parent_unit <= &prev {
@@ -815,7 +814,7 @@ fn validate_witnesses(
                 .expect("last_ball_unit is empty"),
             temp_witnesses,
         );
-        if determine_result.is_err() && validate_state.last_ball_mci >= 512000 {
+        if determine_result.is_err() && validate_state.last_ball_mci >= 512_000 {
             bail_with_validation_err!(UnitError, "{}", determine_result.err().unwrap())
         }
         let str_witness: String = temp_witnesses

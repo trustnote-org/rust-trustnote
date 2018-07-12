@@ -36,12 +36,12 @@ where
     while chash_index < chash.len() {
         if CHECKSUM_OFFSETS.contains(&chash_index) {
             chash.set(chash_index, checksum[checksum_index]);
-            checksum_index = checksum_index + 1;
+            checksum_index += 1;
         } else {
             chash.set(chash_index, clean_data[clean_data_index]);
-            clean_data_index = clean_data_index + 1;
+            clean_data_index += 1;
         }
-        chash_index = chash_index + 1;
+        chash_index += 1;
     }
 
     Ok(base32::encode(
@@ -65,7 +65,7 @@ lazy_static! {
         let mut set = HashSet::new();
         for i in pi.iter() {
             if i > &0 {
-                offset = offset + i;
+                offset += i;
                 set.insert(offset);
             }
         }
@@ -88,14 +88,13 @@ pub fn is_chash_valid(encoded: &str) -> bool {
     let mut checksum = BitVec::new();
     let mut clean_data = BitVec::new();
 
-    let mut chash_index = 0;
-    for bit in chash.iter() {
+    //let mut chash_index = 0;
+    for (chash_index, bit) in chash.iter().enumerate() {
         if CHECKSUM_OFFSETS.contains(&chash_index) {
             checksum.push(bit);
         } else {
             clean_data.push(bit);
         }
-        chash_index = chash_index + 1;
     }
 
     get_checksum(&clean_data.to_bytes()) == checksum

@@ -128,7 +128,7 @@ impl Joint {
 
         let unit_hash = self.get_unit_hash();
         let mut stmt = tx.prepare_cached("INSERT INTO unit_witnesses (unit, address) VALUES(?,?)")?;
-        for address in unit.witnesses.iter() {
+        for address in &unit.witnesses {
             stmt.execute(&[unit_hash, address])?;
         }
         let mut stmt = tx.prepare_cached(
@@ -163,7 +163,7 @@ impl Joint {
                     )?;
                     stmt.execute(&[&author.address])?;
                 }
-            } else if let Some(_) = self.unit.content_hash {
+            } else if self.unit.content_hash.is_some() {
                 let mut stmt = tx.prepare_cached(
                     "INSERT OR IGNORE INTO addresses (address) \
                      VALUES (?)",
@@ -277,7 +277,7 @@ impl Joint {
 
     fn save_header_earnings(&self, tx: &Transaction) -> Result<()> {
         let unit = &self.unit;
-        for recipient in unit.earned_headers_commission_recipients.iter() {
+        for recipient in &unit.earned_headers_commission_recipients {
             let mut stmt = tx.prepare_cached(
                 "INSERT INTO earned_headers_commission_recipients \
                  (unit, address, earned_headers_commission_share) VALUES(?,?,?)",
@@ -435,6 +435,7 @@ impl Joint {
                 let src_unit = some_if!(kind == "transfer", input.unit.clone());
                 let src_message_index = some_if_option!(kind == "transfer", input.message_index);
                 let src_output_index = some_if_option!(kind == "transfer", input.output_index);
+
                 let from_main_chain_index = some_if_option!(
                     kind == "witnessing" || kind == "headers_commission",
                     input.from_main_chain_index

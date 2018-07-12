@@ -684,7 +684,7 @@ impl HubConn {
                 "last_known_mci": last_known_mci
             });
 
-        let ret = self.send_request("catchup", param).unwrap();
+        let ret = self.send_request("catchup", &param).unwrap();
         if !ret["error"].is_null() {
             bail!("catchup request got error response: {:?}", ret["error"]);
         }
@@ -692,8 +692,8 @@ impl HubConn {
         let catchup_chain: catchup::CatchupChain = serde_json::from_value(ret).unwrap();
 
         // print out unsupported messages!
-        for j in catchup_chain.stable_last_ball_joints.iter() {
-            for m in j.unit.messages.iter() {
+        for j in &catchup_chain.stable_last_ball_joints {
+            for m in &j.unit.messages {
                 match &m.payload {
                     Some(::spec::Payload::Other(v)) => error!("app = {}, v = {}", m.app, v),
                     _ => {}
@@ -742,7 +742,7 @@ impl HubConn {
         // TODO: need reroute if failed to send
         let mut hash_tree = self.send_request(
             "get_hash_tree",
-            json!({
+            &json!({
                 "from_ball": from_ball,
                 "to_ball": to_ball,
             }),
@@ -816,7 +816,7 @@ impl HubConn {
         let last_mci = storage::read_last_main_chain_index(&db)?;
         self.send_request(
             "subscribe",
-            json!({ "subscription_id": subscription_id, "last_mci": last_mci}),
+            &json!({ "subscription_id": subscription_id, "last_mci": last_mci}),
         )?;
 
         self.set_source();
@@ -824,7 +824,7 @@ impl HubConn {
     }
 
     fn send_heartbeat(&self) -> Result<()> {
-        self.send_request("heartbeat", Value::Null)?;
+        self.send_request("heartbeat", &Value::Null)?;
         Ok(())
     }
 
@@ -835,9 +835,9 @@ impl HubConn {
     }
 
     fn request_joints(&self, units: &[String]) -> Result<()> {
-        fn request_joint(ws: Arc<HubConn>, unit: String) -> Result<()> {
+        fn request_joint(ws: Arc<HubConn>, unit: &str) -> Result<()> {
             // if the joint is in request, just ignore
-            let g = JOINT_IN_REQ.try_lock(vec![unit.clone()]);
+            let g = JOINT_IN_REQ.try_lock(vec![unit.to_owned()]);
             if g.is_none() {
                 println!(
                     "\n\nrequest_joint lock failed!!!!!!!!!!!!!!!!!: {}\n\n",
@@ -846,7 +846,7 @@ impl HubConn {
                 return Ok(());
             }
 
-            let mut v = ws.send_request("get_joint", json!(unit))?;
+            let mut v = ws.send_request("get_joint", &json!(unit))?;
             if v["joint_not_found"].as_str() == Some(&unit) {
                 // TODO: if self connection failed to request jonit, should
                 // let available ws to try a again here. see #72
@@ -875,7 +875,7 @@ impl HubConn {
         for unit in units {
             let unit = unit.clone();
             let ws = WSS.get_ws(self);
-            try_go!(move || request_joint(ws, unit));
+            try_go!(move || request_joint(ws, &unit));
         }
         Ok(())
     }

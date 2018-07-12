@@ -162,10 +162,10 @@ impl<T> WsConnection<T> {
                 ws,
                 last_recv: Instant::now(),
             }),
-            peer: peer,
-            req_map: req_map,
+            peer,
+            req_map,
             listener: AtomicOption::none(),
-            data: data,
+            data,
             id: AtomicUsize::new(0),
         });
 
@@ -273,7 +273,7 @@ impl<T> WsConnection<T> {
         Ok(ws)
     }
 
-    pub fn send_request(&self, command: &str, param: Value) -> Result<Value> {
+    pub fn send_request(&self, command: &str, param: &Value) -> Result<Value> {
         let mut request = match param {
             Value::Null => json!({ "command": command }),
             _ => json!({"command": command, "params": param}),

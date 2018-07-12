@@ -215,7 +215,7 @@ where
     let unit = joint.get_unit_hash();
     let rc_unit = Rc::new(unit.clone());
 
-    let mut tx = db.transaction()?;
+    let tx = db.transaction()?;
     {
         let mut stmt =
             tx.prepare_cached("INSERT INTO known_bad_joints (unit, json, error) VALUES (?, ?, ?)")?;
@@ -230,7 +230,7 @@ where
 
     let mut queries = db::DbQueries::new();
 
-    collet_queries_to_purge_dependent_joints(&mut tx, rc_unit, &mut queries, err, f)?;
+    collet_queries_to_purge_dependent_joints(&tx, rc_unit, &mut queries, err, f)?;
 
     queries.execute(&tx)?;
     tx.commit()?;
@@ -386,7 +386,7 @@ pub fn purge_uncovered_nonserial_joints_lock() -> Result<()> {
         static ref PURGE_UNCOVERED: Mutex<()> = Mutex::new(());
     }
 
-    if let Ok(_) = PURGE_UNCOVERED.try_lock() {
+    if PURGE_UNCOVERED.try_lock().is_ok() {
         return purge_uncovered_nonserial_joints(false);
     }
     Ok(())

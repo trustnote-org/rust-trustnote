@@ -18,7 +18,7 @@ pub struct PrepareWitnessProof {
 
 pub fn prepare_witness_proof(
     db: &Connection,
-    witnesses: Vec<String>,
+    witnesses: &[String],
     last_stable_mci: u32,
 ) -> Result<PrepareWitnessProof> {
     let mut witness_change_and_definition = Vec::new();
@@ -51,7 +51,7 @@ pub fn prepare_witness_proof(
         let mut joint = storage::read_joint_with_ball(db, &unit)?;
         // FIXME: WTF of this?!  the unit might get stabilized while we were reading other units
         joint.ball = None;
-        for author in joint.unit.authors.iter() {
+        for author in &joint.unit.authors {
             let address = &author.address;
             if witnesses.contains(address) && !found_witnesses.contains(address) {
                 found_witnesses.push(address.clone());
@@ -138,7 +138,7 @@ pub struct ProcessWitnessProof {
 
 pub fn process_witness_proof(
     db: &Connection,
-    unstable_mc_joints: Vec<Joint>,
+    unstable_mc_joints: &[Joint],
     witness_change_and_definition: Vec<Joint>,
     from_current: bool,
 ) -> Result<ProcessWitnessProof> {
@@ -148,7 +148,7 @@ pub fn process_witness_proof(
     let mut assoc_last_ball_by_last_ball_unit = HashMap::<String, String>::new();
     let mut witness_joints = Vec::new();
 
-    for joint in unstable_mc_joints.iter() {
+    for joint in unstable_mc_joints {
         let unit = &joint.unit;
         let unit_hash = joint.get_unit_hash();
         ensure!(joint.ball.is_none(), "unstable mc but has ball");
@@ -158,7 +158,7 @@ pub fn process_witness_proof(
         }
 
         let mut added_joint = false;
-        for author in unit.authors.iter() {
+        for author in &unit.authors {
             let address = &author.address;
             if MY_WITNESSES.contains(address) {
                 if !found_witnesses.contains(address) {
@@ -185,12 +185,12 @@ pub fn process_witness_proof(
         "not enough witnesses"
     );
     ensure!(
-        last_ball_units.len() > 0,
+        !last_ball_units.is_empty(),
         "processWitnessProof: no last ball units"
     );
 
     // changes and definitions of witnesses
-    for joint in witness_change_and_definition.iter() {
+    for joint in &witness_change_and_definition {
         ensure!(
             joint.ball.is_some(),
             "witness_change_and_definition_joints: joint without ball"
@@ -202,7 +202,7 @@ pub fn process_witness_proof(
         let unit = &joint.unit;
 
         let mut author_by_witness = false;
-        for author in unit.authors.iter() {
+        for author in &unit.authors {
             let address = &author.address;
             if MY_WITNESSES.contains(address) {
                 author_by_witness = true;
@@ -239,7 +239,7 @@ pub fn process_witness_proof(
 
     let mut validate_unit = |unit: &Unit, require_definition_or_change: bool| -> Result<()> {
         let mut b_found = false;
-        for author in unit.authors.iter() {
+        for author in &unit.authors {
             let address = &author.address;
             if !MY_WITNESSES.contains(address) {
                 // not a witness - skip it
@@ -276,12 +276,14 @@ pub fn process_witness_proof(
                 db,
                 author,
                 unit,
-                assoc_definitions.get(&definition_chash).expect(&format!(
-                    "failed to find definition, definition_chash={}",
-                    definition_chash
-                )),
+                assoc_definitions.get(&definition_chash).unwrap_or_else(|| {
+                    panic!(
+                        "failed to find definition, definition_chash={}",
+                        definition_chash
+                    )
+                }),
             )?;
-            for message in unit.messages.iter() {
+            for message in &unit.messages {
                 let payment = match message.payload.as_ref() {
                     Some(Payload::Payment(ref p)) => Some(p),
                     _ => None,

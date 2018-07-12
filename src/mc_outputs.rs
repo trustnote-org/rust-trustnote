@@ -7,7 +7,7 @@ pub fn read_next_spendable_mc_index(
     address: &String,
     conflict_units: &[String],
 ) -> Result<u32> {
-    let sql = if conflict_units.len() > 0 {
+    let sql = if !conflict_units.is_empty() {
         let conflict_units_list = conflict_units
             .iter()
             .map(|s| format!("'{}'", s))
@@ -72,7 +72,7 @@ pub fn find_mc_index_interval_to_target_amount(
     }
 
     let mut max_spendable_mci = read_max_spendable_mc_index(db, kind)?;
-    if max_spendable_mci <= 0 {
+    if max_spendable_mci == 0 {
         return Ok(None);
     }
 
@@ -86,7 +86,7 @@ pub fn find_mc_index_interval_to_target_amount(
 
     //Original js has another implementation for mysql
     let min_mc_output = if *kind == "witnessing" { 11.0 } else { 344.0 };
-    let max_count_outputs = (target_amount as f64 / min_mc_output).ceil() as u32;
+    let max_count_outputs = (f64::from(target_amount) / min_mc_output).ceil() as u32;
 
     let sql = format!(
         "SELECT main_chain_index, amount \
@@ -115,7 +115,7 @@ pub fn find_mc_index_interval_to_target_amount(
         outputs.push(row?);
     }
 
-    if outputs.len() == 0 {
+    if outputs.is_empty() {
         return Ok(None);
     }
 
@@ -123,7 +123,7 @@ pub fn find_mc_index_interval_to_target_amount(
     let mut to_mci = 0;
     let mut has_sufficient = false;
     for output in outputs {
-        accumulated = accumulated + output.amount;
+        accumulated += output.amount;
         to_mci = output.main_chain_index;
         if accumulated > target_amount {
             has_sufficient = true;
@@ -132,10 +132,10 @@ pub fn find_mc_index_interval_to_target_amount(
     }
 
     Ok(Some(McIndexInterval {
-        from_mci: from_mci,
-        to_mci: to_mci,
-        accumulated: accumulated,
-        has_sufficient: has_sufficient,
+        from_mci,
+        to_mci,
+        accumulated,
+        has_sufficient,
     }))
 }
 
