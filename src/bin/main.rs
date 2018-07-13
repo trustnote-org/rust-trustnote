@@ -100,13 +100,12 @@ fn start_ws_server() -> Result<::may::coroutine::JoinHandle<()>> {
     use network::hub::WSS;
     use network::WsServer;
 
-    let server = WsServer::start(("0.0.0.0", config::WS_PORT), |c| {
+    let port = config::get_hub_server_port();
+
+    let server = WsServer::start(("0.0.0.0", port), |c| {
         WSS.add_inbound(c);
     });
-    println!(
-        "Websocket server running on ws://0.0.0.0:{}",
-        config::WS_PORT
-    );
+    println!("Websocket server running on ws://0.0.0.0:{}", port);
 
     Ok(server)
 }
@@ -169,14 +168,8 @@ fn log_init() {
 
 #[allow(dead_code)]
 fn test_ws_client() -> Result<()> {
-    fn get_remote_hub_url() -> String {
-        let cfg = config::CONFIG.read().unwrap();
-        cfg.get::<String>("remote_hub")
-            .unwrap_or_else(|_| format!("127.0.0.1:{}", config::WS_PORT))
-    }
-
     use network::hub;
-    hub::create_outbound_conn(get_remote_hub_url())?;
+    hub::create_outbound_conn(config::get_remote_hub_url())?;
     hub::start_catchup()?;
     Ok(())
 }

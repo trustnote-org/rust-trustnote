@@ -4,7 +4,6 @@ use self::config::*;
 use may::sync::RwLock;
 
 pub const HASH_LENGTH: usize = 44;
-pub const WS_PORT: u16 = 6616;
 pub const MAX_COMPLEXITY: usize = 100;
 pub const COUNT_WITNESSES: usize = 12;
 pub const TOTAL_WHITEBYTES: i64 = 500_000_000_000_000;
@@ -33,4 +32,15 @@ lazy_static! {
             .expect("failed to load config");
         settings
     });
+}
+
+pub fn get_remote_hub_url() -> String {
+    let cfg = CONFIG.read().unwrap();
+    cfg.get::<String>("remote_hub")
+        .unwrap_or_else(|_| "127.0.0.1:6655".to_owned())
+}
+
+pub fn get_hub_server_port() -> u16 {
+    let cfg = CONFIG.read().unwrap();
+    cfg.get::<u16>("hub_server_port").unwrap_or(6615)
 }
