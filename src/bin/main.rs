@@ -140,6 +140,11 @@ fn show_config() -> Result<()> {
 }
 
 fn log_init() {
+    let log_lvl = if cfg!(debug_assertions) {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Warn
+    };
     // Configure logger at runtime
     fern::Dispatch::new()
     // Perform allocation-free log formatting
@@ -153,7 +158,7 @@ fn log_init() {
     //     ))
     // })
     // Add blanket level filter -
-    .level(log::LevelFilter::Debug)
+    .level(log_lvl)
     // - and per-module overrides
     // .level_for("hyper", log::LevelFilter::Info)
     // Output to stdout, files, and other Dispatch configurations
