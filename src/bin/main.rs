@@ -10,6 +10,7 @@ extern crate may;
 use trustnote::*;
 
 fn log_init() {
+    // TODO: need to implement async logs
     let log_lvl = if cfg!(debug_assertions) {
         log::LevelFilter::Debug
     } else {
@@ -17,18 +18,18 @@ fn log_init() {
     };
 
     fern::Dispatch::new()
-    .format(|out, message, record| {
-        out.finish(format_args!(
-            "[{}][{}] {}",
-            record.level(),
-            record.target(),
-            message
-        ))
-    })
-    .level(log_lvl)
-    .chain(std::io::stdout())
-    // .chain(fern::log_file("output.log")?)
-    .apply().unwrap();
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{}][{}] {}",
+                record.level(),
+                record.target(),
+                message
+            ))
+        })
+        .level(log_lvl)
+        .chain(std::io::stdout())
+        .apply()
+        .unwrap();
 
     info!("log init done!");
 }
@@ -55,7 +56,6 @@ fn connect_to_remote() -> Result<()> {
 }
 
 fn network_cleanup() {
-    // remove all the actors
     network::hub::WSS.close_all();
 }
 
@@ -73,6 +73,7 @@ fn pause() {
 }
 
 fn main() {
+    // init default coroutine settings
     let stack_size = if cfg!(debug_assertions) {
         0x4000
     } else {
@@ -82,11 +83,16 @@ fn main() {
         .set_stack_size(stack_size)
         .set_io_workers(4)
         .set_workers(2);
+
     log_init();
     config::show_config();
-    // run the network stuff in coroutine context
+
     go!(|| run_hub_server().unwrap()).join().unwrap();
+
+    // wait user input a key to exit
     pause();
+
+    // close all the connections
     network_cleanup();
     info!("bye from main!\n\n");
 }
