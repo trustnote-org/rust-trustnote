@@ -1,56 +1,29 @@
 use std::ops::{Deref, DerefMut};
 
-use app_dirs::*;
+use config;
 use error::Result;
 use may;
 use may::sync::mpmc::{self, Receiver, Sender};
 use num_cpus;
 use rusqlite::{Connection, OpenFlags};
 
-const APP_INFO: AppInfo = AppInfo {
-    name: "rust-trustnote",
-    author: "trustnote-hub",
-};
-
-const DB_NAME: &str = "trustnote.sqlite";
-
 lazy_static! {
     pub static ref DB_POOL: DatabasePool = DatabasePool::new();
 }
 
-fn get_initial_db_path() -> String {
-    let cfg = match ::config::CONFIG.read() {
-        Ok(c) => c,
-        Err(e) => {
-            error!("failed to read settings.json, err={}", e);
-            return "db/initial.trustnote.sqlite".to_owned();
-        }
-    };
-
-    cfg.get::<String>("initial_db_path")
-        .unwrap_or_else(|_| "db/initial.trustnote.sqlite".to_owned())
-}
-
-pub fn create_database_if_necessary() -> Result<()> {
+pub fn create_database_if_necessary() -> Result<::std::path::PathBuf> {
     use std::fs;
-    let mut db_path = get_app_root(AppDataType::UserData, &APP_INFO)?;
+    let db_path = config::get_database_path();
     if !db_path.exists() {
-        fs::create_dir_all(&db_path)?;
-    }
-    db_path.push(DB_NAME);
-
-    if !db_path.exists() {
-        let initial_db_path = get_initial_db_path();
+        let initial_db_path = config::get_initial_db_path();
         fs::copy(&initial_db_path, &db_path)?;
-
         info!(
-            "create_database_if_necessary done: db_path: {}, initial db path: {}",
-            db_path.display(),
-            initial_db_path
+            "create_database_if_necessary done: db_path: {:?}, initial db path: {}",
+            db_path, initial_db_path
         );
     }
 
-    Ok(())
+    Ok(db_path)
 }
 
 pub struct DatabasePool {
@@ -66,11 +39,8 @@ impl Default for DatabasePool {
 
 impl DatabasePool {
     pub fn new() -> Self {
-        create_database_if_necessary().expect("create database error");
-
         // database path
-        let mut db_path = get_app_root(AppDataType::UserData, &APP_INFO).expect("not found db");
-        db_path.push(DB_NAME);
+        let db_path = create_database_if_necessary().expect("create database error");
         // create the connection pool
         let (db_tx, db_rx) = mpmc::channel();
 

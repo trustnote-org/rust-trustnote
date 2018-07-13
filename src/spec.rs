@@ -158,11 +158,7 @@ pub struct UnitProps {
 
 #[inline]
 lazy_static! {
-    static ref GENESIS_UNIT: String = ::config::CONFIG
-        .read()
-        .expect("failed to read settings.json")
-        .get::<String>("genesis_unit")
-        .expect("failed to read genesis unit");
+    static ref GENESIS_UNIT: String = ::config::get_genesis_unit();
 }
 
 pub fn is_genesis_unit(unit: &str) -> bool {

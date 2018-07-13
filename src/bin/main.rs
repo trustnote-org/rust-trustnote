@@ -23,14 +23,6 @@ fn start_ws_server() -> Result<::may::coroutine::JoinHandle<()>> {
     Ok(server)
 }
 
-fn show_config() -> Result<()> {
-    println!(
-        "witnesses = {:?}",
-        config::CONFIG.read()?.get::<Vec<String>>("witnesses")?
-    );
-    Ok(())
-}
-
 fn log_init() {
     let log_lvl = if cfg!(debug_assertions) {
         log::LevelFilter::Debug
@@ -100,7 +92,7 @@ fn main() -> Result<()> {
         .set_workers(2);
     signature::init_secp256k1()?;
     log_init();
-    show_config()?;
+    config::show_config();
     // run the network stuff in coroutine context
     go!(|| main_run().unwrap()).join().unwrap();
     pause();
