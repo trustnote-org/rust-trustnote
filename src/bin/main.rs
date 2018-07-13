@@ -96,21 +96,19 @@ fn test_db() -> Result<()> {
     Ok(())
 }
 
-#[allow(dead_code)]
-fn test_ws() -> Result<()> {
-    use network::hub::{self, WSS};
+fn start_ws_server() -> Result<::may::coroutine::JoinHandle<()>> {
+    use network::hub::WSS;
     use network::WsServer;
 
-    let _server = WsServer::start(("0.0.0.0", config::WS_PORT), |c| {
+    let server = WsServer::start(("0.0.0.0", config::WS_PORT), |c| {
         WSS.add_inbound(c);
     });
     println!(
         "Websocket server running on ws://0.0.0.0:{}",
         config::WS_PORT
     );
-    hub::create_outbound_conn(("127.0.0.1", config::WS_PORT))?;
 
-    Ok(())
+    Ok(server)
 }
 
 fn test_signature() -> Result<()> {
@@ -174,7 +172,7 @@ fn test_ws_client() -> Result<()> {
     fn get_remote_hub_url() -> String {
         let cfg = config::CONFIG.read().unwrap();
         cfg.get::<String>("remote_hub")
-            .unwrap_or_else(|_| "127.0.0.1:6655".to_owned())
+            .unwrap_or_else(|_| format!("127.0.0.1:{}", config::WS_PORT))
     }
 
     use network::hub;
@@ -194,7 +192,7 @@ fn main_run() -> Result<()> {
     test_json()?;
     test_db()?;
     test_signature()?;
-    // test_ws()?;
+    let _server = start_ws_server();
     test_ws_client()?;
     Ok(())
 }

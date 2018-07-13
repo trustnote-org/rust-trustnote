@@ -243,7 +243,7 @@ impl<T> WsConnection<T> {
                                     t!(ws.send_response(&tag, rsp));
                                 }
                                 Err(e) => {
-                                    let error = json!(format!("{}", e));
+                                    let error = json!(e.to_string());
                                     t!(ws.send_error_response(&tag, error));
                                 }
                             }
@@ -251,8 +251,10 @@ impl<T> WsConnection<T> {
                     }
                     "response" => {
                         // set the wait req
-                        let tag = match value[1]["tag"].as_u64() {
-                            Some(t) => t as usize,
+                        let tag = match value[1]["tag"].as_str() {
+                            Some(t) => t
+                                .parse()
+                                .unwrap_or_else(|e| panic!("tag {:?} is not u64! err={}", t, e)),
                             None => {
                                 error!("tag is not found for response");
                                 continue;
@@ -279,7 +281,7 @@ impl<T> WsConnection<T> {
             _ => json!({"command": command, "params": param}),
         };
         let tag = self.id.fetch_add(1, Ordering::Relaxed);
-        request["tag"] = json!(tag);
+        request["tag"] = json!(tag.to_string());
 
         let blocker = self.req_map.new_waiter(tag);
         self.send_message("request", request)?;
@@ -288,7 +290,7 @@ impl<T> WsConnection<T> {
         #[derive(Deserialize)]
         struct Response {
             #[allow(dead_code)]
-            tag: usize,
+            tag: String,
             #[serde(default)]
             response: Value,
         };
