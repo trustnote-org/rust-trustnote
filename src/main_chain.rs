@@ -48,7 +48,7 @@ pub fn determin_if_stable_in_laster_units(
     struct TempUnitProp {
         unit: String,
         level: u32,
-        main_chain_index: u32,
+        main_chain_index: Option<u32>,
         is_on_main_chain: u32,
     };
 
@@ -455,7 +455,7 @@ pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
         },
         sequence: row.get("sequence"),
         content_hash: row.get("content_hash"),
-        ball: row.get("ball"),
+        ball: Some(String::new()),
     })?;
 
     for row in rows {
@@ -490,7 +490,7 @@ pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
             unit, conflict_units, sequence
         );
 
-        let mut stmt = db.prepare_cached("UPDATE units SET sequence=? WHERE unit=")?;
+        let mut stmt = db.prepare_cached("UPDATE units SET sequence=? WHERE unit=?")?;
         stmt.execute(&[&sequence, unit])?;
 
         if sequence.as_str() == "good" {

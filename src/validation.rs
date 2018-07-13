@@ -719,7 +719,7 @@ fn validate_parents(
 
     let mut stmt = tx.prepare_cached("SELECT ball FROM balls WHERE unit=?")?;
     let balls = stmt
-        .query_map(&[unit_hash], |row| row.get(0))?
+        .query_map(&[last_ball_unit], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if balls.is_empty() {
         return create_err(format!(
@@ -1188,7 +1188,7 @@ fn validate_author(
                 conflicting_units
             );
             info!(
-                "========== found conflicting units {} =========",
+                "========== will accept a conflicting unit {} =========",
                 unit.unit.clone().unwrap()
             );
 
@@ -1544,7 +1544,7 @@ fn check_for_double_spend(
     let author_addresses = unit.authors.iter().map(|a| &a.address).collect::<Vec<_>>();
 
     for conflicting_record in rows {
-        if author_addresses.contains(&&conflicting_record.address) {
+        if !author_addresses.contains(&&conflicting_record.address) {
             bail_with_validation_err!(
                 UnitError,
                 "conflicting {} spent from another address?",
@@ -2268,8 +2268,8 @@ fn check_input_double_spend(
     info!("--- accepting doublespend on unit {:?}", unit.unit);
 
     let sql = format!(
-        "UPDATE inputs SET is_unique=NULL WHERE {}
-        AND (SELECT is_stable FROM units WHERE units.unit=inputs.unit)=0",
+        "UPDATE inputs SET is_unique=NULL WHERE {} \
+         AND (SELECT is_stable FROM units WHERE units.unit=inputs.unit)=0",
         double_spend_where
     );
 
