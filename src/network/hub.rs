@@ -802,7 +802,7 @@ impl HubConn {
 
     fn send_hub_challenge(&self) -> Result<()> {
         use object_hash;
-        let challenge = object_hash::gen_random_string(30);
+        let challenge = object_hash::get_random_string(30);
         self.send_just_saying("hub/challenge", json!(challenge))?;
         Ok(())
     }
@@ -810,7 +810,7 @@ impl HubConn {
     fn send_subscribe(&self) -> Result<()> {
         use object_hash;
         // TODO: this is used to detect self-connect (#63)
-        let subscription_id = object_hash::gen_random_string(30);
+        let subscription_id = object_hash::get_random_string(30);
         let db = ::db::DB_POOL.get_connection();
         let last_mci = storage::read_last_main_chain_index(&db)?;
         self.send_request(
@@ -917,7 +917,7 @@ fn check_catchup_leftover(db: &Connection) -> Result<bool> {
     Ok(false)
 }
 
-fn puerge_junk_unhandled_joints() -> Result<()> {
+fn purge_junk_unhandled_joints() -> Result<()> {
     let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
     if diff < 3600 * 1000 || IS_CACTCHING_UP.is_locked() {
         return Ok(());
@@ -941,7 +941,7 @@ fn puerge_junk_unhandled_joints() -> Result<()> {
 // this should be run in a single thread to remove those junk joints
 pub fn start_purge_jonk_joints_timer() {
     go!(|| loop {
-        t!(puerge_junk_unhandled_joints());
+        t!(purge_junk_unhandled_joints());
         coroutine::sleep(Duration::from_secs(30 * 60));
     });
 }
@@ -1015,4 +1015,46 @@ pub fn start_catchup() -> Result<()> {
     WSS.request_free_joints();
 
     Ok(())
+}
+
+fn _re_requeset_lost_joints(db: &Connection) -> Result<()> {
+    let _g = match IS_CACTCHING_UP.try_lock() {
+        Some(g) => g,
+        None => return Ok(()),
+    };
+    use joint_storage;
+    let units = joint_storage::find_lost_joints(db)?;
+    info!("lost units {:?}", units);
+    let ws = try_find_next_peer(Arc::new())?;
+    if ws.is_none() {
+        return Ok(());
+    }
+    let ws = ws.unwrap();
+    info!("found next peer {}", ws.get_peer());
+
+    let new_units = units
+        .iter()
+        .filter(|x| UNIT_IN_WORK.try_lock(vec![x.clone().clone()]).is_some())
+        .map(|x| x.clone())
+        .collect::<Vec<_>>();
+
+    ws.request_joints(&new_units)
+}
+
+fn try_find_next_peer(ws: Arc<HubConn>) -> Result<Option<Arc<HubConn>>> {
+    let tmp = WSS.outbound.write().unwrap();
+    let outbound_sources = tmp.iter().filter(|x| x.is_source()).collect::<Vec<_>>();
+    let len = outbound_sources.len();
+    if len > 0 {
+        let peer_index = outbound_sources.iter().position(|&x| Arc::ptr_eq(&x, &ws));
+        let next_peer_index = if peer_index.is_none() {
+            use rand::{thread_rng, Rng};
+            thread_rng().gen_range(0, len - 1)
+        } else {
+            (peer_index.unwrap() + 1) % len
+        };
+        return Ok(Some(outbound_sources[1].clone()));
+    } else {
+        ws.get_next_inbound()
+    }
 }
