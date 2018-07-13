@@ -4,21 +4,8 @@ use failure::ResultExt;
 use secp256k1::{key, Message, Secp256k1, Signature};
 
 lazy_static! {
-    static ref SECP256K1: Secp256k1 = Secp256k1::new();
-}
-
-pub fn init_secp256k1() -> Result<()> {
-    // initialize consume too much memory
-    let hash = "KLop9582tzXZJbytWjiWLcnpEdvJI7mUymbnUPXweOM=";
-    let priv_key = "jQGnkLnZlX2DjBUd8JKgHgw23zSdRL/Azx3foi/WqvE=";
-    let sig =
-        "YCdh5Q6jOiKQy2R9mQwKJ6tBnq31VFZX2dkb7Ypr+/5z6jj4GLEFT9RtryC4+mSILtKKLeN9YnBmYI4Xa+4tDw==";
-
-    assert_eq!(
-        sign(&base64::decode(hash)?, &base64::decode(priv_key)?)?,
-        sig
-    );
-    Ok(())
+    // initialize consume too much memory, init it in thread context
+    static ref SECP256K1: Secp256k1 = ::may_thread::join(|| Secp256k1::new());
 }
 
 /// return a bas64 string for the encrypted hash with the priv_key

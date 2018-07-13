@@ -90,7 +90,6 @@ fn main() -> Result<()> {
         .set_stack_size(stack_size)
         .set_io_workers(4)
         .set_workers(2);
-    signature::init_secp256k1()?;
     log_init();
     config::show_config();
     // run the network stuff in coroutine context
