@@ -1,7 +1,3 @@
-//! TODO: how to sort struct fields with serde?
-//! within this mod all the struct fields should be "sorted" statically to generate the correct
-//! object hash, this is annoying but we have no way to find out how to do that with serde
-
 use std::collections::HashMap;
 
 use obj_ser;
@@ -384,4 +380,74 @@ fn test_unit_hash() {
     );
     assert_eq!(unit.get_header_size(), 344);
     assert_eq!(unit.get_payload_size(), 157);
+}
+
+#[test]
+fn test_unit_json() {
+    use serde_json;
+    let data = r#"
+    {
+    "version": "1.0",
+    "alt": "1",
+    "messages": [
+        {
+            "app": "payment",
+            "payload_location": "inline",
+            "payload_hash": "5CYeTTa4VQxgF4b1Tn33NBlKilJadddwBMLvtp1HIus=",
+            "payload": {
+                "outputs": [
+                    {
+                        "address": "7JXBJQPQC3466UPK7C6ABA6VVU6YFYAI",
+                        "amount": 10000
+                    },
+                    {
+                        "address": "JERTY5XNENMHYQW7NVBXUB5CU3IDODA3",
+                        "amount": 99989412
+                    }
+                ],
+                "inputs": [
+                    {
+                        "unit": "lQCxxsMslXLzQKybX2KArOGho8XuNf1Lpds2abdf8O4=",
+                        "message_index": 0,
+                        "output_index": 1
+                    }
+                ]
+            }
+        }
+    ],
+    "authors": [
+        {
+            "address": "JERTY5XNENMHYQW7NVBXUB5CU3IDODA3",
+            "authentifiers": {
+                "r": "tHLxvXNYVwDnQg3N4iNHtHZ4mXvqRW+ZMPkQadev6MpAWbEPVcIpme1Vz1nyskWYgueREZoEbQeEWtC/oCQbxQ=="
+            },
+            "definition": [
+                "sig",
+                {
+                    "pubkey": "A0gKwkLedQgzm32JtEo6KmuRcyZa3beikS3xfrwdXAMU"
+                }
+            ]
+        }
+    ],
+    "parent_units": [
+        "uPbobEuZL+FY1ujTNiYZnM9lgC3xysxuDIpSbvnmbac="
+    ],
+    "last_ball": "oiIA6Y+87fk6/QyrbOlwqsQ/LLr82Rcuzcr1G/GoHlA=",
+    "last_ball_unit": "vxrlKyY517Z+BGMNG35ExiQsYv3ncp/KU414SqXKXTk=",
+    "witness_list_unit": "MtzrZeOHHjqVZheuLylf0DX7zhp10nBsQX5e/+cA3PQ=",
+    "headers_commission": 391,
+    "payload_commission": 197
+    }"#;
+
+    let u: Unit = serde_json::from_str(data).unwrap();
+    // println!("unit = {:?}", u);
+    assert_eq!(u.authors[0].definition[0], json!("sig"));
+    assert_eq!(
+        u.authors[0].definition[1],
+        json!({"pubkey": "A0gKwkLedQgzm32JtEo6KmuRcyZa3beikS3xfrwdXAMU"})
+    );
+    // assert_eq!(
+    //     u.authors[0].definition[1]["pubkey"].as_str().unwrap(),
+    //     "A0gKwkLedQgzm32JtEo6KmuRcyZa3beikS3xfrwdXAMU"
+    // );
 }

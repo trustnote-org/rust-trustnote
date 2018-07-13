@@ -196,3 +196,16 @@ impl DbQueries {
         Ok(())
     }
 }
+
+#[test]
+fn test_db() -> Result<()> {
+    let db = DB_POOL.get_connection();
+
+    let names = db.get_my_witnesses()?;
+
+    for name in names {
+        println!("name = {}", name);
+    }
+
+    Ok(())
+}

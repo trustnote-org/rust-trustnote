@@ -48,3 +48,25 @@ pub fn verify(hash: &[u8], b64_sig: &str, b64_pub_key: &str) -> Result<()> {
         .context("SECP256K1 verify failed")?;
     Ok(())
 }
+
+#[test]
+fn test_signature() -> Result<()> {
+    let hash = "KLop9582tzXZJbytWjiWLcnpEdvJI7mUymbnUPXweOM=";
+    let priv_key = "jQGnkLnZlX2DjBUd8JKgHgw23zSdRL/Azx3foi/WqvE=";
+    let sig =
+        "YCdh5Q6jOiKQy2R9mQwKJ6tBnq31VFZX2dkb7Ypr+/5z6jj4GLEFT9RtryC4+mSILtKKLeN9YnBmYI4Xa+4tDw==";
+
+    assert_eq!(
+        sign(&base64::decode(hash)?, &base64::decode(priv_key)?)?,
+        sig
+    );
+
+    let hash = "uPQs4TwLtDGRAdH8sbIJ1ZyWpEmwHWRAhXpamODZ7Kk=";
+    let pub_key = "A0qTjB3ZjHf2yT1EIvLrkVAWY8MPSueNcB4GTlKGo/o6";
+    let sig =
+        "up+2Fjhnu4OjJeesBPCgoZE+6ReqQDdnqcjhbq2iaulHjlwKYLcwRrD3udSWdHS57ceQeZ+LVPWYBMWBloAgpA==";
+
+    assert_eq!(verify(&base64::decode(hash)?, sig, pub_key)?, ());
+
+    Ok(())
+}
