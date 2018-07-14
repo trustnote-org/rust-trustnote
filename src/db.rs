@@ -6,6 +6,7 @@ use may;
 use may::sync::mpmc::{self, Receiver, Sender};
 use num_cpus;
 use rusqlite::{Connection, OpenFlags};
+use std::fmt;
 
 lazy_static! {
     pub static ref DB_POOL: DatabasePool = DatabasePool::new();
@@ -134,6 +135,13 @@ impl<F: FnOnce(&Connection) -> Result<()>> FnQuery for F {
 #[derive(Default)]
 pub struct DbQueries {
     queries: Vec<Box<FnQuery>>,
+}
+
+impl fmt::Debug for DbQueries {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        //TODO: to add some real debug info
+        write!(f, "DbQueries")
+    }
 }
 
 impl DbQueries {

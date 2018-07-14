@@ -59,7 +59,7 @@ pub struct ValidationState {
     pub max_parent_limci: u32,
     pub has_no_references: bool,
     pub unit_hash_to_sign: Option<Vec<u8>>,
-    pub additional_queries: Vec<String>,
+    pub additional_queries: ::db::DbQueries,
     pub double_spend_inputs: Vec<DoubleSpendInput>,
     pub addresses_with_forked_path: Vec<String>,
     pub conflicting_units: Vec<String>,
@@ -79,7 +79,7 @@ impl ValidationState {
             has_no_references: true,
             unit_hash_to_sign: None,
             skiplist_balls: Vec::new(),
-            additional_queries: Vec::new(),
+            additional_queries: ::db::DbQueries::new(),
             double_spend_inputs: Vec::new(),
             addresses_with_forked_path: Vec::new(),
             conflicting_units: Vec::new(),
@@ -1235,7 +1235,12 @@ fn validate_author(
                 units_list
             );
 
-            validate_state.additional_queries.push(sql);
+            validate_state.additional_queries.add_query(move |db| {
+                info!("----- applying additional queries: {}", sql);
+                let mut stmt = db.prepare(&sql)?;
+                stmt.execute(&[])?;
+                Ok(())
+            });
 
             check_no_pending_change_of_definition_chash(validate_state, *nonserial)?;
             Ok(())
@@ -2273,7 +2278,13 @@ fn check_input_double_spend(
         double_spend_where
     );
 
-    validate_state.additional_queries.push(sql);
+    validate_state.additional_queries.add_query(move |db| {
+        info!("----- applying additional queries: {}", sql);
+        let mut stmt = db.prepare(&sql)?;
+        stmt.execute(&[])?;
+        Ok(())
+    });
+
     validate_state.double_spend_inputs.push(DoubleSpendInput {
         message_index: message_index as u32,
         input_index: input_index as u32,

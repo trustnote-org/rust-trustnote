@@ -561,17 +561,6 @@ impl Joint {
         Ok(address?)
     }
 
-    fn apply_additional_queries(&self, tx: &Transaction, queries: Vec<String>) -> Result<()> {
-        info!("----- applying additional queries: {:?}", queries);
-
-        for query in &queries {
-            let mut stmt = tx.prepare(query)?;
-            stmt.execute(&[])?;
-        }
-
-        Ok(())
-    }
-
     pub fn save(&self, validation_state: validation::ValidationState) -> Result<()> {
         // first construct all the sql within a mutex
         info!("saving unit = {:?}", self.unit);
@@ -579,11 +568,11 @@ impl Joint {
         let _g = WRITER_MUTEX.lock()?;
         // and then execute the transaction
         let mut db = db::DB_POOL.get_connection();
-        let tx = db.transaction()?;
 
         let sequence = validation_state.sequence;
-        self.apply_additional_queries(&tx, validation_state.additional_queries)?;
+        let _ = validation_state.additional_queries.execute(&db)?;
 
+        let tx = db.transaction()?;
         self.save_unit(&tx, &sequence)?;
         self.save_ball(&tx)?;
         self.save_parents(&tx)?;
