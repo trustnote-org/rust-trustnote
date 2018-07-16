@@ -124,7 +124,7 @@ pub struct Unit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_commission: Option<u32>, // default 0
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<u32>,
+    pub timestamp: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>, // this may not exist
     pub version: String,

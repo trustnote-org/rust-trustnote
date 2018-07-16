@@ -308,7 +308,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         headers_commission: Option<u32>,
         payload_commission: Option<u32>,
         main_chain_index: Option<u32>,
-        timestamp: Option<u32>,
+        timestamp: u64,
     }
 
     let mut unit = stmt.query_row(&[unit_hash], |row| UnitTemp {
@@ -323,7 +323,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         headers_commission: row.get(8),
         payload_commission: row.get(9),
         main_chain_index: row.get(10),
-        timestamp: row.get(11),
+        timestamp: row.get::<_, String>(11).parse::<u64>().unwrap() * 1000,
     })?;
 
     let main_chain_index = unit.main_chain_index;
@@ -386,7 +386,8 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
     if !b_voided {
         let mut stmt = db.prepare_cached(
             "SELECT address, earned_headers_commission_share \
-             FROM earned_headers_commission_recipients",
+             FROM earned_headers_commission_recipients \
+             WHERE unit=? ORDER BY address",
         )?;
         earned_headers_commission_recipients = stmt
             .query_map(&[unit_hash], |row| HeaderCommissionShare {
@@ -691,7 +692,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         messages,
         parent_units,
         payload_commission: unit.payload_commission,
-        timestamp: unit.timestamp,
+        timestamp: Some(unit.timestamp),
         unit: unit.unit,
         version: unit.version,
         witnesses,

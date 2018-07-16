@@ -41,7 +41,8 @@ lazy_static! {
     static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
     static ref JOINT_IN_REQ: MapLock<String> = MapLock::new();
     static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
-    static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now());
+    // FIXME: should wait rust atomic number stable
+    static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now() as usize);
 }
 
 fn init_connection(ws: &Arc<HubConn>) {
@@ -318,6 +319,9 @@ impl HubConn {
             .ok_or_else(|| format_err!("no subscription_id"))?;
 
         self.set_subscribed();
+        let db = db::DB_POOL.get_connection();
+	// FIXME: use correct mci
+        self.send_joints_since_mci(&db, 0)?;
         Ok(json!("subscribed"))
     }
 
@@ -766,7 +770,6 @@ impl HubConn {
         self.send_just_saying("joint", json!({ "joint": joint }))
     }
 
-    #[allow(dead_code)]
     fn send_joints_since_mci(&self, db: &Connection, mci: u32) -> Result<()> {
         let joints = joint_storage::read_joints_since_mci(db, mci)?;
 
@@ -914,7 +917,7 @@ fn check_catchup_leftover(db: &Connection) -> Result<bool> {
 }
 
 pub fn purge_junk_unhandled_joints(db: &Connection) -> Result<()> {
-    let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
+    let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed) as u64;
     if diff < 3600 * 1000 || IS_CACTCHING_UP.is_locked() {
         return Ok(());
     }
@@ -1004,7 +1007,7 @@ pub fn start_catchup() -> Result<()> {
     }
 
     // now we are done the catchup
-    COMING_ONLINE_TIME.store(::time::now(), Ordering::Relaxed);
+    COMING_ONLINE_TIME.store(::time::now() as usize, Ordering::Relaxed);
     WSS.request_free_joints();
 
     Ok(())
