@@ -55,6 +55,13 @@ fn init_connection(ws: &Arc<HubConn>) {
     let n: u64 = rng.gen_range(0, 1000);
     let ws_c = Arc::downgrade(ws);
 
+    // request needed joints that were not received during the previous session
+    go!(move || loop {
+        coroutine::sleep(Duration::from_secs(8));
+        let db = db::DB_POOL.get_connection();
+        t!(re_requeset_lost_joints(&db));
+    });
+
     // start the heartbeat timer for each connection
     go!(move || loop {
         coroutine::sleep(Duration::from_millis(3000 + n));
@@ -177,6 +184,16 @@ impl WsConnections {
         assert_ne!(len, 0);
         let idx = self.next_outbound.fetch_add(1, Ordering::Relaxed) % len;
         g[idx].clone()
+    }
+    pub fn get_next_peer(&self) -> Arc<HubConn> {
+        let g = self.outbound.read().unwrap();
+        let len = g.len();
+        if len > 0 {
+            let idx = self.next_outbound.fetch_add(1, Ordering::Relaxed) % len;
+            return g[idx].clone();
+        } else {
+            return self.get_next_inbound();
+        }
     }
 
     pub fn get_connection_by_name(&self, peer: &str) -> Option<Arc<HubConn>> {
@@ -1017,19 +1034,16 @@ pub fn start_catchup() -> Result<()> {
     Ok(())
 }
 
-fn _re_requeset_lost_joints(db: &Connection) -> Result<()> {
+fn re_requeset_lost_joints(db: &Connection) -> Result<()> {
     let _g = match IS_CACTCHING_UP.try_lock() {
         Some(g) => g,
         None => return Ok(()),
     };
-    use joint_storage;
+
     let units = joint_storage::find_lost_joints(db)?;
     info!("lost units {:?}", units);
-    let ws = try_find_next_peer(Arc::new())?;
-    if ws.is_none() {
-        return Ok(());
-    }
-    let ws = ws.unwrap();
+
+    let ws = WSS.get_next_peer();
     info!("found next peer {}", ws.get_peer());
 
     let new_units = units
@@ -1039,22 +1053,4 @@ fn _re_requeset_lost_joints(db: &Connection) -> Result<()> {
         .collect::<Vec<_>>();
 
     ws.request_joints(&new_units)
-}
-
-fn try_find_next_peer(ws: Arc<HubConn>) -> Result<Option<Arc<HubConn>>> {
-    let tmp = WSS.outbound.write().unwrap();
-    let outbound_sources = tmp.iter().filter(|x| x.is_source()).collect::<Vec<_>>();
-    let len = outbound_sources.len();
-    if len > 0 {
-        let peer_index = outbound_sources.iter().position(|&x| Arc::ptr_eq(&x, &ws));
-        let next_peer_index = if peer_index.is_none() {
-            use rand::{thread_rng, Rng};
-            thread_rng().gen_range(0, len - 1)
-        } else {
-            (peer_index.unwrap() + 1) % len
-        };
-        return Ok(Some(outbound_sources[1].clone()));
-    } else {
-        ws.get_next_inbound()
-    }
 }
