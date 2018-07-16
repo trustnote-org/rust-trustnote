@@ -43,6 +43,7 @@ lazy_static! {
     static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
     static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now());
 }
+pub const FORWARDING_TIMEOUT: usize = 10 * 1000;
 
 fn init_connection(ws: &Arc<HubConn>) {
     use rand::{thread_rng, Rng};
@@ -90,6 +91,10 @@ impl WsConnections {
             next_inbound: AtomicUsize::new(0),
             next_outbound: AtomicUsize::new(0),
         }
+    }
+
+    pub fn get_outbound(&self) -> Vec<Arc<HubConn>> {
+        self.outbound.read().unwrap().to_vec()
     }
 
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
@@ -398,10 +403,11 @@ impl HubConn {
                     drop(lock);
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
-                    // TODO: forward to other peers
-                    // if (!bCatchingUp) {
-                    //     self.forwardJoint(ws, objJoint)?;
-                    // }
+
+                    let ws = WSS.get_ws(self);
+                    if !IS_CACTCHING_UP.is_locked() {
+                        self.forward_joint(ws, &joint);
+                    }
 
                     // must release the guard to let other work continue
                     drop(g);
@@ -514,9 +520,12 @@ impl HubConn {
                     drop(lock);
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
-                    // TODO: forward to other peers
-                    // if (!bCatchingUp && !conf.bLight && creation_ts > Date.now() - FORWARDING_TIMEOUT)
-                    // forwardJoint(ws, objJoint);
+
+                    let ws = WSS.get_ws(self);
+                    let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
+                    if !IS_CACTCHING_UP.is_locked() && diff < FORWARDING_TIMEOUT {
+                        self.forward_joint(ws, &joint);
+                    }
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                     drop(g);
 
@@ -729,7 +738,7 @@ impl HubConn {
     }
 
     #[inline]
-    fn send_joint(&self, joint: Joint) -> Result<()> {
+    fn send_joint(&self, joint: &Joint) -> Result<()> {
         self.send_just_saying("joint", json!({ "joint": joint }))
     }
 
@@ -738,11 +747,19 @@ impl HubConn {
         let joints = joint_storage::read_joints_since_mci(db, mci)?;
 
         for joint in joints {
-            self.send_joint(joint)?;
+            self.send_joint(&joint)?;
         }
         self.send_just_saying("free_joints_end", Value::Null)?;
 
         Ok(())
+    }
+
+    fn forward_joint(&self, ws: Arc<HubConn>, joint: &Joint) {
+        for client in WSS.get_outbound() {
+            if !Arc::ptr_eq(&client, &ws) && client.is_subscribed() {
+                let _ = self.send_joint(joint);
+            }
+        }
     }
 }
 
