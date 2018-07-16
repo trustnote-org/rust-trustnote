@@ -93,7 +93,7 @@ impl WsConnections {
         }
     }
 
-    pub fn get_outbound(&self) -> Vec<Arc<HubConn>> {
+    fn get_outbound(&self) -> Vec<Arc<HubConn>> {
         self.outbound.read().unwrap().to_vec()
     }
 
