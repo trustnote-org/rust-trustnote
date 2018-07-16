@@ -145,7 +145,7 @@ pub fn read_joints_since_mci(db: &Connection, mci: u32) -> Result<Vec<Joint>> {
 pub struct ReadyJoint {
     pub joint: Joint,
     pub create_ts: usize,
-    pub peer: Option<String>,
+    pub peer: String,
 }
 
 pub fn read_dependent_joints_that_are_ready(

@@ -81,18 +81,19 @@ fn init_connection(ws: &Arc<HubConn>) {
         }
     });
 
-    let ws_c = Arc::downgrade(ws);
-    // find and handle ready joints
-    go!(move || loop {
-        coroutine::sleep(Duration::from_millis(5000));
-        let ws = match ws_c.upgrade() {
-            Some(ws) => ws,
-            None => return,
-        };
-        info!("find_and_handle_joints_that_are_ready");
-        let mut db = ::db::DB_POOL.get_connection();
-        t!(ws.find_and_handle_joints_that_are_ready(&mut db, None));
-    });
+    // FIXME: move to global timer
+    // let ws_c = Arc::downgrade(ws);
+    // // find and handle ready joints
+    // go!(move || loop {
+    //     coroutine::sleep(Duration::from_millis(5000));
+    //     let ws = match ws_c.upgrade() {
+    //         Some(ws) => ws,
+    //         None => return,
+    //     };
+    //     info!("find_and_handle_joints_that_are_ready");
+    //     let mut db = ::db::DB_POOL.get_connection();
+    //     t!(ws.find_and_handle_joints_that_are_ready(&mut db, None));
+    // });
 }
 
 // global request has no specific ws connections, just find a proper one should be fine
@@ -428,7 +429,7 @@ impl HubConn {
                     drop(g);
 
                     // wake up other joints that depend on me
-                    self.find_and_handle_joints_that_are_ready(db, Some(unit))?;
+                    find_and_handle_joints_that_are_ready(db, Some(unit))?;
                 }
             },
             Err(err) => {
@@ -492,18 +493,13 @@ impl HubConn {
     fn handle_saved_joint(
         &self,
         db: &mut Connection,
-        joint: ReadyJoint,
+        joint: Joint,
+        _creat_ts: usize,
         unhandled_joints: &mut VecDeque<ReadyJoint>,
     ) -> Result<()> {
         use joint_storage::CheckNewResult;
         use validation::{ValidationError, ValidationOk};
 
-        // let ReadyJoint {
-        //     joint,
-        //     create_ts,
-        //     peer,
-        // } = joint;
-        let joint = joint.joint;
         let unit = joint.get_unit_hash();
         info!("handle_saved_joint: {}", unit);
 
@@ -657,32 +653,6 @@ impl HubConn {
                 ws.send_error_result(unit, &error).ok();
             }
         })?;
-        Ok(())
-    }
-
-    fn find_and_handle_joints_that_are_ready(
-        &self,
-        db: &mut Connection,
-        unit: Option<&String>,
-    ) -> Result<()> {
-        lazy_static! {
-            static ref DEPENDENCIES: Mutex<()> = Mutex::new(());
-        }
-        let _g = DEPENDENCIES.lock().unwrap();
-        let mut unhandled_joints = VecDeque::new();
-
-        let joints = joint_storage::read_dependent_joints_that_are_ready(db, unit)?;
-
-        for joint in joints {
-            unhandled_joints.push_back(joint);
-        }
-
-        while let Some(joint) = unhandled_joints.pop_front() {
-            self.handle_saved_joint(db, joint, &mut unhandled_joints)?;
-        }
-
-        // TODO:
-        // self.handle_saved_private_payment()?;
         Ok(())
     }
 
@@ -1059,9 +1029,48 @@ pub fn re_requeset_lost_joints(db: &Connection) -> Result<()> {
     // this is not an atomic operation, but it's fine to request the unit in working
     let new_units = units
         .iter()
-        .filter(|x| UNIT_IN_WORK.try_lock(vec![x.clone().clone()]).is_none())
-        .map(|x| x.clone())
+        .filter(|x| UNIT_IN_WORK.try_lock(vec![(*x).to_owned()]).is_none())
+        .cloned()
         .collect::<Vec<_>>();
 
     ws.request_joints(&new_units)
+}
+
+pub fn find_and_handle_joints_that_are_ready(
+    db: &mut Connection,
+    unit: Option<&String>,
+) -> Result<()> {
+    lazy_static! {
+        static ref DEPENDENCIES: Mutex<()> = Mutex::new(());
+    }
+    let _g = DEPENDENCIES.lock().unwrap();
+    let mut unhandled_joints = VecDeque::new();
+
+    let joints = joint_storage::read_dependent_joints_that_are_ready(db, unit)?;
+
+    for joint in joints {
+        unhandled_joints.push_back(joint);
+    }
+
+    while let Some(joint) = unhandled_joints.pop_front() {
+        let ReadyJoint {
+            joint,
+            create_ts,
+            peer,
+        } = joint;
+
+        let ws = match WSS.get_connection_by_name(&peer) {
+            Some(c) => c,
+            None => match WSS.get_next_peer() {
+                Some(c) => c,
+                None => bail!("no connection for find_and_handle_joints_that_are_ready"),
+            },
+        };
+        // this is not safe to run in multi-thread, not in parallel
+        ws.handle_saved_joint(db, joint, create_ts, &mut unhandled_joints)?;
+    }
+
+    // TODO:
+    // self.handle_saved_private_payment()?;
+    Ok(())
 }
