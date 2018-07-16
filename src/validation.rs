@@ -1477,9 +1477,9 @@ fn validate_message(
         bail_with_validation_err!(UnitError, "{} must be inline", message.app);
     }
 
-    let _spend_proofs = validate_spend_proofs(tx, message, unit, validate_state)?;
+    validate_spend_proofs(tx, message, unit, validate_state)?;
 
-    let _payload = validate_payload(tx, message, message_index, unit, validate_state)?;
+    validate_payload(tx, message, message_index, unit, validate_state)?;
 
     Ok(())
 }
@@ -1515,7 +1515,7 @@ fn validate_spend_proofs(
         eqs
     );
 
-    let _check = check_for_double_spend(tx, "spend proof", &sql, unit, validate_state)?;
+    check_for_double_spend(tx, "spend proof", &sql, unit, validate_state)?;
 
     Ok(())
 }
@@ -1613,7 +1613,7 @@ fn validate_payload(
     validate_state: &mut ValidationState,
 ) -> Result<()> {
     if message.payload_location == "inline" {
-        let _ = validate_inline_payload(tx, message, message_index, unit, validate_state)?;
+        validate_inline_payload(tx, message, message_index, unit, validate_state)?;
     } else {
         ensure_with_validation_err!(
             is_valid_base64(&message.payload_hash, config::HASH_LENGTH),
@@ -1651,7 +1651,7 @@ fn validate_inline_payload(
             _ => bail_with_validation_err!(UnitError, "payload must be string"),
         },
         "payment" => if let Some(Payload::Payment(ref payment)) = payload {
-            let _ = validate_payment(tx, payment, message_index, unit, validate_state)?;
+            validate_payment(tx, payment, message_index, unit, validate_state)?;
         },
         "data_feed" => {
             if validate_state.has_data_feed {
@@ -1794,7 +1794,7 @@ fn validate_payment_inputs_and_outputs(
             address,
         );
 
-        if &prev_address > address {
+        if prev_address > *address {
             bail_with_validation_err!(UnitError, "output addresses not sorted");
         } else if &prev_address == address && prev_amount > amount {
             bail_with_validation_err!(UnitError, "output amounts for same address not sorted");
@@ -1920,8 +1920,8 @@ fn validate_payment_inputs_and_outputs(
                 );
                 validate_state.input_keys.push(input_key);
 
-                let double_spend_where = format!("type='issue'");
-                let _ = check_input_double_spend(
+                let double_spend_where = "type='issue'".to_owned();
+                check_input_double_spend(
                     tx,
                     &double_spend_where,
                     unit,
@@ -2075,7 +2075,7 @@ fn validate_payment_inputs_and_outputs(
                     "type='{}' AND src_unit='{}' AND src_message_index={} AND src_output_index={}",
                     kind, input_unit, input_message_index, input_output_index
                 );
-                let _ = check_input_double_spend(
+                check_input_double_spend(
                     tx,
                     &double_spend_where,
                     unit,
@@ -2211,7 +2211,7 @@ fn validate_payment_inputs_and_outputs(
                     )?
                 };
                 ensure_with_validation_err!(commission != 0, UnitError, "zero {} commission", kind);
-                total_input += commission as i64;
+                total_input += i64::from(commission);
 
                 let double_spend_where = format!(
                     "type='{}' AND from_main_chain_index={} AND address={} AND asset IS NULL",
@@ -2219,7 +2219,7 @@ fn validate_payment_inputs_and_outputs(
                     input.from_main_chain_index.unwrap(),
                     address
                 );
-                let _ = check_input_double_spend(
+                check_input_double_spend(
                     tx,
                     &double_spend_where,
                     unit,
@@ -2270,7 +2270,7 @@ fn check_input_double_spend(
         unit.unit.as_ref().unwrap(),
     );
 
-    let _ = check_for_double_spend(tx, "divisible input", &sql, unit, validate_state)?;
+    check_for_double_spend(tx, "divisible input", &sql, unit, validate_state)?;
 
     //acceptDoublespends
     info!("--- accepting doublespend on unit {:?}", unit.unit);
