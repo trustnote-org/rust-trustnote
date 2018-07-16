@@ -455,7 +455,7 @@ pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
         },
         sequence: row.get("sequence"),
         content_hash: row.get("content_hash"),
-        ball: Some(String::new()),
+        ball: None,
     })?;
 
     for row in rows {

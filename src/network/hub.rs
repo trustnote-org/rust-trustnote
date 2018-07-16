@@ -396,12 +396,12 @@ impl HubConn {
                     }
                 }
                 ValidationOk::Signed(validate_state, lock) => {
-                    drop(lock);
                     if joint.unsigned == Some(true) {
                         bail!("ifOk() unsigned");
                     }
                     joint.save(validate_state)?;
-                    // self.validation_unlock()?;
+                    drop(lock);
+
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
                     // TODO: forward to other peers
                     // if (!bCatchingUp) {
@@ -517,12 +517,12 @@ impl HubConn {
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                 }
                 ValidationOk::Signed(validation_state, lock) => {
-                    drop(lock);
                     if joint.unsigned == Some(true) {
                         bail!("ifOk() unsigned");
                     }
                     joint.save(validation_state)?;
-                    // self.validation_unlock()?;
+                    drop(lock);
+
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
                     // TODO: forward to other peers
                     // if (!bCatchingUp && !conf.bLight && creation_ts > Date.now() - FORWARDING_TIMEOUT)

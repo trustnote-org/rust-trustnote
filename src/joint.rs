@@ -569,10 +569,11 @@ impl Joint {
         // and then execute the transaction
         let mut db = db::DB_POOL.get_connection();
 
-        let sequence = validation_state.sequence;
-        let _ = validation_state.additional_queries.execute(&db)?;
-
         let tx = db.transaction()?;
+
+        let sequence = validation_state.sequence;
+        let _ = validation_state.additional_queries.execute(&*tx)?;
+
         self.save_unit(&tx, &sequence)?;
         self.save_ball(&tx)?;
         self.save_parents(&tx)?;
@@ -607,7 +608,7 @@ impl Joint {
         use base64;
         use sha2::{Digest, Sha256};
         base64::encode(&Sha256::digest(
-            &serde_json::to_vec(self).expect("joint to json failed"),
+            &serde_json::to_vec(self).expect("joint to json failed")
         ))
     }
 }
