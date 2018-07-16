@@ -91,17 +91,49 @@ impl WsConnections {
             next_outbound: AtomicUsize::new(0),
         }
     }
+    //"ws://119.28.27.234:6616"  --> "119.28.27.234"
+    pub fn get_host_by_peer(peer: &String) -> String {
+        let mut peer_host = "".to_string();
+        if (peer.len() > 2) && ("ws" == &peer[0..2]) {
+            let v: Vec<&str> = peer.split(':').collect();
+            if (v.len() > 1) && (v[1].len() > 2) {
+                let ip = &v[1][2..];
+                peer_host = ip.to_string();
+            }
+        }
+        peer_host
+    }
+
+    pub fn add_peer_host(host: &String) -> Result<()> {
+        if host.is_empty() {
+            return Ok(());
+        }
+        let db = db::DB_POOL.get_connection();
+        let sql = format!(
+            "INSERT OR IGNORE INTO peer_hosts (peer_host) VALUES ({})",
+            host
+        );
+        let mut stmt = db.prepare(&sql)?;
+        stmt.execute(&[])?;
+        Ok(())
+    }
 
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
         init_connection(&inbound);
         let mut g = self.inbound.write().unwrap();
-        g.push(inbound);
+        g.push(inbound.clone());
+        drop(g);
+        let peer_host = WsConnections::get_host_by_peer(inbound.get_peer());
+        WsConnections::add_peer_host(&peer_host);
     }
 
     pub fn add_outbound(&self, outbound: Arc<HubConn>) {
         init_connection(&outbound);
         let mut g = self.outbound.write().unwrap();
-        g.push(outbound);
+        g.push(outbound.clone());
+        drop(g);
+        let peer_host = WsConnections::get_host_by_peer(outbound.get_peer());
+        WsConnections::add_peer_host(&peer_host);
     }
 
     pub fn close_all(&self) {
