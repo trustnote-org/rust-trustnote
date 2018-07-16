@@ -1047,13 +1047,13 @@ pub fn re_requeset_lost_joints(db: &Connection) -> Result<()> {
         None => return Ok(()),
     };
 
-    let units = joint_storage::find_lost_joints(db)?;
-    info!("lost units {:?}", units);
-
     let ws = match WSS.get_next_peer() {
         None => bail!("failed to find next peer"),
         Some(c) => c,
     };
+
+    let units = joint_storage::find_lost_joints(db)?;
+    info!("lost units {:?}", units);
 
     info!("found next peer {}", ws.get_peer());
 
