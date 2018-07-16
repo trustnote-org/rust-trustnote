@@ -124,7 +124,7 @@ impl WsConnections {
         g.push(inbound.clone());
         drop(g);
         let peer_host = WsConnections::get_host_by_peer(inbound.get_peer());
-        WsConnections::add_peer_host(&peer_host);
+        let _ = WsConnections::add_peer_host(&peer_host);
     }
 
     pub fn add_outbound(&self, outbound: Arc<HubConn>) {
@@ -133,7 +133,7 @@ impl WsConnections {
         g.push(outbound.clone());
         drop(g);
         let peer_host = WsConnections::get_host_by_peer(outbound.get_peer());
-        WsConnections::add_peer_host(&peer_host);
+        let _ = WsConnections::add_peer_host(&peer_host);
     }
 
     pub fn close_all(&self) {
