@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -17,7 +18,6 @@ use may::net::TcpStream;
 use may::sync::{Mutex, RwLock};
 use rusqlite::Connection;
 use serde_json::{self, Value};
-use std::collections::VecDeque;
 use storage;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
@@ -54,6 +54,14 @@ fn init_connection(ws: &Arc<HubConn>) {
     let mut rng = thread_rng();
     let n: u64 = rng.gen_range(0, 1000);
     let ws_c = Arc::downgrade(ws);
+
+    // FIXME: move this to timer module
+    // request needed joints that were not received during the previous session
+    // go!(move || loop {
+    //     coroutine::sleep(Duration::from_secs(8));
+    //     let db = db::DB_POOL.get_connection();
+    //     t!(re_requeset_lost_joints(&db));
+    // });
 
     // start the heartbeat timer for each connection
     go!(move || loop {
@@ -143,7 +151,7 @@ impl WsConnections {
         unreachable!("can't find a ws connection from global wss!")
     }
 
-    pub fn close(&self, conn: &HubConn) {
+    fn close(&self, conn: &HubConn) {
         // find out the actor and remove it
         let mut g = self.outbound.write().unwrap();
         for i in 0..g.len() {
@@ -163,20 +171,28 @@ impl WsConnections {
         }
     }
 
-    pub fn get_next_inbound(&self) -> Arc<HubConn> {
+    pub fn get_next_inbound(&self) -> Option<Arc<HubConn>> {
         let g = self.inbound.read().unwrap();
         let len = g.len();
-        assert_ne!(len, 0);
+        if len == 0 {
+            return None;
+        }
         let idx = self.next_inbound.fetch_add(1, Ordering::Relaxed) % len;
-        g[idx].clone()
+        Some(g[idx].clone())
     }
 
-    pub fn get_next_outbound(&self) -> Arc<HubConn> {
+    pub fn get_next_outbound(&self) -> Option<Arc<HubConn>> {
         let g = self.outbound.read().unwrap();
         let len = g.len();
-        assert_ne!(len, 0);
+        if len == 0 {
+            return None;
+        }
         let idx = self.next_outbound.fetch_add(1, Ordering::Relaxed) % len;
-        g[idx].clone()
+        Some(g[idx].clone())
+    }
+
+    pub fn get_next_peer(&self) -> Option<Arc<HubConn>> {
+        self.get_next_outbound().or_else(|| self.get_next_inbound())
     }
 
     pub fn get_connection_by_name(&self, peer: &str) -> Option<Arc<HubConn>> {
@@ -801,7 +817,7 @@ impl HubConn {
 
     fn send_hub_challenge(&self) -> Result<()> {
         use object_hash;
-        let challenge = object_hash::gen_random_string(30);
+        let challenge = object_hash::get_random_string(30);
         self.send_just_saying("hub/challenge", json!(challenge))?;
         Ok(())
     }
@@ -809,7 +825,7 @@ impl HubConn {
     fn send_subscribe(&self) -> Result<()> {
         use object_hash;
         // TODO: this is used to detect self-connect (#63)
-        let subscription_id = object_hash::gen_random_string(30);
+        let subscription_id = object_hash::get_random_string(30);
         let db = ::db::DB_POOL.get_connection();
         let last_mci = storage::read_last_main_chain_index(&db)?;
         self.send_request(
@@ -916,7 +932,7 @@ fn check_catchup_leftover(db: &Connection) -> Result<bool> {
     Ok(false)
 }
 
-fn puerge_junk_unhandled_joints() -> Result<()> {
+fn purge_junk_unhandled_joints() -> Result<()> {
     let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
     if diff < 3600 * 1000 || IS_CACTCHING_UP.is_locked() {
         return Ok(());
@@ -940,7 +956,7 @@ fn puerge_junk_unhandled_joints() -> Result<()> {
 // this should be run in a single thread to remove those junk joints
 pub fn start_purge_jonk_joints_timer() {
     go!(|| loop {
-        t!(puerge_junk_unhandled_joints());
+        t!(purge_junk_unhandled_joints());
         coroutine::sleep(Duration::from_secs(30 * 60));
     });
 }
@@ -953,12 +969,15 @@ pub fn start_catchup() -> Result<()> {
         None => return Ok(()),
     };
 
+    let mut ws = match WSS.get_next_outbound() {
+        None => bail!("no outbound connection found"),
+        Some(c) => c,
+    };
+
     let mut db = db::DB_POOL.get_connection();
     catchup::purge_handled_balls_from_hash_tree(&db)?;
 
     let mut is_left_over = check_catchup_leftover(&db)?;
-
-    let mut ws = WSS.get_next_outbound();
     if !is_left_over {
         ws.request_catchup(&db)?;
     }
@@ -1004,8 +1023,12 @@ pub fn start_catchup() -> Result<()> {
 
         if let Err(e) = ws.request_next_hash_tree(&mut db, &balls[0], &balls[1]) {
             error!("request_next_hash_tree err={}", e);
+            ws.close();
             // we try with a different connection
-            ws = WSS.get_next_outbound();
+            ws = match WSS.get_next_outbound() {
+                None => bail!("can't find outbound connection"),
+                Some(c) => c,
+            };
         }
     }
 
@@ -1014,4 +1037,31 @@ pub fn start_catchup() -> Result<()> {
     WSS.request_free_joints();
 
     Ok(())
+}
+
+/// this fn will be called every 8s in a timer
+pub fn re_requeset_lost_joints(db: &Connection) -> Result<()> {
+    let _g = match IS_CACTCHING_UP.try_lock() {
+        Some(g) => g,
+        None => return Ok(()),
+    };
+
+    let ws = match WSS.get_next_peer() {
+        None => bail!("failed to find next peer"),
+        Some(c) => c,
+    };
+
+    let units = joint_storage::find_lost_joints(db)?;
+    info!("lost units {:?}", units);
+
+    info!("found next peer {}", ws.get_peer());
+
+    // this is not an atomic operation, but it's fine to request the unit in working
+    let new_units = units
+        .iter()
+        .filter(|x| UNIT_IN_WORK.try_lock(vec![x.clone().clone()]).is_none())
+        .map(|x| x.clone())
+        .collect::<Vec<_>>();
+
+    ws.request_joints(&new_units)
 }
