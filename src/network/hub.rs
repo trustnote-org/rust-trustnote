@@ -411,13 +411,13 @@ impl HubConn {
                         bail!("ifOkUnsigned() signed");
                     }
                 }
-                ValidationOk::Signed(_, lock) => {
-                    drop(lock);
+                ValidationOk::Signed(validate_state, lock) => {
                     if joint.unsigned == Some(true) {
                         bail!("ifOk() unsigned");
                     }
-                    joint.save()?;
-                    // self.validation_unlock()?;
+                    joint.save(validate_state)?;
+                    drop(lock);
+
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
                     // TODO: forward to other peers
                     // if (!bCatchingUp) {
@@ -524,7 +524,6 @@ impl HubConn {
             CheckNewResult::KnownBad => return Ok(()),
             CheckNewResult::KnownUnverified => {}
         }
-
         match validation::validate(db, &joint) {
             Ok(ok) => match ok {
                 ValidationOk::Unsigned(_) => {
@@ -533,13 +532,13 @@ impl HubConn {
                     }
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                 }
-                ValidationOk::Signed(_, lock) => {
-                    drop(lock);
+                ValidationOk::Signed(validation_state, lock) => {
                     if joint.unsigned == Some(true) {
                         bail!("ifOk() unsigned");
                     }
-                    joint.save()?;
-                    // self.validation_unlock()?;
+                    joint.save(validation_state)?;
+                    drop(lock);
+
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
                     // TODO: forward to other peers
                     // if (!bCatchingUp && !conf.bLight && creation_ts > Date.now() - FORWARDING_TIMEOUT)

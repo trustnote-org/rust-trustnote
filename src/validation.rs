@@ -59,7 +59,7 @@ pub struct ValidationState {
     pub max_parent_limci: u32,
     pub has_no_references: bool,
     pub unit_hash_to_sign: Option<Vec<u8>>,
-    pub additional_queries: Vec<String>,
+    pub additional_queries: ::db::DbQueries,
     pub double_spend_inputs: Vec<DoubleSpendInput>,
     pub addresses_with_forked_path: Vec<String>,
     pub conflicting_units: Vec<String>,
@@ -79,7 +79,7 @@ impl ValidationState {
             has_no_references: true,
             unit_hash_to_sign: None,
             skiplist_balls: Vec::new(),
-            additional_queries: Vec::new(),
+            additional_queries: ::db::DbQueries::new(),
             double_spend_inputs: Vec::new(),
             addresses_with_forked_path: Vec::new(),
             conflicting_units: Vec::new(),
@@ -719,7 +719,7 @@ fn validate_parents(
 
     let mut stmt = tx.prepare_cached("SELECT ball FROM balls WHERE unit=?")?;
     let balls = stmt
-        .query_map(&[unit_hash], |row| row.get(0))?
+        .query_map(&[last_ball_unit], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if balls.is_empty() {
         return create_err(format!(
@@ -1188,7 +1188,7 @@ fn validate_author(
                 conflicting_units
             );
             info!(
-                "========== found conflicting units {} =========",
+                "========== will accept a conflicting unit {} =========",
                 unit.unit.clone().unwrap()
             );
 
@@ -1235,7 +1235,12 @@ fn validate_author(
                 units_list
             );
 
-            validate_state.additional_queries.push(sql);
+            validate_state.additional_queries.add_query(move |db| {
+                info!("----- applying additional queries: {}", sql);
+                let mut stmt = db.prepare(&sql)?;
+                stmt.execute(&[])?;
+                Ok(())
+            });
 
             check_no_pending_change_of_definition_chash(validate_state, *nonserial)?;
             Ok(())
@@ -1315,8 +1320,11 @@ fn validate_messages(
         validate_message(tx, &message, message_index, unit, validate_state)?;
     }
 
-    //Do not check it since has_base_payment has not been set yet
-    //ensure_with_validation_err!(validate_state.has_base_payment, "no base payment message");
+    ensure_with_validation_err!(
+        validate_state.has_base_payment,
+        UnitError,
+        "no base payment message"
+    );
 
     Ok(())
 }
@@ -1544,7 +1552,7 @@ fn check_for_double_spend(
     let author_addresses = unit.authors.iter().map(|a| &a.address).collect::<Vec<_>>();
 
     for conflicting_record in rows {
-        if author_addresses.contains(&&conflicting_record.address) {
+        if !author_addresses.contains(&&conflicting_record.address) {
             bail_with_validation_err!(
                 UnitError,
                 "conflicting {} spent from another address?",
@@ -2268,12 +2276,18 @@ fn check_input_double_spend(
     info!("--- accepting doublespend on unit {:?}", unit.unit);
 
     let sql = format!(
-        "UPDATE inputs SET is_unique=NULL WHERE {}
-        AND (SELECT is_stable FROM units WHERE units.unit=inputs.unit)=0",
+        "UPDATE inputs SET is_unique=NULL WHERE {} \
+         AND (SELECT is_stable FROM units WHERE units.unit=inputs.unit)=0",
         double_spend_where
     );
 
-    validate_state.additional_queries.push(sql);
+    validate_state.additional_queries.add_query(move |db| {
+        info!("----- applying additional queries: {}", sql);
+        let mut stmt = db.prepare(&sql)?;
+        stmt.execute(&[])?;
+        Ok(())
+    });
+
     validate_state.double_spend_inputs.push(DoubleSpendInput {
         message_index: message_index as u32,
         input_index: input_index as u32,

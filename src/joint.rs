@@ -10,6 +10,7 @@ use object_hash::get_chash;
 use rusqlite::Transaction;
 use serde_json;
 use spec::*;
+use validation;
 
 lazy_static! {
     pub static ref WRITER_MUTEX: Mutex<()> = Mutex::new(());
@@ -560,17 +561,18 @@ impl Joint {
         Ok(address?)
     }
 
-    pub fn save(&self) -> Result<()> {
+    pub fn save(&self, validation_state: validation::ValidationState) -> Result<()> {
         // first construct all the sql within a mutex
         info!("saving unit = {:?}", self.unit);
         assert_eq!(self.unit.unit.is_some(), true);
         let _g = WRITER_MUTEX.lock()?;
         // and then execute the transaction
         let mut db = db::DB_POOL.get_connection();
+
         let tx = db.transaction()?;
 
-        // TODO: add validation, default is good
-        let sequence = String::from("good");
+        let sequence = validation_state.sequence;
+        let _ = validation_state.additional_queries.execute(&*tx)?;
 
         self.save_unit(&tx, &sequence)?;
         self.save_ball(&tx)?;
@@ -606,7 +608,7 @@ impl Joint {
         use base64;
         use sha2::{Digest, Sha256};
         base64::encode(&Sha256::digest(
-            &serde_json::to_vec(self).expect("joint to json failed"),
+            &serde_json::to_vec(self).expect("joint to json failed")
         ))
     }
 }
