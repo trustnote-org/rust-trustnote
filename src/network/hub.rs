@@ -55,14 +55,6 @@ fn init_connection(ws: &Arc<HubConn>) {
     let n: u64 = rng.gen_range(0, 1000);
     let ws_c = Arc::downgrade(ws);
 
-    // FIXME: move this to timer module
-    // request needed joints that were not received during the previous session
-    // go!(move || loop {
-    //     coroutine::sleep(Duration::from_secs(8));
-    //     let db = db::DB_POOL.get_connection();
-    //     t!(re_requeset_lost_joints(&db));
-    // });
-
     // start the heartbeat timer for each connection
     go!(move || loop {
         coroutine::sleep(Duration::from_millis(3000 + n));
@@ -80,20 +72,6 @@ fn init_connection(ws: &Arc<HubConn>) {
             ws.close();
         }
     });
-
-    // FIXME: move to global timer
-    // let ws_c = Arc::downgrade(ws);
-    // // find and handle ready joints
-    // go!(move || loop {
-    //     coroutine::sleep(Duration::from_millis(5000));
-    //     let ws = match ws_c.upgrade() {
-    //         Some(ws) => ws,
-    //         None => return,
-    //     };
-    //     info!("find_and_handle_joints_that_are_ready");
-    //     let mut db = ::db::DB_POOL.get_connection();
-    //     t!(ws.find_and_handle_joints_that_are_ready(&mut db, None));
-    // });
 }
 
 // global request has no specific ws connections, just find a proper one should be fine
@@ -902,13 +880,12 @@ fn check_catchup_leftover(db: &Connection) -> Result<bool> {
     Ok(false)
 }
 
-fn purge_junk_unhandled_joints() -> Result<()> {
+pub fn purge_junk_unhandled_joints(db: &Connection) -> Result<()> {
     let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
     if diff < 3600 * 1000 || IS_CACTCHING_UP.is_locked() {
         return Ok(());
     }
 
-    let db = db::DB_POOL.get_connection();
     let mut stmt = db.prepare_cached(
         "DELETE FROM unhandled_joints WHERE creation_date < datatime('now', '-1 HOUR')",
     )?;
@@ -920,15 +897,6 @@ fn purge_junk_unhandled_joints() -> Result<()> {
     )?;
     stmt.execute(&[])?;
     Ok(())
-}
-
-// FIXME: move into a timer module?
-// this should be run in a single thread to remove those junk joints
-pub fn start_purge_jonk_joints_timer() {
-    go!(|| loop {
-        t!(purge_junk_unhandled_joints());
-        coroutine::sleep(Duration::from_secs(30 * 60));
-    });
 }
 
 // this is a back ground thread that focuse on the catchup logic

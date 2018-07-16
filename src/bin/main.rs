@@ -61,9 +61,9 @@ fn network_cleanup() {
 
 // the hub server logic that run in coroutine context
 fn run_hub_server() -> Result<()> {
-    network::hub::start_purge_jonk_joints_timer();
     let _server = start_ws_server();
     connect_to_remote()?;
+    time::start_global_timers();
     Ok(())
 }
 
