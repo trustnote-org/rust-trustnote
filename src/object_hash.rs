@@ -134,7 +134,7 @@ pub fn get_ball_hash(
 }
 
 #[inline]
-pub fn gen_random_string(len: usize) -> String {
+pub fn get_random_string(len: usize) -> String {
     use rand::distributions::Standard;
 
     let bytes: Vec<u8> = rand::thread_rng()
