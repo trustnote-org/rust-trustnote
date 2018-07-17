@@ -232,8 +232,10 @@ impl WsConnections {
     }
 
     pub fn request_free_joints_from_all_outbound_peers(&self) -> Result<()> {
+        if UNIT_IN_WORK.get_waiter_num() != 0 && IS_CACTCHING_UP.is_locked() {
+            return Ok(());
+        }
         let out_bound_peers = self.outbound.read().unwrap().to_vec();
-
         for out_bound_peer in out_bound_peers {
             out_bound_peer.send_just_saying("refresh", Value::Null)?;
         }
