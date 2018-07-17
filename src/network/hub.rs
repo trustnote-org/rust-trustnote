@@ -217,6 +217,20 @@ impl WsConnections {
             t!(ws.send_just_saying("refresh", Value::Null));
         }
     }
+
+    fn forward_joint(&self, joint: &Joint) -> Result<()> {
+        let outbound = self.outbound.read().unwrap().to_vec();
+        for c in outbound {
+            c.send_joint(joint)?;
+        }
+
+        let inbound = self.inbound.read().unwrap().to_vec();
+        for c in inbound {
+            c.send_joint(joint)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for HubData {
@@ -416,10 +430,10 @@ impl HubConn {
                     drop(lock);
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
-                    // TODO: forward to other peers
-                    // if (!bCatchingUp) {
-                    //     self.forwardJoint(ws, objJoint)?;
-                    // }
+
+                    if !IS_CACTCHING_UP.is_locked() {
+                        WSS.forward_joint(&joint)?;
+                    }
 
                     // must release the guard to let other work continue
                     drop(g);
@@ -490,7 +504,7 @@ impl HubConn {
         &self,
         db: &mut Connection,
         joint: Joint,
-        _creat_ts: usize,
+        create_ts: usize,
         unhandled_joints: &mut VecDeque<ReadyJoint>,
     ) -> Result<()> {
         use joint_storage::CheckNewResult;
@@ -532,9 +546,13 @@ impl HubConn {
                     drop(lock);
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
-                    // TODO: forward to other peers
-                    // if (!bCatchingUp && !conf.bLight && creation_ts > Date.now() - FORWARDING_TIMEOUT)
-                    // forwardJoint(ws, objJoint);
+
+                    const FORWARDING_TIMEOUT: usize = 10 * 1000;
+                    if !IS_CACTCHING_UP.is_locked()
+                        && create_ts > ::time::now() - FORWARDING_TIMEOUT
+                    {
+                        WSS.forward_joint(&joint)?;
+                    }
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                     drop(g);
 
@@ -747,7 +765,7 @@ impl HubConn {
     }
 
     #[inline]
-    fn send_joint(&self, joint: Joint) -> Result<()> {
+    fn send_joint(&self, joint: &Joint) -> Result<()> {
         self.send_just_saying("joint", json!({ "joint": joint }))
     }
 
@@ -756,7 +774,7 @@ impl HubConn {
         let joints = joint_storage::read_joints_since_mci(db, mci)?;
 
         for joint in joints {
-            self.send_joint(joint)?;
+            self.send_joint(&joint)?;
         }
         self.send_just_saying("free_joints_end", Value::Null)?;
 
