@@ -105,18 +105,14 @@ impl WsConnections {
     }
 
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
+        self.inbound.write().unwrap().push(inbound.clone());
         init_connection(&inbound);
-        let mut g = self.inbound.write().unwrap();
-        g.push(inbound.clone());
-        drop(g);
         t!(add_peer_host(inbound));
     }
 
     pub fn add_outbound(&self, outbound: Arc<HubConn>) {
+        self.outbound.write().unwrap().push(outbound.clone());
         init_connection(&outbound);
-        let mut g = self.outbound.write().unwrap();
-        g.push(outbound.clone());
-        drop(g);
         t!(add_peer_host(outbound));
     }
 
