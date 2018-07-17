@@ -43,7 +43,6 @@ lazy_static! {
     static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
     static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now());
 }
-const FORWARDING_TIMEOUT: usize = 10 * 1000;
 
 fn init_connection(ws: &Arc<HubConn>) {
     use rand::{thread_rng, Rng};
@@ -91,14 +90,6 @@ impl WsConnections {
             next_inbound: AtomicUsize::new(0),
             next_outbound: AtomicUsize::new(0),
         }
-    }
-
-    fn get_inbound(&self) -> Vec<Arc<HubConn>> {
-        self.inbound.read().unwrap().to_vec()
-    }
-
-    fn get_outbound(&self) -> Vec<Arc<HubConn>> {
-        self.outbound.read().unwrap().to_vec()
     }
 
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
@@ -207,6 +198,20 @@ impl WsConnections {
         for ws in g.iter() {
             t!(ws.send_just_saying("refresh", Value::Null));
         }
+    }
+
+    fn forward_joint(&self, joint: &Joint) -> Result<()> {
+        let outbound = self.outbound.read().unwrap().to_vec();
+        for c in outbound {
+            c.send_joint(joint)?;
+        }
+
+        let inbound = self.inbound.read().unwrap().to_vec();
+        for c in inbound {
+            c.send_joint(joint)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -354,20 +359,6 @@ impl HubConn {
 }
 
 impl HubConn {
-    fn forward_joint(&self, joint: &Joint) -> Result<()> {
-        for client in WSS.get_outbound() {
-            if !self.conn_eq(&client) && client.is_subscribed() {
-                client.send_joint(joint)?;
-            }
-        }
-        for client in WSS.get_inbound() {
-            if !self.conn_eq(&client) && client.is_subscribed() {
-                client.send_joint(joint)?;
-            }
-        }
-        Ok(())
-    }
-
     fn handle_online_joint(&self, mut joint: Joint, db: &mut Connection) -> Result<()> {
         use joint_storage::CheckNewResult;
         use validation::{ValidationError, ValidationOk};
@@ -423,7 +414,7 @@ impl HubConn {
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
 
                     if !IS_CACTCHING_UP.is_locked() {
-                        self.forward_joint(&joint)?;
+                        WSS.forward_joint(&joint)?;
                     }
 
                     // must release the guard to let other work continue
@@ -495,7 +486,7 @@ impl HubConn {
         &self,
         db: &mut Connection,
         joint: Joint,
-        _creat_ts: usize,
+        create_ts: usize,
         unhandled_joints: &mut VecDeque<ReadyJoint>,
     ) -> Result<()> {
         use joint_storage::CheckNewResult;
@@ -538,9 +529,11 @@ impl HubConn {
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
 
-                    let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
-                    if !IS_CACTCHING_UP.is_locked() && diff < FORWARDING_TIMEOUT {
-                        self.forward_joint(&joint)?;
+                    const FORWARDING_TIMEOUT: usize = 10 * 1000;
+                    if !IS_CACTCHING_UP.is_locked()
+                        && create_ts > ::time::now() - FORWARDING_TIMEOUT
+                    {
+                        WSS.forward_joint(&joint)?;
                     }
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                     drop(g);
