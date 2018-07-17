@@ -274,6 +274,28 @@ impl Server<HubData> for HubData {
     }
 }
 
+fn read_free_joints() -> Result<Vec<Joint>> {
+    let db = db::DB_POOL.get_connection();
+    let mut stmt = db.prepare_cached(
+        "SELECT units.unit FROM units LEFT JOIN archived_joints USING(unit) WHERE is_free=1 AND archived_joints.unit IS NULL",
+    )?;
+
+    let units = stmt.query_map(&[], |row| row.get::<_, String>(0))?;
+    let mut joints = Vec::new();
+    for unit in units {
+        if unit.is_err() {
+            error!("failed to get unit, err={:?}", unit);
+            continue;
+        }
+        let unit = unit.unwrap();
+        match storage::read_joint(&db, &unit) {
+            Ok(j) => joints.push(j),
+            Err(e) => error!("free ball lost"),
+        }
+    }
+
+    Ok(joints)
+}
 // internal state access
 impl HubConn {
     pub fn is_subscribed(&self) -> bool {
@@ -338,6 +360,8 @@ impl HubConn {
             }
             Ok(())
         });
+        self.send_free_joints().ok();
+
         Ok(json!("subscribed"))
     }
 
@@ -794,6 +818,14 @@ impl HubConn {
         }
         self.send_just_saying("free_joints_end", Value::Null)?;
 
+        Ok(())
+    }
+    fn send_free_joints(&self) -> Result<()> {
+        let obj_joints = read_free_joints().expect("send free joint failed");
+        for joint in obj_joints {
+            self.send_joint(joint)?;
+        }
+        self.send_just_saying("free_joints_end", Value::Null)?;
         Ok(())
     }
 }
