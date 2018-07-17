@@ -11,6 +11,7 @@ pub struct Author {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub authentifiers: HashMap<String, String>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Value::is_null")]
     pub definition: Value,
 }
 
