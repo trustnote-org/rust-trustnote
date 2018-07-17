@@ -73,11 +73,15 @@ fn pause() {
 }
 
 fn test_read_joint() -> Result<()> {
-    // wait user input a key to exit
-    let db = db::DB_POOL.get_connection();
-    let unit = String::from("g9HQWWTdz8n9+KRYFxOyHNEH7kp7N4j1vU7F1VIpEC8=");
-    let joint = storage::read_joint_directly(&db, &unit)?;
-    println!("joint = {}", serde_json::to_string_pretty(&joint)?);
+    fn print_joint(unit: &str) -> Result<()> {
+        let db = db::DB_POOL.get_connection();
+        let joint = storage::read_joint_directly(&db, &unit.to_string())?;
+        println!("joint = {}", serde_json::to_string_pretty(&joint)?);
+        Ok(())
+    }
+
+    print_joint("V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=")?;
+    print_joint("g9HQWWTdz8n9+KRYFxOyHNEH7kp7N4j1vU7F1VIpEC8=")?;
     pause();
     Ok(())
 }

@@ -497,6 +497,11 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
             let mut payload = Payload::Other(Value::Null);
             if msg.payload_location == "inline" {
                 match msg.app.as_str() {
+                    "text" => {
+                        if let Some(s) = msg.payload {
+                            payload = Payload::Text(s);
+                        }
+                    }
                     "data_feed" => {
                         struct DataFeed {
                             feed_name: String,
@@ -548,9 +553,9 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             kind: Option<String>,
                             denomination: Option<u32>,
                             fixed_denominations: Option<u32>,
-                            unit: String,
-                            message_index: u32,
-                            output_index: u32,
+                            unit: Option<String>,
+                            message_index: Option<u32>,
+                            output_index: Option<u32>,
                             from_main_chain_index: Option<u32>,
                             to_main_chain_index: Option<u32>,
                             //serial_number: Option<i64>,
@@ -614,9 +619,9 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
                                 inputs.push(Input {
                                     kind: input.kind.clone(),
-                                    unit: Some(input.unit.clone()),
-                                    message_index: Some(input.message_index),
-                                    output_index: Some(input.output_index),
+                                    unit: input.unit.clone(),
+                                    message_index: input.message_index,
+                                    output_index: input.output_index,
                                     from_main_chain_index: input.from_main_chain_index,
                                     to_main_chain_index: input.to_main_chain_index,
                                     amount: input.amount,
