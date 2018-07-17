@@ -210,7 +210,9 @@ impl WsConnections {
 
         None
     }
-
+    pub fn get_outbound(&self) -> Result<Vec<Arc<HubConn>>> {
+        Ok(self.outbound.read().unwrap().clone())
+    }
     fn request_free_joints(&self) {
         let g = self.outbound.read().unwrap();
         for ws in g.iter() {

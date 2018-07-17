@@ -1,4 +1,5 @@
 // use std::io::Read;
+use network::hub::{HubConn, WsConnections, WSS};
 use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -339,4 +340,12 @@ impl<T> WsServer<T> {
             }
         })
     }
+}
+
+fn request_free_joints_from_all_outbound_peers() -> Result<()> {
+    let out_bound_peers = WSS.get_outbound().expect("get_outbound is err");
+    for out_bound_peer in out_bound_peers {
+        out_bound_peer.send_just_saying("refresh", Value::Null)?;
+    }
+    Ok(())
 }
