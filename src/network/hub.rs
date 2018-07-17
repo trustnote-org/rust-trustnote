@@ -80,12 +80,9 @@ fn add_peer_host(bound: Arc<HubConn>) -> Result<()> {
         return Ok(());
     }
     let db = db::DB_POOL.get_connection();
-    let sql = format!(
-        "INSERT OR IGNORE INTO peer_hosts (peer_host) VALUES ({})",
-        v[0]
-    );
-    let mut stmt = db.prepare(&sql)?;
-    stmt.execute(&[])?;
+    let mut stmt = db.prepare_cached("INSERT OR IGNORE INTO peer_hosts (peer_host) VALUES (?)")?;
+    let host = v[0].to_string();
+    stmt.execute(&[&host])?;
     Ok(())
 }
 // global request has no specific ws connections, just find a proper one should be fine
