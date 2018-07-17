@@ -27,6 +27,7 @@ pub struct SpendProof {
 pub struct Input {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub amount: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_main_chain_index: Option<u32>,
