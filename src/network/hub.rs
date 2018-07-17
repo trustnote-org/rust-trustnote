@@ -93,6 +93,10 @@ impl WsConnections {
         }
     }
 
+    fn get_inbound(&self) -> Vec<Arc<HubConn>> {
+        self.inbound.read().unwrap().to_vec()
+    }
+
     fn get_outbound(&self) -> Vec<Arc<HubConn>> {
         self.outbound.read().unwrap().to_vec()
     }
@@ -756,6 +760,11 @@ impl HubConn {
 
     fn forward_joint(&self, ws: Arc<HubConn>, joint: &Joint) {
         for client in WSS.get_outbound() {
+            if !Arc::ptr_eq(&client, &ws) && client.is_subscribed() {
+                let _ = self.send_joint(joint);
+            }
+        }
+        for client in WSS.get_inbound() {
             if !Arc::ptr_eq(&client, &ws) && client.is_subscribed() {
                 let _ = self.send_joint(joint);
             }
