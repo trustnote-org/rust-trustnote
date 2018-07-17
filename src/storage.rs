@@ -558,7 +558,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             output_index: Option<u32>,
                             from_main_chain_index: Option<u32>,
                             to_main_chain_index: Option<u32>,
-                            //serial_number: Option<i64>,
+                            serial_number: Option<u32>,
                             amount: Option<i64>,
                             address: Option<String>,
                             asset: Option<String>,
@@ -574,7 +574,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                 output_index: row.get(5),
                                 from_main_chain_index: row.get(6),
                                 to_main_chain_index: row.get(7),
-                                //serial_number: row.get(8),
+                                serial_number: row.get(8),
                                 amount: row.get(9),
                                 address: row.get(10),
                                 asset: row.get(11),
@@ -626,7 +626,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                     to_main_chain_index: input.to_main_chain_index,
                                     amount: input.amount,
                                     address: input.address.clone(),
-                                    serial_number: None,
+                                    serial_number: input.serial_number,
                                 });
                             }
                         }
