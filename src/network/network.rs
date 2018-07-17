@@ -330,7 +330,7 @@ impl<T> WsServer<T> {
             // for stream in listener.incoming() {
             while let Ok((stream, _)) = listener.accept() {
                 let peer = match stream.peer_addr() {
-                    Ok(addr) => format!("{}", addr),
+                    Ok(addr) => addr.to_string(),
                     Err(_) => "unknown peer".to_owned(),
                 };
                 let ws = t_c!(accept(stream));
