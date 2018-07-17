@@ -410,7 +410,7 @@ pub fn process_hash_tree(db: &mut Connection, balls: Vec<BallProps>) -> Result<(
         let add_ball = || -> Result<()> {
             let mut stmt = tx
                 .prepare_cached("INSERT OR IGNORE INTO hash_tree_balls (ball, unit) VALUES(?,?)")?;
-            stmt.insert(&[ball, &ball_prop.unit])?;
+            stmt.execute(&[ball, &ball_prop.unit])?;
             Ok(())
         };
 

@@ -84,7 +84,7 @@ pub fn save_unhandled_joint_and_dependencies(
     {
         let mut stmt =
             tx.prepare_cached("INSERT INTO unhandled_joints (unit, json, peer) VALUES (?, ?, ?)")?;
-        stmt.insert(&[unit, &serde_json::to_string(joint)?, peer])?;
+        stmt.execute(&[unit, &serde_json::to_string(joint)?, peer])?;
         let missing_units = missing_parent_units
             .iter()
             .map(|parent| format!("('{}', '{}')", unit, parent))
@@ -216,7 +216,7 @@ where
     {
         let mut stmt =
             tx.prepare_cached("INSERT INTO known_bad_joints (unit, json, error) VALUES (?, ?, ?)")?;
-        stmt.insert(&[unit, &serde_json::to_string(joint)?, &err])?;
+        stmt.execute(&[unit, &serde_json::to_string(joint)?, &err])?;
 
         let mut stmt = tx.prepare_cached("DELETE FROM unhandled_joints WHERE unit=?")?;
         stmt.execute(&[unit])?;
