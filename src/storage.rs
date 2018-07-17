@@ -465,10 +465,10 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
         struct MessageTemp {
             pub app: String,
-            pub message_index: Option<u32>,
-            pub payload: Option<String>,
+            pub message_index: u32,
             pub payload_hash: String,
             pub payload_location: String,
+            pub payload: Option<String>,
             pub payload_uri: Option<String>,
             pub payload_uri_hash: Option<String>,
         }
@@ -494,15 +494,42 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
             let mut prev_asset = None;
             let mut prev_denomination = None;
 
+            let mut payload = Payload::Other(Value::Null);
             if msg.payload_location == "inline" {
                 match msg.app.as_str() {
-                    "address_definition_change" => unimplemented!(),
-                    "poll" => unimplemented!(),
-                    "vote" => unimplemented!(),
-                    "asset" => unimplemented!(),
-                    "asset_attestors" => unimplemented!(),
-                    "data_feed" => unimplemented!(),
-                    "profile" | "attestation" | "data" | "definition_template" => unimplemented!(),
+                    "data_feed" => {
+                        struct DataFeed {
+                            feed_name: String,
+                            value: Option<String>,
+                            int_value: Option<i64>,
+                        }
+
+                        let mut stmt = db.prepare_cached(
+                            "SELECT feed_name, `value`, int_value FROM data_feeds \
+                             WHERE unit=? AND message_index=?",
+                        )?;
+                        let df_rows = stmt
+                            .query_map(&[unit_hash, &message_index], |row| DataFeed {
+                                feed_name: row.get(0),
+                                value: row.get(1),
+                                int_value: row.get(2),
+                            })?
+                            .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+                        ensure!(!df_rows.is_empty(), "no data feed");
+                        use serde_json::Map;
+
+                        let mut map = Map::new();
+                        for df in df_rows {
+                            if let Some(s) = df.value {
+                                map.insert(df.feed_name, Value::from(s));
+                            } else if let Some(i) = df.int_value {
+                                map.insert(df.feed_name, Value::from(i));
+                            }
+                        }
+
+                        payload = Payload::Other(Value::from(map));
+                    }
                     "payment" => {
                         //Read Inputs
                         let mut stmt = db.prepare_cached(
@@ -634,8 +661,17 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                 address: output.address.clone(),
                             });
                         }
+
+                        payload = Payload::Payment(Payment {
+                            address: None,
+                            asset: payload_asset,
+                            definition_chash: None,
+                            denomination: payload_denomination,
+                            inputs,
+                            outputs,
+                        });
                     }
-                    _ => unimplemented!(),
+                    app => unimplemented!("app = {}", app),
                 }
             }
 
@@ -663,14 +699,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
             messages.push(Message {
                 app: msg.app,
-                payload: Some(Payload::Payment(Payment {
-                    address: None,
-                    asset: payload_asset,
-                    definition_chash: None,
-                    denomination: payload_denomination,
-                    inputs,
-                    outputs,
-                })),
+                payload: Some(payload),
                 payload_hash: msg.payload_hash,
                 payload_location: msg.payload_location,
                 payload_uri: msg.payload_uri,
