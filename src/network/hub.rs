@@ -290,7 +290,7 @@ fn read_free_joints() -> Result<Vec<Joint>> {
         let unit = unit.unwrap();
         match storage::read_joint(&db, &unit) {
             Ok(j) => joints.push(j),
-            Err(e) => error!("free ball lost"),
+            Err(_e) => error!("free ball lost"),
         }
     }
 
