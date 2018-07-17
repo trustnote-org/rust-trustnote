@@ -437,14 +437,9 @@ fn test_unit_json() {
     }"#;
 
     let u: Unit = serde_json::from_str(data).unwrap();
-    // println!("unit = {:?}", u);
     assert_eq!(u.authors[0].definition[0], json!("sig"));
     assert_eq!(
         u.authors[0].definition[1],
         json!({"pubkey": "A0gKwkLedQgzm32JtEo6KmuRcyZa3beikS3xfrwdXAMU"})
     );
-    // assert_eq!(
-    //     u.authors[0].definition[1]["pubkey"].as_str().unwrap(),
-    //     "A0gKwkLedQgzm32JtEo6KmuRcyZa3beikS3xfrwdXAMU"
-    // );
 }

@@ -72,6 +72,7 @@ fn pause() {
     io::stdin().read(&mut [0]).ok();
 }
 
+#[allow(dead_code)]
 fn test_read_joint() -> Result<()> {
     fn print_joint(unit: &str) -> Result<()> {
         let db = db::DB_POOL.get_connection();
@@ -101,7 +102,8 @@ fn main() -> Result<()> {
     log_init();
     config::show_config();
 
-    test_read_joint()?;
+    // uncomment it to test read joint from db
+    // test_read_joint()?;
 
     go!(|| run_hub_server().unwrap()).join().unwrap();
 
