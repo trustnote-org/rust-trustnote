@@ -1144,15 +1144,12 @@ pub fn read_free_joints() -> Result<Vec<Joint>> {
         "SELECT units.unit FROM units LEFT JOIN archived_joints USING(unit) WHERE is_free=1 AND archived_joints.unit IS NULL",
     )?;
 
-    let units = stmt.query_map(&[], |row| row.get::<_, String>(0))?;
+    let units = stmt
+        .query_map(&[], |row| row.get::<_, String>(0))?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
     let mut joints = Vec::new();
     for unit in units {
-        if unit.is_err() {
-            error!("failed to get unit, err={:?}", unit);
-            continue;
-        }
-        let joint =
-            read_joint(&db, &unit.unwrap()).or_else(|e| bail!("free ball lost, error = {}", e))?;
+        let joint = read_joint(&db, &unit).or_else(|e| bail!("free ball lost, error = {}", e))?;
         joints.push(joint);
     }
 

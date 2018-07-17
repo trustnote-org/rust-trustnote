@@ -10,6 +10,7 @@ use catchup;
 use config;
 use db;
 use error::Result;
+use failure::ResultExt;
 use joint::Joint;
 use joint_storage::{self, ReadyJoint};
 use map_lock::MapLock;
@@ -800,8 +801,8 @@ impl HubConn {
     }
 
     fn send_free_joints(&self) -> Result<()> {
-        let obj_joints = storage::read_free_joints().expect("send free joint failed");
-        for joint in obj_joints {
+        let joints = storage::read_free_joints().context("send free joint failed")?;
+        for joint in joints {
             self.send_joint(&joint)?;
         }
         self.send_just_saying("free_joints_end", Value::Null)?;
