@@ -319,9 +319,19 @@ impl HubConn {
             .ok_or_else(|| format_err!("no subscription_id"))?;
 
         self.set_subscribed();
-        let db = db::DB_POOL.get_connection();
-        // FIXME: use correct mci
-        self.send_joints_since_mci(&db, 0)?;
+        // send some joint in a background task
+        let ws = WSS.get_ws(self);
+        let last_mci = param["last_mci"].as_u64();
+        try_go!(move || -> Result<()> {
+            let db = db::DB_POOL.get_connection();
+            if let Some(last_mci) = last_mci {
+                ws.send_joints_since_mci(&db, last_mci as u32)?;
+            } else {
+                // TODO:
+                // ws.send_free_joints()?;
+            }
+            Ok(())
+        });
         Ok(json!("subscribed"))
     }
 
