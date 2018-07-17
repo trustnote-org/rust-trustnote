@@ -300,7 +300,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         unit: Option<String>,
         version: String,
         alt: String,
-        //witness_list_unit: Option<String>, //Not used by now
+        witness_list_unit: Option<String>,
         last_ball_unit: Option<String>,
         last_ball: Option<String>,
         //is_stable: u32, //Not used by now
@@ -315,7 +315,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         unit: row.get(0),
         version: row.get(1),
         alt: row.get(2),
-        //witness_list_unit: row.get(3),
+        witness_list_unit: row.get(3),
         last_ball_unit: row.get(4),
         last_ball: row.get(5),
         //is_stable: row.get(6),
@@ -696,7 +696,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         unit: unit.unit,
         version: unit.version,
         witnesses,
-        witness_list_unit: None,
+        witness_list_unit: unit.witness_list_unit,
     };
 
     //TODO: Retry if the hash verification fails
