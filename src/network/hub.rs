@@ -767,7 +767,7 @@ impl HubConn {
 
     #[inline]
     fn send_joint(&self, joint: &Joint) -> Result<()> {
-        self.send_just_saying("joint", json!({ "joint": joint }))
+        self.send_just_saying("joint", serde_json::to_value(joint)?)
     }
 
     fn send_joints_since_mci(&self, db: &Connection, mci: u32) -> Result<()> {
