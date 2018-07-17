@@ -73,7 +73,21 @@ fn init_connection(ws: &Arc<HubConn>) {
         }
     });
 }
-
+fn add_peer_host(bound: Arc<HubConn>) -> Result<()> {
+    let peer = bound.get_peer();
+    let v: Vec<&str> = peer.split(':').collect();
+    if v[0].is_empty() {
+        return Ok(());
+    }
+    let db = db::DB_POOL.get_connection();
+    let sql = format!(
+        "INSERT OR IGNORE INTO peer_hosts (peer_host) VALUES ({})",
+        v[0]
+    );
+    let mut stmt = db.prepare(&sql)?;
+    stmt.execute(&[])?;
+    Ok(())
+}
 // global request has no specific ws connections, just find a proper one should be fine
 pub struct WsConnections {
     inbound: RwLock<Vec<Arc<HubConn>>>,
@@ -95,13 +109,17 @@ impl WsConnections {
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
         init_connection(&inbound);
         let mut g = self.inbound.write().unwrap();
-        g.push(inbound);
+        g.push(inbound.clone());
+        drop(g);
+        t!(add_peer_host(inbound));
     }
 
     pub fn add_outbound(&self, outbound: Arc<HubConn>) {
         init_connection(&outbound);
         let mut g = self.outbound.write().unwrap();
-        g.push(outbound);
+        g.push(outbound.clone());
+        drop(g);
+        t!(add_peer_host(outbound));
     }
 
     pub fn close_all(&self) {
@@ -864,7 +882,7 @@ impl HubConn {
 pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<HubConn>> {
     let stream = TcpStream::connect(address)?;
     let peer = match stream.peer_addr() {
-        Ok(addr) => format!("{}", addr),
+        Ok(addr) => addr.to_string(),
         Err(_) => "unknown peer".to_owned(),
     };
     let url = Url::parse("wss://localhost/")?;
