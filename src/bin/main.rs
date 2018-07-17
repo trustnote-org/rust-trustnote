@@ -2,8 +2,8 @@
 extern crate log;
 extern crate base64;
 extern crate fern;
+extern crate serde_json;
 extern crate trustnote;
-
 #[macro_use]
 extern crate may;
 
@@ -72,7 +72,22 @@ fn pause() {
     io::stdin().read(&mut [0]).ok();
 }
 
-fn main() {
+#[allow(dead_code)]
+fn test_read_joint() -> Result<()> {
+    fn print_joint(unit: &str) -> Result<()> {
+        let db = db::DB_POOL.get_connection();
+        let joint = storage::read_joint_directly(&db, &unit.to_string())?;
+        println!("joint = {}", serde_json::to_string_pretty(&joint)?);
+        Ok(())
+    }
+
+    print_joint("V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=")?;
+    print_joint("g9HQWWTdz8n9+KRYFxOyHNEH7kp7N4j1vU7F1VIpEC8=")?;
+    pause();
+    Ok(())
+}
+
+fn main() -> Result<()> {
     // init default coroutine settings
     let stack_size = if cfg!(debug_assertions) {
         0x4000
@@ -87,6 +102,9 @@ fn main() {
     log_init();
     config::show_config();
 
+    // uncomment it to test read joint from db
+    // test_read_joint()?;
+
     go!(|| run_hub_server().unwrap()).join().unwrap();
 
     // wait user input a key to exit
@@ -95,4 +113,5 @@ fn main() {
     // close all the connections
     network_cleanup();
     info!("bye from main!\n\n");
+    Ok(())
 }
