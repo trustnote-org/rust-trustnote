@@ -73,7 +73,7 @@ fn init_connection(ws: &Arc<HubConn>) {
         }
     });
 }
-pub fn add_peer_host(bound: Arc<HubConn>) -> Result<()> {
+fn add_peer_host(bound: Arc<HubConn>) -> Result<()> {
     let peer = bound.get_peer();
     let v: Vec<&str> = peer.split(':').collect();
     if v[0].is_empty() {
@@ -82,7 +82,7 @@ pub fn add_peer_host(bound: Arc<HubConn>) -> Result<()> {
     let db = db::DB_POOL.get_connection();
     let sql = format!(
         "INSERT OR IGNORE INTO peer_hosts (peer_host) VALUES ({})",
-        v[0].to_string()
+        v[0]
     );
     let mut stmt = db.prepare(&sql)?;
     stmt.execute(&[])?;
