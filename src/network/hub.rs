@@ -43,7 +43,7 @@ lazy_static! {
     static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
     static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now());
 }
-pub const FORWARDING_TIMEOUT: usize = 10 * 1000;
+const FORWARDING_TIMEOUT: usize = 10 * 1000;
 
 fn init_connection(ws: &Arc<HubConn>) {
     use rand::{thread_rng, Rng};
@@ -410,7 +410,7 @@ impl HubConn {
 
                     let ws = WSS.get_ws(self);
                     if !IS_CACTCHING_UP.is_locked() {
-                        self.forward_joint(ws, &joint);
+                        self.forward_joint(ws, &joint)?;
                     }
 
                     // must release the guard to let other work continue
@@ -528,7 +528,7 @@ impl HubConn {
                     let ws = WSS.get_ws(self);
                     let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
                     if !IS_CACTCHING_UP.is_locked() && diff < FORWARDING_TIMEOUT {
-                        self.forward_joint(ws, &joint);
+                        self.forward_joint(ws, &joint)?;
                     }
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                     drop(g);
@@ -758,17 +758,18 @@ impl HubConn {
         Ok(())
     }
 
-    fn forward_joint(&self, ws: Arc<HubConn>, joint: &Joint) {
+    fn forward_joint(&self, ws: Arc<HubConn>, joint: &Joint) -> Result<()> {
         for client in WSS.get_outbound() {
             if !Arc::ptr_eq(&client, &ws) && client.is_subscribed() {
-                let _ = self.send_joint(joint);
+                self.send_joint(joint)?;
             }
         }
         for client in WSS.get_inbound() {
             if !Arc::ptr_eq(&client, &ws) && client.is_subscribed() {
-                let _ = self.send_joint(joint);
+                self.send_joint(joint)?;
             }
         }
+        Ok(())
     }
 }
 
