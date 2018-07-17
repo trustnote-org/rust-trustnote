@@ -354,6 +354,20 @@ impl HubConn {
 }
 
 impl HubConn {
+    fn forward_joint(&self, joint: &Joint) -> Result<()> {
+        for client in WSS.get_outbound() {
+            if !self.conn_eq(&client) && client.is_subscribed() {
+                client.send_joint(joint)?;
+            }
+        }
+        for client in WSS.get_inbound() {
+            if !self.conn_eq(&client) && client.is_subscribed() {
+                client.send_joint(joint)?;
+            }
+        }
+        Ok(())
+    }
+
     fn handle_online_joint(&self, mut joint: Joint, db: &mut Connection) -> Result<()> {
         use joint_storage::CheckNewResult;
         use validation::{ValidationError, ValidationOk};
@@ -408,9 +422,8 @@ impl HubConn {
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
 
-                    let ws = WSS.get_ws(self);
                     if !IS_CACTCHING_UP.is_locked() {
-                        self.forward_joint(ws, &joint)?;
+                        self.forward_joint(&joint)?;
                     }
 
                     // must release the guard to let other work continue
@@ -525,10 +538,9 @@ impl HubConn {
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
 
-                    let ws = WSS.get_ws(self);
                     let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
                     if !IS_CACTCHING_UP.is_locked() && diff < FORWARDING_TIMEOUT {
-                        self.forward_joint(ws, &joint)?;
+                        self.forward_joint(&joint)?;
                     }
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                     drop(g);
@@ -755,20 +767,6 @@ impl HubConn {
         }
         self.send_just_saying("free_joints_end", Value::Null)?;
 
-        Ok(())
-    }
-
-    fn forward_joint(&self, ws: Arc<HubConn>, joint: &Joint) -> Result<()> {
-        for client in WSS.get_outbound() {
-            if !Arc::ptr_eq(&client, &ws) && client.is_subscribed() {
-                self.send_joint(joint)?;
-            }
-        }
-        for client in WSS.get_inbound() {
-            if !Arc::ptr_eq(&client, &ws) && client.is_subscribed() {
-                self.send_joint(joint)?;
-            }
-        }
         Ok(())
     }
 }
