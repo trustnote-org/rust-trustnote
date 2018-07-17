@@ -320,7 +320,7 @@ impl HubConn {
 
         self.set_subscribed();
         let db = db::DB_POOL.get_connection();
-	// FIXME: use correct mci
+        // FIXME: use correct mci
         self.send_joints_since_mci(&db, 0)?;
         Ok(json!("subscribed"))
     }
@@ -548,9 +548,9 @@ impl HubConn {
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
 
-                    const FORWARDING_TIMEOUT: usize = 10 * 1000;
+                    const FORWARDING_TIMEOUT: u64 = 10 * 1000;
                     if !IS_CACTCHING_UP.is_locked()
-                        && create_ts > ::time::now() - FORWARDING_TIMEOUT
+                        && create_ts as u64 > ::time::now() - FORWARDING_TIMEOUT
                     {
                         WSS.forward_joint(&joint)?;
                     }
