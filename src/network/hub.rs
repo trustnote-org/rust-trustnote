@@ -210,9 +210,7 @@ impl WsConnections {
 
         None
     }
-    pub fn get_outbound(&self) -> Result<Vec<Arc<HubConn>>> {
-        Ok(self.outbound.read().unwrap().clone())
-    }
+
     fn request_free_joints(&self) {
         let g = self.outbound.read().unwrap();
         for ws in g.iter() {
@@ -230,7 +228,15 @@ impl WsConnections {
         for c in inbound {
             c.send_joint(joint)?;
         }
+        Ok(())
+    }
 
+    pub fn request_free_joints_from_all_outbound_peers(&self) -> Result<()> {
+        let out_bound_peers = self.outbound.read().unwrap().to_vec();
+
+        for out_bound_peer in out_bound_peers {
+            out_bound_peer.send_just_saying("refresh", Value::Null)?;
+        }
         Ok(())
     }
 }
