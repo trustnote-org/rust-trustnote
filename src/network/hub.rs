@@ -397,18 +397,13 @@ impl HubConn {
             None => return Ok(()),
         };
 
-        let ws = WSS.get_ws(self);
         let mci = param.as_u64();
-
-        try_go!(move || -> Result<()> {
-            let db = db::DB_POOL.get_connection();
-            if let Some(mci) = mci {
-                ws.send_joints_since_mci(&db, mci as u32)?;
-            } else {
-                ws.send_free_joints(&db)?;
-            }
-            Ok(())
-        });
+        let db = db::DB_POOL.get_connection();
+        if let Some(mci) = mci {
+            self.send_joints_since_mci(&db, mci as u32)?;
+        } else {
+            self.send_free_joints(&db)?;
+        }
 
         Ok(())
     }
