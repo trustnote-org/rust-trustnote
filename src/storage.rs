@@ -972,8 +972,8 @@ fn generate_queries_to_unspend_transfer_outputs_spent_in_archived_unit(
         "SELECT src_unit, src_message_index, src_output_index \
          FROM inputs \
          WHERE inputs.unit=? \
-         AND inputstype='transfer' \
-         AND NO EXISTS ( \
+         AND inputs.type='transfer' \
+         AND NOT EXISTS ( \
          SELECT 1 FROM inputs AS alt_inputs \
          WHERE inputs.src_unit=alt_inputs.src_unit \
          AND inputs.src_message_index=alt_inputs.src_message_index \

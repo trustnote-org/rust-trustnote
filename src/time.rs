@@ -1,6 +1,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use db;
+use joint_storage;
 use may::coroutine;
 use network::hub;
 
@@ -25,14 +26,23 @@ pub fn start_global_timers() {
     // request needed joints that were not received during the previous session
     go!(move || loop {
         let db = db::DB_POOL.get_connection();
+        info!("re_requeset_lost_joints");
         t!(hub::re_requeset_lost_joints(&db));
         coroutine::sleep(Duration::from_secs(8));
     });
 
-    // this should be run in a single thread to remove those junk joints
+    // remove those junk joints
     go!(move || loop {
         let db = db::DB_POOL.get_connection();
+        info!("purge_junk_unhandled_joints");
         t!(hub::purge_junk_unhandled_joints(&db));
         coroutine::sleep(Duration::from_secs(30 * 60));
+    });
+
+    // purge uncovered nonserial joints
+    go!(move || loop {
+        info!("purge_uncovered_nonserial_joints_under_lock");
+        t!(joint_storage::purge_uncovered_nonserial_joints_under_lock());
+        coroutine::sleep(Duration::from_secs(60));
     });
 }
