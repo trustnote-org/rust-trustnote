@@ -10,6 +10,7 @@ use catchup;
 use config;
 use db;
 use error::Result;
+use failure::ResultExt;
 use joint::Joint;
 use joint_storage::{self, ReadyJoint};
 use map_lock::MapLock;
@@ -333,11 +334,11 @@ impl HubConn {
             if let Some(last_mci) = last_mci {
                 ws.send_joints_since_mci(&db, last_mci as u32)?;
             } else {
-                // TODO:
-                // ws.send_free_joints()?;
+                ws.send_free_joints(&db)?;
             }
             Ok(())
         });
+
         Ok(json!("subscribed"))
     }
 
@@ -794,6 +795,15 @@ impl HubConn {
         }
         self.send_just_saying("free_joints_end", Value::Null)?;
 
+        Ok(())
+    }
+
+    fn send_free_joints(&self, db: &Connection) -> Result<()> {
+        let joints = storage::read_free_joints(db).context("send free joint failed")?;
+        for joint in joints {
+            self.send_joint(&joint)?;
+        }
+        self.send_just_saying("free_joints_end", Value::Null)?;
         Ok(())
     }
 }
