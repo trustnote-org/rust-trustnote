@@ -476,15 +476,14 @@ impl HubConn {
                     ValidationError::JointError { err } => {
                         self.send_error_result(unit, &err)?;
                         self.write_event(db, "invalid")?;
-                        // TODO: insert known_bad_jonts
-                        unimplemented!()
-                        // b.query(
-                        // 	"INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
-                        // 	[objectHash.getJointHash(objJoint), JSON.stringify(objJoint), error],
-                        // 	function(){
-                        // 		delete assocUnitsInWork[unit];
-                        // 	}
-                        // );
+                        let mut stmt = db.prepare_cached(
+                            "INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
+                        )?;
+                        stmt.execute(&[
+                            &object_hash::get_base64_hash(&joint)?,
+                            &stringify!(joint),
+                            &err,
+                        ])?;
                     }
                     ValidationError::NeedHashTree => {
                         info!("need hash tree for unit {}", unit);
@@ -580,67 +579,64 @@ impl HubConn {
                     }
                 }
             },
-            Err(err) => {
-                match err {
-                    ValidationError::OtherError { err } => {
-                        error!("validation other err={}, unit={}", err, unit);
-                    }
-                    ValidationError::UnitError { err } => {
-                        warn!("{} validation failed: {}", unit, err);
-                        self.send_error_result(unit, &err)?;
-                        self.purge_joint_and_dependencies_and_notify_peers(db, &joint, &err)?;
-                        if !err.contains("authentifier verification failed")
-                            && !err.contains("bad merkle proof at path")
-                        {
-                            self.write_event(db, "invalid")?;
-                        }
-                    }
-                    ValidationError::JointError { err } => {
-                        self.send_error_result(unit, &err)?;
+            Err(err) => match err {
+                ValidationError::OtherError { err } => {
+                    error!("validation other err={}, unit={}", err, unit);
+                }
+                ValidationError::UnitError { err } => {
+                    warn!("{} validation failed: {}", unit, err);
+                    self.send_error_result(unit, &err)?;
+                    self.purge_joint_and_dependencies_and_notify_peers(db, &joint, &err)?;
+                    if !err.contains("authentifier verification failed")
+                        && !err.contains("bad merkle proof at path")
+                    {
                         self.write_event(db, "invalid")?;
-                        // TODO: insert known_bad_jonts
-                        unimplemented!()
-                        // b.query(
-                        // 	"INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
-                        // 	[objectHash.getJointHash(objJoint), JSON.stringify(objJoint), error],
-                        // 	function(){
-                        // 		delete assocUnitsInWork[unit];
-                        // 	}
-                        // );
-                    }
-                    ValidationError::NeedHashTree => {
-                        info!("need hash tree for unit {}", unit);
-                        if joint.unsigned == Some(true) {
-                            bail!("need hash tree unsigned");
-                        }
-                        bail!("handleSavedJoint: need hash tree");
-                    }
-                    ValidationError::NeedParentUnits(missing_units) => {
-                        let miss_unit_set = missing_units
-                            .iter()
-                            .map(|s| format!("'{}'", s))
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        let sql = format!(
-                            "SELECT 1 FROM archived_joints WHERE unit IN({}) LIMIT 1",
-                            miss_unit_set
-                        );
-                        let mut stmt = db.prepare(&sql)?;
-                        ensure!(
-                            stmt.exists(&[])?,
-                            "unit {} still has unresolved dependencies: {}",
-                            unit,
-                            miss_unit_set
-                        );
-                        info!(
-                            "unit {} has unresolved dependencies that were archived: {}",
-                            unit, miss_unit_set
-                        );
-                        drop(g);
-                        self.request_new_missing_joints(&db, &missing_units)?;
                     }
                 }
-            }
+                ValidationError::JointError { err } => {
+                    self.send_error_result(unit, &err)?;
+                    self.write_event(db, "invalid")?;
+                    let mut stmt = db.prepare_cached(
+                        "INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
+                    )?;
+                    stmt.execute(&[
+                        &object_hash::get_base64_hash(&joint)?,
+                        &stringify!(joint),
+                        &err,
+                    ])?;
+                }
+                ValidationError::NeedHashTree => {
+                    info!("need hash tree for unit {}", unit);
+                    if joint.unsigned == Some(true) {
+                        bail!("need hash tree unsigned");
+                    }
+                    bail!("handleSavedJoint: need hash tree");
+                }
+                ValidationError::NeedParentUnits(missing_units) => {
+                    let miss_unit_set = missing_units
+                        .iter()
+                        .map(|s| format!("'{}'", s))
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let sql = format!(
+                        "SELECT 1 FROM archived_joints WHERE unit IN({}) LIMIT 1",
+                        miss_unit_set
+                    );
+                    let mut stmt = db.prepare(&sql)?;
+                    ensure!(
+                        stmt.exists(&[])?,
+                        "unit {} still has unresolved dependencies: {}",
+                        unit,
+                        miss_unit_set
+                    );
+                    info!(
+                        "unit {} has unresolved dependencies that were archived: {}",
+                        unit, miss_unit_set
+                    );
+                    drop(g);
+                    self.request_new_missing_joints(&db, &missing_units)?;
+                }
+            },
         }
 
         Ok(())
@@ -823,7 +819,6 @@ impl HubConn {
     }
 
     fn send_hub_challenge(&self) -> Result<()> {
-        use object_hash;
         let challenge = object_hash::gen_random_string(30);
         self.send_just_saying("hub/challenge", json!(challenge))?;
         Ok(())
