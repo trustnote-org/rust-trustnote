@@ -311,7 +311,7 @@ fn purge_uncovered_nonserial_joints(mut by_existence_of_children: bool) -> Resul
                 // by_existence_of_children = true
                 db.prepare_cached(
                 "SELECT unit FROM units INDEXED BY bySequence \
-                 WHERE (SELECT 1 FROM parenthoods WHERE parent_unit=unit LINIT 1) IS NULL AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL \
+                 WHERE (SELECT 1 FROM parenthoods WHERE parent_unit=unit LIMIT 1) IS NULL AND sequence IN('final-bad','temp-bad') AND content_hash IS NULL \
                      AND NOT EXISTS (SELECT * FROM dependencies WHERE depends_on_unit=units.unit) \
                      AND NOT EXISTS (SELECT * FROM balls WHERE balls.unit=units.unit) \
                      AND EXISTS ( \

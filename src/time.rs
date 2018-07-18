@@ -33,16 +33,16 @@ pub fn start_global_timers() {
 
     // remove those junk joints
     go!(move || loop {
+        coroutine::sleep(Duration::from_secs(30 * 60));
         let db = db::DB_POOL.get_connection();
         info!("purge_junk_unhandled_joints");
         t!(hub::purge_junk_unhandled_joints(&db));
-        coroutine::sleep(Duration::from_secs(30 * 60));
     });
 
     // purge uncovered nonserial joints
     go!(move || loop {
+        coroutine::sleep(Duration::from_secs(60));
         info!("purge_uncovered_nonserial_joints_under_lock");
         t!(joint_storage::purge_uncovered_nonserial_joints_under_lock());
-        coroutine::sleep(Duration::from_secs(60));
     });
 }
