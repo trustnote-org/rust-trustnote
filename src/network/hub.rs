@@ -17,6 +17,7 @@ use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::{Mutex, RwLock};
+use object_hash;
 use rusqlite::Connection;
 use serde_json::{self, Value};
 use storage;
@@ -25,7 +26,6 @@ use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
 use validation;
-
 pub struct HubData {
     // indicate if this connection is a subscribed peer
     is_subscribed: AtomicBool,
@@ -44,6 +44,7 @@ lazy_static! {
     static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
     // FIXME: should wait rust atomic number stable
     static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now() as usize);
+    static ref SUBSCRIPTION_ID: RwLock<String> = RwLock::new(object_hash::gen_random_string(30));
 }
 
 fn init_connection(ws: &Arc<HubConn>) {
@@ -310,11 +311,17 @@ impl HubConn {
     }
 
     fn on_subscribe(&self, param: Value) -> Result<Value> {
-        // TODO: is it necessary to detect the self connection? (#63)
-        let _subscription_id = param["subscription_id"]
+        let subscription_id = param["subscription_id"]
             .as_str()
             .ok_or_else(|| format_err!("no subscription_id"))?;
+        if subscription_id == *SUBSCRIPTION_ID.read().unwrap() {
+            let db = db::DB_POOL.get_connection();
+            let mut stmt = db.prepare_cached("UPDATE peers SET is_self=1 WHERE peer=?")?;
+            stmt.execute(&[self.get_peer()])?;
 
+            self.close();
+            return Err(format_err!("self-connect"));
+        }
         self.set_subscribed();
         // send some joint in a background task
         let ws = WSS.get_ws(self);
@@ -817,20 +824,17 @@ impl HubConn {
 
     fn send_hub_challenge(&self) -> Result<()> {
         use object_hash;
-        let challenge = object_hash::get_random_string(30);
+        let challenge = object_hash::gen_random_string(30);
         self.send_just_saying("hub/challenge", json!(challenge))?;
         Ok(())
     }
 
     fn send_subscribe(&self) -> Result<()> {
-        use object_hash;
-        // TODO: this is used to detect self-connect (#63)
-        let subscription_id = object_hash::get_random_string(30);
         let db = ::db::DB_POOL.get_connection();
         let last_mci = storage::read_last_main_chain_index(&db)?;
         self.send_request(
             "subscribe",
-            &json!({ "subscription_id": subscription_id, "last_mci": last_mci}),
+            &json!({ "subscription_id": *SUBSCRIPTION_ID.read().unwrap(), "last_mci": last_mci}),
         )?;
 
         self.set_source();
