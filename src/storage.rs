@@ -1138,8 +1138,7 @@ fn find_last_ball_mci_of_mci(db: &Connection, mci: u32) -> Result<u32> {
     Ok(rows[0].main_chain_index)
 }
 
-pub fn read_free_joints() -> Result<Vec<Joint>> {
-    let db = db::DB_POOL.get_connection();
+pub fn read_free_joints(db: &Connection) -> Result<Vec<Joint>> {
     let mut stmt = db.prepare_cached(
         "SELECT units.unit FROM units LEFT JOIN archived_joints USING(unit) WHERE is_free=1 AND archived_joints.unit IS NULL",
     )?;

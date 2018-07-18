@@ -334,12 +334,10 @@ impl HubConn {
             if let Some(last_mci) = last_mci {
                 ws.send_joints_since_mci(&db, last_mci as u32)?;
             } else {
-                // TODO:
-                // ws.send_free_joints()?;
+                ws.send_free_joints(&db)?;
             }
             Ok(())
         });
-        self.send_free_joints().ok();
 
         Ok(json!("subscribed"))
     }
@@ -800,8 +798,8 @@ impl HubConn {
         Ok(())
     }
 
-    fn send_free_joints(&self) -> Result<()> {
-        let joints = storage::read_free_joints().context("send free joint failed")?;
+    fn send_free_joints(&self, db: &Connection) -> Result<()> {
+        let joints = storage::read_free_joints(db).context("send free joint failed")?;
         for joint in joints {
             self.send_joint(&joint)?;
         }
