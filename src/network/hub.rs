@@ -343,7 +343,7 @@ impl HubConn {
         let unit = serde_json::from_value(param)?;
         let db = db::DB_POOL.get_connection();
         match storage::read_joint(&db, &unit) {
-            Ok(joint) => Ok(serde_json::to_value(joint)?),
+            Ok(joint) => Ok(json!({ "joint": joint })),
             Err(e) => {
                 error!("read joint {} failed, err={}", unit, e);
                 Ok(json!({ "joint_not_found": unit }))
