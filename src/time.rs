@@ -5,13 +5,12 @@ use may::coroutine;
 use network::hub;
 
 /// return milliseconds since unix epoch
-pub fn now() -> usize {
+pub fn now() -> u64 {
     let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards");
 
-    let ret = dur.as_secs() * 1000 + u64::from(dur.subsec_nanos()) / 1_000_000;
-    ret as usize
+    dur.as_secs() * 1000 + u64::from(dur.subsec_nanos()) / 1_000_000
 }
 
 pub fn start_global_timers() {

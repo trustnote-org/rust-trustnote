@@ -41,7 +41,8 @@ lazy_static! {
     static ref UNIT_IN_WORK: MapLock<String> = MapLock::new();
     static ref JOINT_IN_REQ: MapLock<String> = MapLock::new();
     static ref IS_CACTCHING_UP: AtomicLock = AtomicLock::new();
-    static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now());
+    // FIXME: should wait rust atomic number stable
+    static ref COMING_ONLINE_TIME: AtomicUsize = AtomicUsize::new(::time::now() as usize);
 }
 
 fn init_connection(ws: &Arc<HubConn>) {
@@ -80,12 +81,9 @@ fn add_peer_host(bound: Arc<HubConn>) -> Result<()> {
         return Ok(());
     }
     let db = db::DB_POOL.get_connection();
-    let sql = format!(
-        "INSERT OR IGNORE INTO peer_hosts (peer_host) VALUES ({})",
-        v[0]
-    );
-    let mut stmt = db.prepare(&sql)?;
-    stmt.execute(&[])?;
+    let mut stmt = db.prepare_cached("INSERT OR IGNORE INTO peer_hosts (peer_host) VALUES (?)")?;
+    let host = v[0].to_string();
+    stmt.execute(&[&host])?;
     Ok(())
 }
 // global request has no specific ws connections, just find a proper one should be fine
@@ -107,18 +105,14 @@ impl WsConnections {
     }
 
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
+        self.inbound.write().unwrap().push(inbound.clone());
         init_connection(&inbound);
-        let mut g = self.inbound.write().unwrap();
-        g.push(inbound.clone());
-        drop(g);
         t!(add_peer_host(inbound));
     }
 
     pub fn add_outbound(&self, outbound: Arc<HubConn>) {
+        self.outbound.write().unwrap().push(outbound.clone());
         init_connection(&outbound);
-        let mut g = self.outbound.write().unwrap();
-        g.push(outbound.clone());
-        drop(g);
         t!(add_peer_host(outbound));
     }
 
@@ -331,6 +325,19 @@ impl HubConn {
             .ok_or_else(|| format_err!("no subscription_id"))?;
 
         self.set_subscribed();
+        // send some joint in a background task
+        let ws = WSS.get_ws(self);
+        let last_mci = param["last_mci"].as_u64();
+        try_go!(move || -> Result<()> {
+            let db = db::DB_POOL.get_connection();
+            if let Some(last_mci) = last_mci {
+                ws.send_joints_since_mci(&db, last_mci as u32)?;
+            } else {
+                // TODO:
+                // ws.send_free_joints()?;
+            }
+            Ok(())
+        });
         Ok(json!("subscribed"))
     }
 
@@ -346,7 +353,7 @@ impl HubConn {
         let unit = serde_json::from_value(param)?;
         let db = db::DB_POOL.get_connection();
         match storage::read_joint(&db, &unit) {
-            Ok(joint) => Ok(serde_json::to_value(joint)?),
+            Ok(joint) => Ok(json!({ "joint": joint })),
             Err(e) => {
                 error!("read joint {} failed, err={}", unit, e);
                 Ok(json!({ "joint_not_found": unit }))
@@ -557,9 +564,9 @@ impl HubConn {
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
 
-                    const FORWARDING_TIMEOUT: usize = 10 * 1000;
+                    const FORWARDING_TIMEOUT: u64 = 10 * 1000;
                     if !IS_CACTCHING_UP.is_locked()
-                        && create_ts > ::time::now() - FORWARDING_TIMEOUT
+                        && create_ts as u64 > ::time::now() - FORWARDING_TIMEOUT
                     {
                         WSS.forward_joint(&joint)?;
                     }
@@ -776,10 +783,9 @@ impl HubConn {
 
     #[inline]
     fn send_joint(&self, joint: &Joint) -> Result<()> {
-        self.send_just_saying("joint", json!({ "joint": joint }))
+        self.send_just_saying("joint", serde_json::to_value(joint)?)
     }
 
-    #[allow(dead_code)]
     fn send_joints_since_mci(&self, db: &Connection, mci: u32) -> Result<()> {
         let joints = joint_storage::read_joints_since_mci(db, mci)?;
 
@@ -927,7 +933,7 @@ fn check_catchup_leftover(db: &Connection) -> Result<bool> {
 }
 
 pub fn purge_junk_unhandled_joints(db: &Connection) -> Result<()> {
-    let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed);
+    let diff = ::time::now() - COMING_ONLINE_TIME.load(Ordering::Relaxed) as u64;
     if diff < 3600 * 1000 || IS_CACTCHING_UP.is_locked() {
         return Ok(());
     }
@@ -1017,7 +1023,7 @@ pub fn start_catchup() -> Result<()> {
     }
 
     // now we are done the catchup
-    COMING_ONLINE_TIME.store(::time::now(), Ordering::Relaxed);
+    COMING_ONLINE_TIME.store(::time::now() as usize, Ordering::Relaxed);
     WSS.request_free_joints();
 
     Ok(())

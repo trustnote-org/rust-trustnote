@@ -300,7 +300,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         unit: Option<String>,
         version: String,
         alt: String,
-        //witness_list_unit: Option<String>, //Not used by now
+        witness_list_unit: Option<String>,
         last_ball_unit: Option<String>,
         last_ball: Option<String>,
         //is_stable: u32, //Not used by now
@@ -308,14 +308,14 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         headers_commission: Option<u32>,
         payload_commission: Option<u32>,
         main_chain_index: Option<u32>,
-        timestamp: Option<u32>,
+        timestamp: u64,
     }
 
     let mut unit = stmt.query_row(&[unit_hash], |row| UnitTemp {
         unit: row.get(0),
         version: row.get(1),
         alt: row.get(2),
-        //witness_list_unit: row.get(3),
+        witness_list_unit: row.get(3),
         last_ball_unit: row.get(4),
         last_ball: row.get(5),
         //is_stable: row.get(6),
@@ -323,7 +323,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         headers_commission: row.get(8),
         payload_commission: row.get(9),
         main_chain_index: row.get(10),
-        timestamp: row.get(11),
+        timestamp: row.get::<_, String>(11).parse::<u64>().unwrap() * 1000,
     })?;
 
     let main_chain_index = unit.main_chain_index;
@@ -386,7 +386,8 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
     if !b_voided {
         let mut stmt = db.prepare_cached(
             "SELECT address, earned_headers_commission_share \
-             FROM earned_headers_commission_recipients",
+             FROM earned_headers_commission_recipients \
+             WHERE unit=? ORDER BY address",
         )?;
         earned_headers_commission_recipients = stmt
             .query_map(&[unit_hash], |row| HeaderCommissionShare {
@@ -464,10 +465,10 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
         struct MessageTemp {
             pub app: String,
-            pub message_index: Option<u32>,
-            pub payload: Option<String>,
+            pub message_index: u32,
             pub payload_hash: String,
             pub payload_location: String,
+            pub payload: Option<String>,
             pub payload_uri: Option<String>,
             pub payload_uri_hash: Option<String>,
         }
@@ -493,15 +494,47 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
             let mut prev_asset = None;
             let mut prev_denomination = None;
 
+            let mut payload = Payload::Other(Value::Null);
             if msg.payload_location == "inline" {
                 match msg.app.as_str() {
-                    "address_definition_change" => unimplemented!(),
-                    "poll" => unimplemented!(),
-                    "vote" => unimplemented!(),
-                    "asset" => unimplemented!(),
-                    "asset_attestors" => unimplemented!(),
-                    "data_feed" => unimplemented!(),
-                    "profile" | "attestation" | "data" | "definition_template" => unimplemented!(),
+                    "text" => {
+                        if let Some(s) = msg.payload {
+                            payload = Payload::Text(s);
+                        }
+                    }
+                    "data_feed" => {
+                        struct DataFeed {
+                            feed_name: String,
+                            value: Option<String>,
+                            int_value: Option<i64>,
+                        }
+
+                        let mut stmt = db.prepare_cached(
+                            "SELECT feed_name, `value`, int_value FROM data_feeds \
+                             WHERE unit=? AND message_index=?",
+                        )?;
+                        let df_rows = stmt
+                            .query_map(&[unit_hash, &message_index], |row| DataFeed {
+                                feed_name: row.get(0),
+                                value: row.get(1),
+                                int_value: row.get(2),
+                            })?
+                            .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+                        ensure!(!df_rows.is_empty(), "no data feed");
+                        use serde_json::Map;
+
+                        let mut map = Map::new();
+                        for df in df_rows {
+                            if let Some(s) = df.value {
+                                map.insert(df.feed_name, Value::from(s));
+                            } else if let Some(i) = df.int_value {
+                                map.insert(df.feed_name, Value::from(i));
+                            }
+                        }
+
+                        payload = Payload::Other(Value::from(map));
+                    }
                     "payment" => {
                         //Read Inputs
                         let mut stmt = db.prepare_cached(
@@ -520,12 +553,12 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             kind: Option<String>,
                             denomination: Option<u32>,
                             fixed_denominations: Option<u32>,
-                            unit: String,
-                            message_index: u32,
-                            output_index: u32,
+                            unit: Option<String>,
+                            message_index: Option<u32>,
+                            output_index: Option<u32>,
                             from_main_chain_index: Option<u32>,
                             to_main_chain_index: Option<u32>,
-                            //serial_number: Option<i64>,
+                            serial_number: Option<u32>,
                             amount: Option<i64>,
                             address: Option<String>,
                             asset: Option<String>,
@@ -541,7 +574,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                 output_index: row.get(5),
                                 from_main_chain_index: row.get(6),
                                 to_main_chain_index: row.get(7),
-                                //serial_number: row.get(8),
+                                serial_number: row.get(8),
                                 amount: row.get(9),
                                 address: row.get(10),
                                 asset: row.get(11),
@@ -586,14 +619,14 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
                                 inputs.push(Input {
                                     kind: input.kind.clone(),
-                                    unit: Some(input.unit.clone()),
-                                    message_index: Some(input.message_index),
-                                    output_index: Some(input.output_index),
+                                    unit: input.unit.clone(),
+                                    message_index: input.message_index,
+                                    output_index: input.output_index,
                                     from_main_chain_index: input.from_main_chain_index,
                                     to_main_chain_index: input.to_main_chain_index,
                                     amount: input.amount,
                                     address: input.address.clone(),
-                                    serial_number: None,
+                                    serial_number: input.serial_number,
                                 });
                             }
                         }
@@ -633,8 +666,17 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                 address: output.address.clone(),
                             });
                         }
+
+                        payload = Payload::Payment(Payment {
+                            address: None,
+                            asset: payload_asset,
+                            definition_chash: None,
+                            denomination: payload_denomination,
+                            inputs,
+                            outputs,
+                        });
                     }
-                    _ => unimplemented!(),
+                    app => unimplemented!("app = {}", app),
                 }
             }
 
@@ -662,14 +704,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
 
             messages.push(Message {
                 app: msg.app,
-                payload: Some(Payload::Payment(Payment {
-                    address: None,
-                    asset: payload_asset,
-                    definition_chash: None,
-                    denomination: payload_denomination,
-                    inputs,
-                    outputs,
-                })),
+                payload: Some(payload),
                 payload_hash: msg.payload_hash,
                 payload_location: msg.payload_location,
                 payload_uri: msg.payload_uri,
@@ -691,11 +726,11 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         messages,
         parent_units,
         payload_commission: unit.payload_commission,
-        timestamp: unit.timestamp,
+        timestamp: Some(unit.timestamp),
         unit: unit.unit,
         version: unit.version,
         witnesses,
-        witness_list_unit: None,
+        witness_list_unit: unit.witness_list_unit,
     };
 
     //TODO: Retry if the hash verification fails

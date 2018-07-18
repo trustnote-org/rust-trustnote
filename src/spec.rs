@@ -11,6 +11,7 @@ pub struct Author {
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub authentifiers: HashMap<String, String>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Value::is_null")]
     pub definition: Value,
 }
 
@@ -26,6 +27,7 @@ pub struct SpendProof {
 pub struct Input {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub amount: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub from_main_chain_index: Option<u32>,
@@ -124,7 +126,7 @@ pub struct Unit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payload_commission: Option<u32>, // default 0
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub timestamp: Option<u32>,
+    pub timestamp: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>, // this may not exist
     pub version: String,
@@ -436,14 +438,9 @@ fn test_unit_json() {
     }"#;
 
     let u: Unit = serde_json::from_str(data).unwrap();
-    // println!("unit = {:?}", u);
     assert_eq!(u.authors[0].definition[0], json!("sig"));
     assert_eq!(
         u.authors[0].definition[1],
         json!({"pubkey": "A0gKwkLedQgzm32JtEo6KmuRcyZa3beikS3xfrwdXAMU"})
     );
-    // assert_eq!(
-    //     u.authors[0].definition[1]["pubkey"].as_str().unwrap(),
-    //     "A0gKwkLedQgzm32JtEo6KmuRcyZa3beikS3xfrwdXAMU"
-    // );
 }

@@ -45,7 +45,7 @@ impl Joint {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )?;
 
-        stmt.insert(&[
+        stmt.execute(&[
             unit_hash,
             &unit.version,
             &unit.alt,
@@ -68,7 +68,7 @@ impl Joint {
         let ball_hash = self.ball.as_ref().unwrap();
 
         let mut stmt = tx.prepare_cached("INSERT INTO balls (ball, unit) VALUES (?, ?)")?;
-        stmt.insert(&[ball_hash, unit_hash])?;
+        stmt.execute(&[ball_hash, unit_hash])?;
 
         let mut stmt = tx.prepare_cached("DELETE FROM hash_tree_balls WHERE ball=? AND unit=?")?;
         stmt.execute(&[ball_hash, unit_hash])?;
@@ -78,7 +78,7 @@ impl Joint {
                 let mut stmt = tx.prepare_cached(
                     "INSERT INTO skiplist_units (unit, skiplist_unit) VALUES (?, ?)",
                 )?;
-                stmt.insert(&[unit_hash, unit])?;
+                stmt.execute(&[unit_hash, unit])?;
             }
         }
 
@@ -92,7 +92,7 @@ impl Joint {
         for parent in &unit.parent_units {
             let mut stmt = tx
                 .prepare_cached("INSERT INTO parenthoods (child_unit, parent_unit) VALUES (?, ?)")?;
-            stmt.insert(&[unit_hash, parent])?;
+            stmt.execute(&[unit_hash, parent])?;
         }
 
         if unit.is_genesis_unit() {
@@ -177,7 +177,7 @@ impl Joint {
                  (unit, address, definition_chash) \
                  VALUES(?, ?, ?)",
             )?;
-            stmt.insert(&[unit_hash, &author.address, &definition_chash])?;
+            stmt.execute(&[unit_hash, &author.address, &definition_chash])?;
 
             for (path, authentifier) in &author.authentifiers {
                 let mut stmt = tx.prepare_cached(
@@ -185,7 +185,7 @@ impl Joint {
                      (unit, address, path, authentifier) \
                      VALUES(?, ?, ?, ?)",
                 )?;
-                stmt.insert(&[unit_hash, &author.address, path, authentifier])?;
+                stmt.execute(&[unit_hash, &author.address, path, authentifier])?;
             }
         }
         Ok(())
@@ -215,7 +215,7 @@ impl Joint {
                  payload, payload_uri, payload_uri_hash) \
                  VALUES(?,?,?,?,?,?,?,?)",
             )?;
-            stmt.insert(&[
+            stmt.execute(&[
                 unit_hash,
                 &(i as u32),
                 &message.app,
@@ -264,7 +264,7 @@ impl Joint {
                     .address
                     .as_ref()
                     .unwrap_or(&self.unit.authors[0].address);
-                stmt.insert(&[
+                stmt.execute(&[
                     unit_hash,
                     &(i as u32),
                     &(j as u32),
@@ -283,7 +283,7 @@ impl Joint {
                 "INSERT INTO earned_headers_commission_recipients \
                  (unit, address, earned_headers_commission_share) VALUES(?,?,?)",
             )?;
-            stmt.insert(&[
+            stmt.execute(&[
                 &unit.unit,
                 &recipient.address,
                 &recipient.earned_headers_commission_share,
@@ -475,7 +475,7 @@ impl Joint {
                      asset, is_unique, address) \
                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 )?;
-                stmt.insert(&[
+                stmt.execute(&[
                     unit_hash,
                     &(i as u32),
                     &(j as u32),
@@ -521,7 +521,7 @@ impl Joint {
                      amount, asset, denomination, is_serial) \
                      VALUES(?,?,?,?,?,?,?,1)",
                 )?;
-                stmt.insert(&[
+                stmt.execute(&[
                     self.get_unit_hash(),
                     &(i as u32),
                     &(j as u32),

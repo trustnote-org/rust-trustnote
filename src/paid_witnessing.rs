@@ -156,7 +156,7 @@ fn build_paid_witnesses(
         value_list
     );
     let mut stmt = db.prepare(&sql)?;
-    stmt.insert(&[])?;
+    stmt.execute(&[])?;
 
     //update count paid witnesses
     let mut stmt = db.prepare_cached("UPDATE balls SET count_paid_witnesses=? WHERE unit=?")?;
@@ -247,7 +247,7 @@ fn build_paid_witnesses_for_main_chain_index(db: &Connection, main_chain_index: 
             WHERE main_chain_index=? \
             GROUP BY address"
         )?;
-        stmt.insert(&[&main_chain_index])?;
+        stmt.execute(&[&main_chain_index])?;
     }
 
     Ok(())
