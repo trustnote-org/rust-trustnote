@@ -35,4 +35,9 @@ pub fn start_global_timers() {
         t!(hub::purge_junk_unhandled_joints(&db));
         coroutine::sleep(Duration::from_secs(30 * 60));
     });
+
+    go!(move || loop {
+        t!(hub::WSS.request_free_joints_from_all_outbound_peers());
+        coroutine::sleep(Duration::from_secs(1));
+    });
 }
