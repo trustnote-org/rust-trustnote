@@ -206,13 +206,6 @@ impl WsConnections {
         None
     }
 
-    fn request_free_joints(&self) {
-        let g = self.outbound.read().unwrap();
-        for ws in g.iter() {
-            t!(ws.send_just_saying("refresh", Value::Null));
-        }
-    }
-
     fn forward_joint(&self, joint: &Joint) -> Result<()> {
         let outbound = self.outbound.read().unwrap().to_vec();
         for c in outbound {
@@ -227,9 +220,6 @@ impl WsConnections {
     }
 
     pub fn request_free_joints_from_all_outbound_peers(&self) -> Result<()> {
-        if UNIT_IN_WORK.get_waiter_num() != 0 && IS_CACTCHING_UP.is_locked() {
-            return Ok(());
-        }
         let out_bound_peers = self.outbound.read().unwrap().to_vec();
         for out_bound_peer in out_bound_peers {
             out_bound_peer.send_just_saying("refresh", Value::Null)?;
@@ -1034,7 +1024,12 @@ pub fn start_catchup() -> Result<()> {
 
     // now we are done the catchup
     COMING_ONLINE_TIME.store(::time::now() as usize, Ordering::Relaxed);
-    WSS.request_free_joints();
+
+    // wait until there is no more working
+    while UNIT_IN_WORK.get_waiter_num() != 0 {
+        coroutine::sleep(Duration::from_secs(1));
+    }
+    WSS.request_free_joints_from_all_outbound_peers()?;
 
     Ok(())
 }
