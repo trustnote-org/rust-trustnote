@@ -248,6 +248,7 @@ impl Server<HubData> for HubData {
             "info" => info!("recevie info: {}", body),
             "result" => info!("recevie result: {}", body),
             "joint" => ws.on_joint(body)?,
+            "refresh" => ws.on_refresh(body)?,
             subject => bail!("on_message unkown subject: {}", subject),
         }
         Ok(())
@@ -388,6 +389,28 @@ impl HubConn {
         let db = db::DB_POOL.get_connection();
         let hash_tree = catchup::read_hash_tree(&db, hash_tree_req)?;
         Ok(json!({ "balls": hash_tree }))
+    }
+
+    fn on_refresh(&self, param: Value) -> Result<()> {
+        let _g = match IS_CACTCHING_UP.try_lock() {
+            Some(g) => g,
+            None => return Ok(()),
+        };
+
+        let ws = WSS.get_ws(self);
+        let mci = param.as_u64();
+
+        try_go!(move || -> Result<()> {
+            let db = db::DB_POOL.get_connection();
+            if let Some(mci) = mci {
+                ws.send_joints_since_mci(&db, mci as u32)?;
+            } else {
+                ws.send_free_joints(&db)?;
+            }
+            Ok(())
+        });
+
+        Ok(())
     }
 }
 
