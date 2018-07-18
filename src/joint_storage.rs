@@ -355,7 +355,12 @@ fn purge_uncovered_nonserial_joints(mut by_existence_of_children: bool) -> Resul
 
             let g = WRITER_MUTEX.lock().unwrap();
             let mut queries = db::DbQueries::new();
-            storage::generate_queries_to_archive_joint(&db, &joint, "uncoverred", &mut queries)?;
+            storage::generate_queries_to_archive_joint(
+                &db,
+                &joint,
+                storage::ArchiveJointReason::Uncovered,
+                &mut queries,
+            )?;
             let tx = db.transaction()?;
             queries.execute(&tx)?;
             tx.commit()?;

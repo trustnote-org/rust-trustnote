@@ -802,7 +802,7 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
         let joint = read_joint(db, unit)
             .map_err(|e| format_err!("bad unit not found: {}, err={}", unit, e))?;
 
-        generate_queries_to_archive_joint(db, &joint, "voided", &mut queries)?;
+        generate_queries_to_archive_joint(db, &joint, ArchiveJointReason::Voided, &mut queries)?;
     }
 
     queries.execute_all(db);
@@ -813,26 +813,41 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
     Ok(min_retrievable_mci)
 }
 
+pub enum ArchiveJointReason {
+    Uncovered,
+    Voided,
+}
+
+impl ToString for ArchiveJointReason {
+    fn to_string(&self) -> String {
+        match self {
+            ArchiveJointReason::Uncovered => String::from("uncovered"),
+            ArchiveJointReason::Voided => String::from("voided"),
+        }
+    }
+}
+
 pub fn generate_queries_to_archive_joint(
     db: &Connection,
     joint: &Joint,
-    reason: &str,
+    reason: ArchiveJointReason,
     queries: &mut db::DbQueries,
 ) -> Result<()> {
     let unit = Rc::new(joint.get_unit_hash().clone());
-    if reason == "uncovered" {
-        generate_queries_to_remove_joint(db, unit.clone(), queries)?;
-    } else {
-        generate_queries_to_void_joint(db, unit.clone(), queries)?;
+    match reason {
+        ArchiveJointReason::Uncovered => {
+            generate_queries_to_remove_joint(db, unit.clone(), queries)?
+        }
+        ArchiveJointReason::Voided => generate_queries_to_void_joint(db, unit.clone(), queries)?,
     }
 
-    let reason = reason.to_owned();
+    let reason_str = reason.to_string();
     let json = serde_json::to_string(joint)?;
     queries.add_query(move |db| {
         let mut stmt = db.prepare_cached(
             "INSERT OR IGNORE INTO archived_joints (unit, reason, json) VALUES (?,?,?)",
         )?;
-        stmt.execute(&[&*unit, &reason, &json])?;
+        stmt.execute(&[&*unit, &reason_str, &json])?;
         Ok(())
     });
 
@@ -854,7 +869,7 @@ fn generate_queries_to_remove_joint(
         stmt.execute(&[&*unit])?;
         let mut stmt = db.prepare_cached("DELETE FROM unit_witnesses WHERE unit=?")?;
         stmt.execute(&[&*unit])?;
-        let mut stmt = db.prepare_cached("ELETE FROM authentifiers WHERE unit=?")?;
+        let mut stmt = db.prepare_cached("DELETE FROM authentifiers WHERE unit=?")?;
         stmt.execute(&[&*unit])?;
         let mut stmt = db.prepare_cached("DELETE FROM unit_authors WHERE unit=?")?;
         stmt.execute(&[&*unit])?;
