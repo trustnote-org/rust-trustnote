@@ -481,7 +481,7 @@ impl HubConn {
                         )?;
                         stmt.execute(&[
                             &object_hash::get_base64_hash(&joint)?,
-                            &stringify!(joint),
+                            &serde_json::to_string(&joint)?,
                             &err,
                         ])?;
                     }
@@ -601,7 +601,7 @@ impl HubConn {
                     )?;
                     stmt.execute(&[
                         &object_hash::get_base64_hash(&joint)?,
-                        &stringify!(joint),
+                        &serde_json::to_string(&joint)?,
                         &err,
                     ])?;
                 }
