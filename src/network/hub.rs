@@ -261,6 +261,14 @@ impl Server<HubData> for HubData {
             "get_joint" => ws.on_get_joint(params)?,
             "catchup" => ws.on_catchup(params)?,
             "get_hash_tree" => ws.on_get_hash_tree(params)?,
+            // bellow is wallet used command
+            "get_witness" => ws.on_get_witnesses(params)?,
+            "post_joint" => ws.on_post_joint(params)?,
+            "light/get_history" => ws.on_get_history(params)?,
+            "light/get_link_proofs" => ws.on_get_link_proofs(params)?,
+            "light/get_parents_and_last_ball_and_witness_list_unit" => {
+                ws.on_get_parents_and_last_ball_and_witness_list_unit(params)?
+            }
             command => bail!("on_request unkown command: {}", command),
         };
         Ok(response)
@@ -406,6 +414,26 @@ impl HubConn {
         }
 
         Ok(())
+    }
+
+    fn on_get_witnesses(&self, _: Value) -> Result<Value> {
+        unimplemented!();
+    }
+
+    fn on_post_joint(&self, _: Value) -> Result<Value> {
+        unimplemented!();
+    }
+
+    fn on_get_history(&self, _: Value) -> Result<Value> {
+        unimplemented!();
+    }
+
+    fn on_get_link_proofs(&self, _: Value) -> Result<Value> {
+        unimplemented!();
+    }
+
+    fn on_get_parents_and_last_ball_and_witness_list_unit(&self, _: Value) -> Result<Value> {
+        unimplemented!();
     }
 }
 
