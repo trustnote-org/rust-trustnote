@@ -261,6 +261,7 @@ impl Server<HubData> for HubData {
             "get_joint" => ws.on_get_joint(params)?,
             "catchup" => ws.on_catchup(params)?,
             "get_hash_tree" => ws.on_get_hash_tree(params)?,
+<<<<<<< HEAD
             // bellow is wallet used command
             "get_witness" => ws.on_get_witnesses(params)?,
             "post_joint" => ws.on_post_joint(params)?,
@@ -269,6 +270,9 @@ impl Server<HubData> for HubData {
             "light/get_parents_and_last_ball_and_witness_list_unit" => {
                 ws.on_get_parents_and_last_ball_and_witness_list_unit(params)?
             }
+=======
+            "get_witnesses" => ws.on_get_witnesses()?,
+>>>>>>> :pencil:get_witness_by_wallet (#239)
             command => bail!("on_request unkown command: {}", command),
         };
         Ok(response)
@@ -397,6 +401,11 @@ impl HubConn {
         let db = db::DB_POOL.get_connection();
         let hash_tree = catchup::read_hash_tree(&db, hash_tree_req)?;
         Ok(json!({ "balls": hash_tree }))
+    }
+
+    fn on_get_witnesses(&self) -> Result<Value> {
+        let witnesses: &[String] = &::my_witness::MY_WITNESSES;
+        self.send_request("wait", &json!(witnesses))
     }
 
     fn on_refresh(&self, param: Value) -> Result<()> {
