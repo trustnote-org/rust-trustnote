@@ -51,7 +51,11 @@ fn start_ws_server() -> Result<::may::coroutine::JoinHandle<()>> {
 fn connect_to_remote() -> Result<()> {
     use network::hub;
     hub::create_outbound_conn(config::get_remote_hub_url())?;
-    hub::start_catchup()?;
+    go!(move || if let Err(e) = hub::start_catchup() {
+        error!("catchup error: {}", e);
+        error!("back_trace={}", e.backtrace());
+        ::std::process::abort();
+    });
     Ok(())
 }
 
