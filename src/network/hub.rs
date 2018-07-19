@@ -109,12 +109,14 @@ impl WsConnections {
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
         self.inbound.write().unwrap().push(inbound.clone());
         init_connection(&inbound);
+        (*inbound).set_is_inbound(true);
         t!(add_peer_host(inbound));
     }
 
     pub fn add_outbound(&self, outbound: Arc<HubConn>) {
         self.outbound.write().unwrap().push(outbound.clone());
         init_connection(&outbound);
+        (*outbound).set_is_outbound(true);
         t!(add_peer_host(outbound));
     }
 
@@ -325,8 +327,10 @@ impl HubConn {
             .ok_or_else(|| format_err!("no subscription_id"))?;
         if subscription_id == *SUBSCRIPTION_ID.read().unwrap() {
             let db = db::DB_POOL.get_connection();
-            let mut stmt = db.prepare_cached("UPDATE peers SET is_self=1 WHERE peer=?")?;
-            stmt.execute(&[self.get_peer()])?;
+            if self.get_is_outbound() {
+                let mut stmt = db.prepare_cached("UPDATE peers SET is_self=1 WHERE peer=?")?;
+                stmt.execute(&[self.get_peer()])?;
+            }
 
             self.close();
             return Err(format_err!("self-connect"));
@@ -424,8 +428,28 @@ impl HubConn {
         unimplemented!();
     }
 
-    fn on_get_history(&self, _: Value) -> Result<Value> {
-        unimplemented!();
+    fn on_get_history(&self, param: Value) -> Result<Value> {
+        if self.get_is_outbound() {
+            return Err(format_err!("light clients have to be inbound"));
+        }
+        prepare_history(&param)?;
+        let tmp_param = param.clone();
+        let params_addresses = tmp_param["addresses"]
+            .as_array()
+            .ok_or_else(|| format_err!("no params.addresses"))?;
+        let xxx = params_addresses
+            .iter()
+            .map(|s| format!("('{}','{}')", self.get_peer(), s.as_str().unwrap()))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let db = ::db::DB_POOL.get_connection();
+        let mut stmt = db.prepare_cached(
+            "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES ?",
+        )?;
+        stmt.execute(&[&xxx])?;
+        Ok(param)
+        //unimplemented!();
     }
 
     fn on_get_link_proofs(&self, _: Value) -> Result<Value> {
@@ -435,6 +459,10 @@ impl HubConn {
     fn on_get_parents_and_last_ball_and_witness_list_unit(&self, _: Value) -> Result<Value> {
         unimplemented!();
     }
+}
+
+fn prepare_history(_param: &Value) -> Result<Value> {
+    unimplemented!()
 }
 
 impl HubConn {
