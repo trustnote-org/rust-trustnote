@@ -1,6 +1,7 @@
 #[macro_use]
 extern crate log;
 extern crate base64;
+extern crate chrono;
 extern crate fern;
 extern crate serde_json;
 extern crate trustnote;
@@ -20,7 +21,8 @@ fn log_init() {
     fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
-                "[{}][{}] {}",
+                "{}[{}][{}] {}",
+                chrono::Local::now().format("[%Y-%m-%d][%H:%M:%S%.3f]"),
                 record.level(),
                 record.target(),
                 message
