@@ -7,7 +7,7 @@ extern crate serde_json;
 extern crate trustnote;
 #[macro_use]
 extern crate may;
-
+extern crate may_signal;
 use trustnote::*;
 
 fn log_init() {
@@ -73,13 +73,13 @@ fn run_hub_server() -> Result<()> {
     Ok(())
 }
 
-fn pause() {
-    use std::io::{self, Read};
-    io::stdin().read(&mut [0]).ok();
-}
-
 #[allow(dead_code)]
 fn test_read_joint() -> Result<()> {
+    fn pause() {
+        use std::io::{self, Read};
+        io::stdin().read(&mut [0]).ok();
+    }
+
     fn print_joint(unit: &str) -> Result<()> {
         let db = db::DB_POOL.get_connection();
         let joint = storage::read_joint_directly(&db, &unit.to_string())?;
@@ -113,8 +113,8 @@ fn main() -> Result<()> {
 
     go!(|| run_hub_server().unwrap()).join().unwrap();
 
-    // wait user input a key to exit
-    pause();
+    // wait user input a ctrl_c to exit
+    may_signal::ctrl_c().recv().unwrap();
 
     // close all the connections
     network_cleanup();
