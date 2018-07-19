@@ -822,16 +822,15 @@ impl HubConn {
 // the client side impl
 impl HubConn {
     fn send_version(&self) -> Result<()> {
-        // TODO: read these things from config
         self.send_just_saying(
             "version",
             json!({
                 "protocol_version": config::VERSION,
                 "alt": config::ALT,
-                "library": "rust-trustnote",
-                "library_version": "0.1.0",
-                "program": "rust-trustnote-hub",
-                "program_version": "0.1.0"
+                "library": config::LIBRARY,
+                "library_version": config::LIBRARY_VERSION,
+                "program": config::PROGRAM,
+                "program_version": config::PROGRAM_VESION
             }),
         )
     }
