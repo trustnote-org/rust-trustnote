@@ -17,10 +17,10 @@ pub fn now() -> u64 {
 pub fn start_global_timers() {
     // find and handle ready joints
     go!(move || loop {
-        coroutine::sleep(Duration::from_secs(5));
         info!("find_and_handle_joints_that_are_ready");
         let mut db = db::DB_POOL.get_connection();
         t!(hub::find_and_handle_joints_that_are_ready(&mut db, None));
+        coroutine::sleep(Duration::from_secs(5));
     });
 
     // request needed joints that were not received during the previous session
