@@ -405,7 +405,7 @@ impl HubConn {
 
     fn on_get_witnesses(&self) -> Result<Value> {
         let witnesses: &[String] = &::my_witness::MY_WITNESSES;
-        self.send_request("wait", &json!(witnesses))
+        Ok(json!({ "wait": witnesses }))
     }
 
     fn on_refresh(&self, param: Value) -> Result<()> {
