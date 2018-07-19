@@ -32,6 +32,7 @@ ripemd160 = "0.7"
 bit-vec = "0.4.4"
 app_dirs = "1.2"
 may_thread = { git = "https://github.com/Xudong-Huang/may_thread.git" }
+may_signal = {git = "https://github.com/Xudong-Huang/may_signal.git"}
 
 [dependencies.rusqlite]
 version = "0.13"
