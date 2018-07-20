@@ -261,7 +261,6 @@ impl Server<HubData> for HubData {
             "get_joint" => ws.on_get_joint(params)?,
             "catchup" => ws.on_catchup(params)?,
             "get_hash_tree" => ws.on_get_hash_tree(params)?,
-<<<<<<< HEAD
             // bellow is wallet used command
             "get_witness" => ws.on_get_witnesses(params)?,
             "post_joint" => ws.on_post_joint(params)?,
@@ -270,9 +269,6 @@ impl Server<HubData> for HubData {
             "light/get_parents_and_last_ball_and_witness_list_unit" => {
                 ws.on_get_parents_and_last_ball_and_witness_list_unit(params)?
             }
-=======
-            "get_witnesses" => ws.on_get_witnesses()?,
->>>>>>> :pencil:get_witness_by_wallet (#239)
             command => bail!("on_request unkown command: {}", command),
         };
         Ok(response)
@@ -403,11 +399,6 @@ impl HubConn {
         Ok(json!({ "balls": hash_tree }))
     }
 
-    fn on_get_witnesses(&self) -> Result<Value> {
-        let witnesses: &[String] = &::my_witness::MY_WITNESSES;
-        Ok(json!({ "wait": witnesses }))
-    }
-
     fn on_refresh(&self, param: Value) -> Result<()> {
         let _g = match IS_CACTCHING_UP.try_lock() {
             Some(g) => g,
@@ -426,7 +417,8 @@ impl HubConn {
     }
 
     fn on_get_witnesses(&self, _: Value) -> Result<Value> {
-        unimplemented!();
+        let witnesses: &[String] = &::my_witness::MY_WITNESSES;
+        Ok(serde_json::to_value(witnesses)?)
     }
 
     fn on_post_joint(&self, _: Value) -> Result<Value> {
