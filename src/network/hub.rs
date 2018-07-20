@@ -13,6 +13,7 @@ use error::Result;
 use failure::ResultExt;
 use joint::Joint;
 use joint_storage::{self, ReadyJoint};
+use light;
 use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
@@ -443,7 +444,7 @@ impl HubConn {
         }
 
         // TODO: deserialize real structured params
-        let rsp = prepare_history(&param)?;
+        let rsp = light::prepare_history(&param)?;
 
         let params_addresses = param["addresses"]
             .as_array()
@@ -469,17 +470,19 @@ impl HubConn {
             .as_array()
             .ok_or_else(|| format_err!("no params.requested.joints"))?;
         if !params_requested_joints.is_empty() {
-            let rows = slice_and_execute_query()?;
+            let rows = storage::slice_and_execute_query()?;
             if !rows.is_empty() {
                 let rows = rows
                     .iter()
                     .map(|s| format!("('{}','{}')", self.get_peer(), s))
                     .collect::<Vec<_>>()
                     .join(", ");
-                let mut stmt = db.prepare_cached(
-                    "INSERT OR IGNORE INTO watched_light_units (peer, unit) VALUES ?",
-                )?;
-                stmt.execute(&[&rows])?;
+                let sql = format!(
+                    "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES {}",
+                    rows
+                );
+                let mut stmt = db.prepare(&sql)?;
+                stmt.execute(&[])?;
             }
         }
 
@@ -493,16 +496,6 @@ impl HubConn {
     fn on_get_parents_and_last_ball_and_witness_list_unit(&self, _: Value) -> Result<Value> {
         unimplemented!();
     }
-}
-
-// TODO: move to light.rs
-fn prepare_history(_param: &Value) -> Result<Value> {
-    unimplemented!()
-}
-
-// TODO: move to storage.rs
-fn slice_and_execute_query() -> Result<Vec<String>> {
-    unimplemented!()
 }
 
 impl HubConn {
