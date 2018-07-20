@@ -633,6 +633,8 @@ pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
     paid_witnessing::update_paid_witnesses(db)?;
 
     //No event bus, but should tell network to notify others about stable joint
+    // FIXME: fire an event instead call user's function derectly
+    ::network::hub::notify_watchers_about_stable_joints(mci);
 
     Ok(())
 }
