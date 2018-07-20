@@ -231,9 +231,14 @@ impl WsConnections {
         Ok(())
     }
 
-    pub fn get_outbounds(&self) -> Vec<Arc<HubConn>> {
-        let g = self.outbound.read().unwrap();
-        g.clone()
+    pub fn get_outbound_peers(&self) -> Vec<String> {
+        let outbound = &*self.outbound.read().unwrap();
+        let mut peers: Vec<String> = Vec::new();
+        for i in outbound {
+            let peer = i.get_peer().to_owned();
+            peers.push(peer)
+        }
+        peers
     }
 }
 
@@ -436,13 +441,7 @@ impl HubConn {
         Ok(())
     }
     fn on_get_peers(&self, _param: Value) -> Result<Value> {
-        let outbounds = WSS.get_outbounds();
-        let mut peers = Vec::new();
-        for i in outbounds {
-            let s = i.get_peer().to_owned();
-            peers.push(s)
-        }
-
+        let peers = WSS.get_outbound_peers();
         Ok(serde_json::to_value(peers)?)
     }
     fn on_get_witnesses(&self, _: Value) -> Result<Value> {
