@@ -230,8 +230,16 @@ impl WsConnections {
         }
         Ok(())
     }
-}
 
+    pub fn get_outbound_peers(&self) -> Vec<String> {
+        self.outbound
+            .read()
+            .unwrap()
+            .iter()
+            .map(|c| c.get_peer().to_owned())
+            .collect()
+    }
+}
 impl Default for HubData {
     fn default() -> Self {
         HubData {
@@ -266,6 +274,7 @@ impl Server<HubData> for HubData {
             "catchup" => ws.on_catchup(params)?,
             "get_hash_tree" => ws.on_get_hash_tree(params)?,
             // bellow is wallet used command
+            "get_peers" => ws.on_get_peers(params)?,
             "get_witnesses" => ws.on_get_witnesses(params)?,
             "post_joint" => ws.on_post_joint(params)?,
             "light/get_history" => ws.on_get_history(params)?,
@@ -429,7 +438,10 @@ impl HubConn {
 
         Ok(())
     }
-
+    fn on_get_peers(&self, _param: Value) -> Result<Value> {
+        let peers = WSS.get_outbound_peers();
+        Ok(serde_json::to_value(peers)?)
+    }
     fn on_get_witnesses(&self, _: Value) -> Result<Value> {
         let witnesses: &[String] = &::my_witness::MY_WITNESSES;
         Ok(serde_json::to_value(witnesses)?)
