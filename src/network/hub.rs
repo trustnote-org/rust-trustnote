@@ -417,7 +417,8 @@ impl HubConn {
     }
 
     fn on_get_witnesses(&self, _: Value) -> Result<Value> {
-        unimplemented!();
+        let witnesses: &[String] = &::my_witness::MY_WITNESSES;
+        Ok(serde_json::to_value(witnesses)?)
     }
 
     fn on_post_joint(&self, _: Value) -> Result<Value> {
