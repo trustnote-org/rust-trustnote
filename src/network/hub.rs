@@ -30,6 +30,7 @@ pub struct HubData {
     // indicate if this connection is a subscribed peer
     is_subscribed: AtomicBool,
     is_source: AtomicBool,
+    is_inbound: AtomicBool,
 }
 
 pub type HubConn = WsConnection<HubData>;
@@ -108,15 +109,14 @@ impl WsConnections {
 
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
         self.inbound.write().unwrap().push(inbound.clone());
+        inbound.set_inbound();
         init_connection(&inbound);
-        (*inbound).set_is_inbound(true);
         t!(add_peer_host(inbound));
     }
 
     pub fn add_outbound(&self, outbound: Arc<HubConn>) {
         self.outbound.write().unwrap().push(outbound.clone());
         init_connection(&outbound);
-        (*outbound).set_is_outbound(true);
         t!(add_peer_host(outbound));
     }
 
@@ -236,6 +236,7 @@ impl Default for HubData {
         HubData {
             is_subscribed: AtomicBool::new(false),
             is_source: AtomicBool::new(false),
+            is_inbound: AtomicBool::new(false),
         }
     }
 }
@@ -298,6 +299,16 @@ impl HubConn {
         let data = self.get_data();
         data.is_source.store(true, Ordering::Relaxed);
     }
+
+    pub fn is_inbound(&self) -> bool {
+        let data = self.get_data();
+        data.is_inbound.load(Ordering::Relaxed)
+    }
+
+    pub fn set_inbound(&self) {
+        let data = self.get_data();
+        data.is_inbound.store(true, Ordering::Relaxed);
+    }
 }
 
 // the server side impl
@@ -327,10 +338,8 @@ impl HubConn {
             .ok_or_else(|| format_err!("no subscription_id"))?;
         if subscription_id == *SUBSCRIPTION_ID.read().unwrap() {
             let db = db::DB_POOL.get_connection();
-            if self.get_is_outbound() {
-                let mut stmt = db.prepare_cached("UPDATE peers SET is_self=1 WHERE peer=?")?;
-                stmt.execute(&[self.get_peer()])?;
-            }
+            let mut stmt = db.prepare_cached("UPDATE peers SET is_self=1 WHERE peer=?")?;
+            stmt.execute(&[self.get_peer()])?;
 
             self.close();
             return Err(format_err!("self-connect"));
@@ -429,10 +438,11 @@ impl HubConn {
     }
 
     fn on_get_history(&self, param: Value) -> Result<Value> {
-        if self.get_is_outbound() {
-            return Err(format_err!("light clients have to be inbound"));
+        if !self.is_inbound() {
+            bail!("light clients have to be inbound");
         }
 
+        // TODO: deserialize real structured params
         let rsp = prepare_history(&param)?;
 
         let params_addresses = param["addresses"]
@@ -447,10 +457,12 @@ impl HubConn {
                 .collect::<Vec<_>>()
                 .join(", ");
 
-            let mut stmt = db.prepare_cached(
-                "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES ?",
-            )?;
-            stmt.execute(&[&addresses])?;
+            let sql = format!(
+                "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES {}",
+                addresses
+            );
+            let mut stmt = db.prepare(&sql)?;
+            stmt.execute(&[])?;
         }
 
         let params_requested_joints = param["requested_joints"]
@@ -483,10 +495,12 @@ impl HubConn {
     }
 }
 
+// TODO: move to light.rs
 fn prepare_history(_param: &Value) -> Result<Value> {
     unimplemented!()
 }
 
+// TODO: move to storage.rs
 fn slice_and_execute_query() -> Result<Vec<String>> {
     unimplemented!()
 }

@@ -1,7 +1,7 @@
 // use std::io::Read;
 use std::marker::PhantomData;
 use std::net::ToSocketAddrs;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -97,8 +97,6 @@ pub struct WsConnection<T> {
     data: T,
     // for request unique id generation
     id: AtomicUsize,
-    is_inbound: AtomicBool,
-    is_outbound: AtomicBool,
 }
 
 impl<T> Sender for WsConnection<T> {
@@ -135,22 +133,6 @@ impl<T> WsConnection<T> {
     pub fn get_data(&self) -> &T {
         &self.data
     }
-
-    pub fn get_is_inbound(&self) -> bool {
-        self.is_inbound.load(Ordering::Relaxed)
-    }
-
-    pub fn get_is_outbound(&self) -> bool {
-        self.is_outbound.load(Ordering::Relaxed)
-    }
-
-    pub fn set_is_inbound(&self, val: bool) {
-        self.is_inbound.store(val, Ordering::Relaxed);
-    }
-
-    pub fn set_is_outbound(&self, val: bool) {
-        self.is_outbound.store(val, Ordering::Relaxed);
-    }
 }
 
 impl<T> Drop for WsConnection<T> {
@@ -185,8 +167,6 @@ impl<T> WsConnection<T> {
             listener: AtomicOption::none(),
             data,
             id: AtomicUsize::new(0),
-            is_inbound: AtomicBool::new(false),
-            is_outbound: AtomicBool::new(false),
         });
 
         // we can't have a strong ref in the driver coroutine!
