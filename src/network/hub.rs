@@ -435,8 +435,7 @@ impl HubConn {
 
         let rsp = prepare_history(&param)?;
 
-        let tmp_param = param.clone();
-        let params_addresses = tmp_param["addresses"]
+        let params_addresses = param["addresses"]
             .as_array()
             .ok_or_else(|| format_err!("no params.addresses"))?;
 
@@ -454,8 +453,7 @@ impl HubConn {
             stmt.execute(&[&addresses])?;
         }
 
-        let tmp_param = param.clone();
-        let params_requested_joints = tmp_param["requested_joints"]
+        let params_requested_joints = param["requested_joints"]
             .as_array()
             .ok_or_else(|| format_err!("no params.requested.joints"))?;
         if !params_requested_joints.is_empty() {
