@@ -82,10 +82,8 @@ pub mod config;
 pub mod db;
 #[macro_use]
 pub mod error;
-pub mod atomic_lock;
 pub mod graph;
 pub mod headers_commission;
-pub mod map_lock;
 pub mod mc_outputs;
 pub mod my_witness;
 pub mod network;

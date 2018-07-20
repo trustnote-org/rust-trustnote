@@ -4,7 +4,6 @@ use graph;
 use headers_commission;
 use joint::Joint;
 use main_chain;
-use map_lock::{self, MapLock};
 use mc_outputs;
 use object_hash;
 use paid_witnessing;
@@ -12,6 +11,7 @@ use rusqlite::{Connection, Transaction};
 use serde_json::Value;
 use spec::*;
 use storage;
+use utils::{MapLock, MapLockGuard};
 // global address map lock
 lazy_static! {
     // maybe this is too heavy, could use an optimized hashset<AtomicBool>
@@ -126,7 +126,7 @@ type Result<T> = ::std::result::Result<T, ValidationError>;
 #[derive(Debug)]
 pub enum ValidationOk {
     Unsigned(bool),
-    Signed(ValidationState, map_lock::LockGuard<'static, String>),
+    Signed(ValidationState, MapLockGuard<'static, String>),
 }
 
 pub fn is_valid_address(address: &String) -> bool {

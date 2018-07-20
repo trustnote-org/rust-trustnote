@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::network::{Sender, Server, WsConnection};
-use atomic_lock::AtomicLock;
 use catchup;
 use config;
 use db;
@@ -14,7 +13,6 @@ use failure::ResultExt;
 use joint::Joint;
 use joint_storage::{self, ReadyJoint};
 use light;
-use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::{Mutex, RwLock};
@@ -26,6 +24,7 @@ use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
+use utils::{AtomicLock, MapLock};
 use validation;
 pub struct HubData {
     // indicate if this connection is a subscribed peer
