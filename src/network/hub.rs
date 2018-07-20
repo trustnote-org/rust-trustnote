@@ -275,7 +275,7 @@ impl Server<HubData> for HubData {
             "get_hash_tree" => ws.on_get_hash_tree(params)?,
             // bellow is wallet used command
             "get_peers" => ws.on_get_peers(params)?,
-            "get_witness" => ws.on_get_witnesses(params)?,
+            "get_witnesses" => ws.on_get_witnesses(params)?,
             "post_joint" => ws.on_post_joint(params)?,
             "light/get_history" => ws.on_get_history(params)?,
             "light/get_link_proofs" => ws.on_get_link_proofs(params)?,

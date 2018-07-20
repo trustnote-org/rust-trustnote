@@ -345,11 +345,11 @@ pub fn read_descendant_units_by_authors_before_mc_index(
 
     //Missing db.forceIndex("byMcIndex") from original js
     let sql = format!(
-        "SELECT unit FROM units \"
-        LEFT JOIN unit_authors USING(unit) \
-        WHERE latest_included_mc_index>={} AND main_chain_index>{} \
-        AND main_chain_index<={} AND latest_included_mc_index<{} \
-        AND address IN({})",
+        "SELECT unit FROM units \
+         LEFT JOIN unit_authors USING(unit) \
+         WHERE latest_included_mc_index>={} AND main_chain_index>{} \
+         AND main_chain_index<={} AND latest_included_mc_index<{} \
+         AND address IN({})",
         earlier_unit_mci,
         earlier_unit_mci,
         to_main_chain_index,
