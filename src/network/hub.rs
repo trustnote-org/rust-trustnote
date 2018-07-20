@@ -232,16 +232,14 @@ impl WsConnections {
     }
 
     pub fn get_outbound_peers(&self) -> Vec<String> {
-        let outbound = &*self.outbound.read().unwrap();
-        let mut peers: Vec<String> = Vec::new();
-        for i in outbound {
-            let peer = i.get_peer().to_owned();
-            peers.push(peer)
-        }
-        peers
+        self.outbound
+            .read()
+            .unwrap()
+            .iter()
+            .map(|c| c.get_peer().to_owned())
+            .collect()
     }
 }
-
 impl Default for HubData {
     fn default() -> Self {
         HubData {
