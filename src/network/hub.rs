@@ -511,11 +511,8 @@ impl HubConn {
         if !self.is_inbound() {
             return Err(format_err!("light clients have to be inbound"));
         }
-        let result = light::prepare_link_proofs(params);
-        if result.is_err() {
-            return Err(result.unwrap_err());
-        }
-        Ok(serde_json::to_value(result.unwrap())?)
+        let rsp = light::prepare_link_proofs(params)?;
+        Ok(rsp)
     }
 
     fn on_get_parents_and_last_ball_and_witness_list_unit(&self, _: Value) -> Result<Value> {
