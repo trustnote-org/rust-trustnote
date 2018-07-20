@@ -1366,3 +1366,7 @@ fn build_list_of_mc_units_with_potentially_different_witness_lists(
 
     Ok(mc_units)
 }
+
+pub fn slice_and_execute_query() -> Result<Vec<String>> {
+    unimplemented!()
+}

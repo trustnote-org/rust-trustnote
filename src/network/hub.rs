@@ -13,6 +13,7 @@ use error::Result;
 use failure::ResultExt;
 use joint::Joint;
 use joint_storage::{self, ReadyJoint};
+use light;
 use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
@@ -30,6 +31,7 @@ pub struct HubData {
     // indicate if this connection is a subscribed peer
     is_subscribed: AtomicBool,
     is_source: AtomicBool,
+    is_inbound: AtomicBool,
 }
 
 pub type HubConn = WsConnection<HubData>;
@@ -108,6 +110,7 @@ impl WsConnections {
 
     pub fn add_inbound(&self, inbound: Arc<HubConn>) {
         self.inbound.write().unwrap().push(inbound.clone());
+        inbound.set_inbound();
         init_connection(&inbound);
         t!(add_peer_host(inbound));
     }
@@ -234,6 +237,7 @@ impl Default for HubData {
         HubData {
             is_subscribed: AtomicBool::new(false),
             is_source: AtomicBool::new(false),
+            is_inbound: AtomicBool::new(false),
         }
     }
 }
@@ -295,6 +299,16 @@ impl HubConn {
     fn set_source(&self) {
         let data = self.get_data();
         data.is_source.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_inbound(&self) -> bool {
+        let data = self.get_data();
+        data.is_inbound.load(Ordering::Relaxed)
+    }
+
+    pub fn set_inbound(&self) {
+        let data = self.get_data();
+        data.is_inbound.store(true, Ordering::Relaxed);
     }
 }
 
@@ -425,8 +439,55 @@ impl HubConn {
         unimplemented!();
     }
 
-    fn on_get_history(&self, _: Value) -> Result<Value> {
-        unimplemented!();
+    fn on_get_history(&self, param: Value) -> Result<Value> {
+        if !self.is_inbound() {
+            bail!("light clients have to be inbound");
+        }
+
+        // TODO: deserialize real structured params
+        let rsp = light::prepare_history(&param)?;
+
+        let params_addresses = param["addresses"]
+            .as_array()
+            .ok_or_else(|| format_err!("no params.addresses"))?;
+
+        let db = ::db::DB_POOL.get_connection();
+        if !params_addresses.is_empty() {
+            let addresses = params_addresses
+                .iter()
+                .map(|s| format!("('{}','{}')", self.get_peer(), s.as_str().unwrap()))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let sql = format!(
+                "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES {}",
+                addresses
+            );
+            let mut stmt = db.prepare(&sql)?;
+            stmt.execute(&[])?;
+        }
+
+        let params_requested_joints = param["requested_joints"]
+            .as_array()
+            .ok_or_else(|| format_err!("no params.requested.joints"))?;
+        if !params_requested_joints.is_empty() {
+            let rows = storage::slice_and_execute_query()?;
+            if !rows.is_empty() {
+                let rows = rows
+                    .iter()
+                    .map(|s| format!("('{}','{}')", self.get_peer(), s))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let sql = format!(
+                    "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES {}",
+                    rows
+                );
+                let mut stmt = db.prepare(&sql)?;
+                stmt.execute(&[])?;
+            }
+        }
+
+        Ok(rsp)
     }
 
     fn on_get_link_proofs(&self, _: Value) -> Result<Value> {
