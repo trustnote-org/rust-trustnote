@@ -435,8 +435,13 @@ impl HubConn {
         Ok(serde_json::to_value(witnesses)?)
     }
 
-    fn on_post_joint(&self, _: Value) -> Result<Value> {
-        unimplemented!();
+    fn on_post_joint(&self, param: Value) -> Result<Value> {
+        let joint: Joint = serde_json::from_value(param)?;
+        info!("receive a posted joint: {:?}", joint);
+        ensure!(joint.unit.unit.is_some(), "no unit");
+        let mut db = db::DB_POOL.get_connection();
+        self.handle_posted_joint(joint, &mut db)?;
+        Ok(Value::from("accepted"))
     }
 
     fn on_get_history(&self, param: Value) -> Result<Value> {
@@ -565,58 +570,56 @@ impl HubConn {
                     find_and_handle_joints_that_are_ready(db, Some(unit))?;
                 }
             },
-            Err(err) => {
-                match err {
-                    ValidationError::OtherError { err } => {
-                        error!("validation other err={}, unit={}", err, unit);
-                    }
+            Err(err) => match err {
+                ValidationError::OtherError { err } => {
+                    error!("validation other err={}, unit={}", err, unit);
+                }
 
-                    ValidationError::UnitError { err } => {
-                        warn!("{} validation failed: {}", unit, err);
-                        self.send_error_result(unit, &err)?;
-                        self.purge_joint_and_dependencies_and_notify_peers(db, &joint, &err)?;
-                        if !err.contains("authentifier verification failed")
-                            && !err.contains("bad merkle proof at path")
-                        {
-                            self.write_event(db, "invalid")?;
-                        }
-                    }
-                    ValidationError::JointError { err } => {
-                        self.send_error_result(unit, &err)?;
+                ValidationError::UnitError { err } => {
+                    warn!("{} validation failed: {}", unit, err);
+                    self.send_error_result(unit, &err)?;
+                    self.purge_joint_and_dependencies_and_notify_peers(db, &joint, &err)?;
+                    if !err.contains("authentifier verification failed")
+                        && !err.contains("bad merkle proof at path")
+                    {
                         self.write_event(db, "invalid")?;
-                        let mut stmt = db.prepare_cached(
-                            "INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
-                        )?;
-                        stmt.execute(&[
-                            &object_hash::get_base64_hash(&joint)?,
-                            &serde_json::to_string(&joint)?,
-                            &err,
-                        ])?;
-                    }
-                    ValidationError::NeedHashTree => {
-                        info!("need hash tree for unit {}", unit);
-                        if joint.unsigned == Some(true) {
-                            bail!("need hash tree unsigned");
-                        }
-                        // we are not saving the joint so that in case requestCatchup() fails,
-                        // the joint will be requested again via findLostJoints,
-                        // which will trigger another attempt to request catchup
-                        try_go!(start_catchup);
-                    }
-                    ValidationError::NeedParentUnits(missing_units) => {
-                        let info = format!("unresolved dependencies: {}", missing_units.join(", "));
-                        self.send_info(json!({"unit": unit, "info": info}))?;
-                        joint_storage::save_unhandled_joint_and_dependencies(
-                            db,
-                            &joint,
-                            &missing_units,
-                            self.get_peer(),
-                        )?;
-                        drop(g);
-                        self.request_new_missing_joints(&db, &missing_units)?;
                     }
                 }
-            }
+                ValidationError::JointError { err } => {
+                    self.send_error_result(unit, &err)?;
+                    self.write_event(db, "invalid")?;
+                    let mut stmt = db.prepare_cached(
+                        "INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
+                    )?;
+                    stmt.execute(&[
+                        &object_hash::get_base64_hash(&joint)?,
+                        &serde_json::to_string(&joint)?,
+                        &err,
+                    ])?;
+                }
+                ValidationError::NeedHashTree => {
+                    info!("need hash tree for unit {}", unit);
+                    if joint.unsigned == Some(true) {
+                        bail!("need hash tree unsigned");
+                    }
+                    // we are not saving the joint so that in case requestCatchup() fails,
+                    // the joint will be requested again via findLostJoints,
+                    // which will trigger another attempt to request catchup
+                    try_go!(start_catchup);
+                }
+                ValidationError::NeedParentUnits(missing_units) => {
+                    let info = format!("unresolved dependencies: {}", missing_units.join(", "));
+                    self.send_info(json!({"unit": unit, "info": info}))?;
+                    joint_storage::save_unhandled_joint_and_dependencies(
+                        db,
+                        &joint,
+                        &missing_units,
+                        self.get_peer(),
+                    )?;
+                    drop(g);
+                    self.request_new_missing_joints(&db, &missing_units)?;
+                }
+            },
         }
 
         Ok(())
@@ -744,6 +747,101 @@ impl HubConn {
                     drop(g);
                     self.request_new_missing_joints(&db, &missing_units)?;
                 }
+            },
+        }
+
+        Ok(())
+    }
+
+    fn handle_posted_joint(&self, mut joint: Joint, db: &mut Connection) -> Result<()> {
+        use joint_storage::CheckNewResult;
+        use validation::{ValidationError, ValidationOk};
+
+        // clear the main chain index
+        joint.unit.main_chain_index = None;
+        let unit = joint.get_unit_hash();
+        // check if unit is in work, when g is dropped unlock the unit
+        let g = UNIT_IN_WORK.try_lock(vec![unit.to_owned()]);
+        if g.is_none() {
+            // the unit is in work, do nothing
+            return Ok(());
+        }
+
+        match joint_storage::check_new_joint(db, &joint)? {
+            CheckNewResult::New => {
+                // do nothing here, proceed to valide
+            }
+            CheckNewResult::Known => {
+                if joint.unsigned == Some(true) {
+                    bail!("known unsigned");
+                }
+                self.write_event(db, "know_good")?;
+                bail!("known");
+            }
+            CheckNewResult::KnownBad => {
+                self.write_event(db, "know_bad")?;
+                bail!("known bad");
+            }
+
+            CheckNewResult::KnownUnverified => {
+                bail!("known unverified");
+            }
+        }
+
+        match validation::validate(db, &joint) {
+            Ok(ok) => match ok {
+                ValidationOk::Unsigned(_) => {
+                    if joint.unsigned != Some(true) {
+                        bail!("ifOkUnsigned() signed");
+                    }
+                    bail!("you can't send unsigned units");
+                }
+                ValidationOk::Signed(validate_state, lock) => {
+                    if joint.unsigned == Some(true) {
+                        bail!("ifOk() unsigned");
+                    }
+                    joint.save(validate_state)?;
+                    drop(lock);
+
+                    if !IS_CACTCHING_UP.is_locked() {
+                        WSS.forward_joint(&joint)?;
+                    }
+                }
+            },
+            Err(err) => match err {
+                ValidationError::OtherError { err } => {
+                    bail!("validation other err={}, unit={}", err, unit);
+                }
+
+                ValidationError::UnitError { err } => {
+                    self.purge_joint_and_dependencies_and_notify_peers(db, &joint, &err)?;
+                    if !err.contains("authentifier verification failed")
+                        && !err.contains("bad merkle proof at path")
+                    {
+                        self.write_event(db, "invalid")?;
+                    }
+                    bail!("{} validation failed: {}", unit, err);
+                }
+                ValidationError::JointError { err } => {
+                    self.write_event(db, "invalid")?;
+                    let mut stmt = db.prepare_cached(
+                        "INSERT INTO known_bad_joints (joint, json, error) VALUES (?,?,?)",
+                    )?;
+                    stmt.execute(&[
+                        &object_hash::get_base64_hash(&joint)?,
+                        &serde_json::to_string(&joint)?,
+                        &err,
+                    ])?;
+                    bail!("{}", err);
+                }
+                ValidationError::NeedHashTree => {
+                    info!("need hash tree for unit {}", unit);
+                    if joint.unsigned == Some(true) {
+                        bail!("need hash tree unsigned");
+                    }
+                    bail!("need hash tree");
+                }
+                ValidationError::NeedParentUnits(_) => bail!("unknown parents"),
             },
         }
 
