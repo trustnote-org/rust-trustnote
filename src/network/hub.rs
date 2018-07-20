@@ -432,24 +432,48 @@ impl HubConn {
         if self.get_is_outbound() {
             return Err(format_err!("light clients have to be inbound"));
         }
-        prepare_history(&param)?;
+
+        let rsp = prepare_history(&param)?;
+
         let tmp_param = param.clone();
         let params_addresses = tmp_param["addresses"]
             .as_array()
             .ok_or_else(|| format_err!("no params.addresses"))?;
-        let xxx = params_addresses
-            .iter()
-            .map(|s| format!("('{}','{}')", self.get_peer(), s.as_str().unwrap()))
-            .collect::<Vec<_>>()
-            .join(", ");
 
         let db = ::db::DB_POOL.get_connection();
-        let mut stmt = db.prepare_cached(
-            "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES ?",
-        )?;
-        stmt.execute(&[&xxx])?;
-        Ok(param)
-        //unimplemented!();
+        if !params_addresses.is_empty() {
+            let addresses = params_addresses
+                .iter()
+                .map(|s| format!("('{}','{}')", self.get_peer(), s.as_str().unwrap()))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let mut stmt = db.prepare_cached(
+                "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES ?",
+            )?;
+            stmt.execute(&[&addresses])?;
+        }
+
+        let tmp_param = param.clone();
+        let params_requested_joints = tmp_param["requested_joints"]
+            .as_array()
+            .ok_or_else(|| format_err!("no params.requested.joints"))?;
+        if !params_requested_joints.is_empty() {
+            let rows = slice_and_execute_query()?;
+            if !rows.is_empty() {
+                let rows = rows
+                    .iter()
+                    .map(|s| format!("('{}','{}')", self.get_peer(), s))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let mut stmt = db.prepare_cached(
+                    "INSERT OR IGNORE INTO watched_light_units (peer, unit) VALUES ?",
+                )?;
+                stmt.execute(&[&rows])?;
+            }
+        }
+
+        Ok(rsp)
     }
 
     fn on_get_link_proofs(&self, _: Value) -> Result<Value> {
@@ -462,6 +486,10 @@ impl HubConn {
 }
 
 fn prepare_history(_param: &Value) -> Result<Value> {
+    unimplemented!()
+}
+
+fn slice_and_execute_query() -> Result<Vec<String>> {
     unimplemented!()
 }
 
