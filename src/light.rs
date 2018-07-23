@@ -1,12 +1,12 @@
-use std::collections::HashSet;
-use db;
 use config;
+use db;
 use error::Result;
 use failure::ResultExt;
 use graph;
 use joint::Joint;
 use rusqlite::Connection;
 use serde_json::{self, Value};
+use std::collections::HashSet;
 use storage;
 use witness_proof;
 
@@ -114,7 +114,7 @@ pub fn prepare_history(db: &Connection, history_request: &HistoryRequest) -> Res
                 }
                 build_proof_chain(
                     later_mci,
-                    row.main_chain_index,
+                    row.main_chain_index.unwrap(),
                     &row.unit,
                     &mut proofchain_balls,
                 )?;
@@ -130,7 +130,7 @@ pub fn prepare_history(db: &Connection, history_request: &HistoryRequest) -> Res
         unstable_mc_joints: Vec<Joint>,
         witness_change_and_definition: Vec<Joint>,
         joints: Vec<Joint>,
-        proofchain_balls: Vec<String>,
+        proofchain_balls: Vec<Joint>,
     }
 
     Ok(serde_json::to_value(Response {
@@ -202,7 +202,7 @@ fn create_link_proof(
 
     let earlier_joint_unit = earlier_joint.get_unit_hash();
     if later_lb_mci >= earlier_mci {
-        buil_proof_chain(later_lb_mci + 1, earlier_mci, earlier_joint_unit, chains)?;
+        build_proof_chain(later_lb_mci + 1, earlier_mci, earlier_joint_unit, chains)?;
     } else {
         if !graph::determine_if_included(&db, &earlier_joint_unit, &[later_unit.to_string()])? {
             bail!("not included");
@@ -214,7 +214,7 @@ fn create_link_proof(
 }
 
 //TODO:
-fn buil_proof_chain(
+fn build_proof_chain(
     _mci: u32,
     _earlier_mci: u32,
     _unit: &String,
