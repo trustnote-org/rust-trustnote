@@ -143,7 +143,7 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
     })?)
 }
 
-fn add_shared_addresses_of_wallet(_addresses: &Vec<String>) -> Result<Vec<String>> {
+fn add_shared_addresses_of_wallet(_addresses: &[String]) -> Result<Vec<String>> {
     unimplemented!()
 }
 
