@@ -427,6 +427,11 @@ fn find_stable_conflicting_units(
     Ok(conflicting_units)
 }
 
+pub struct MciStableEvent {
+    pub mci: u32,
+}
+impl_event!(MciStableEvent);
+
 pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
     let mut stmt =
         db.prepare_cached("UPDATE units SET is_stable=1 WHERE is_stable=0 AND main_chain_index=?")?;
@@ -632,7 +637,8 @@ pub fn mark_mc_index_stable(db: &Connection, mci: u32) -> Result<()> {
     headers_commission::calc_headers_commissions(db)?;
     paid_witnessing::update_paid_witnesses(db)?;
 
-    //No event bus, but should tell network to notify others about stable joint
+    // trigger mci stable event
+    ::utils::event::emit_event(MciStableEvent { mci });
 
     Ok(())
 }

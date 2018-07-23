@@ -114,7 +114,7 @@ impl<T: Clone + Hash + Eq> MapLock<T> {
     }
 
     // we must keep the strict order for fairness
-    pub fn try_lock(&self, keys: Vec<T>) -> Option<LockGuard<T>> {
+    pub fn try_lock(&self, keys: Vec<T>) -> Option<MapLockGuard<T>> {
         let mut g = self.0.lock().unwrap();
 
         // first check if there are other pending task is ok for wakeup
@@ -136,10 +136,10 @@ impl<T: Clone + Hash + Eq> MapLock<T> {
         g.keys_lock(&keys);
 
         // return the guard
-        Some(LockGuard { owner: self, keys })
+        Some(MapLockGuard { owner: self, keys })
     }
 
-    pub fn lock(&self, keys: Vec<T>) -> LockGuard<T> {
+    pub fn lock(&self, keys: Vec<T>) -> MapLockGuard<T> {
         use may::coroutine::{self, ParkError};
 
         let mut g = self.0.lock().unwrap();
@@ -157,7 +157,7 @@ impl<T: Clone + Hash + Eq> MapLock<T> {
             // ok, the keys are not in use
             // mark the keys as in use
             g.keys_lock(&keys);
-            return LockGuard { owner: self, keys };
+            return MapLockGuard { owner: self, keys };
         }
 
         // put the blocker in the waiting queue
@@ -179,17 +179,17 @@ impl<T: Clone + Hash + Eq> MapLock<T> {
         }
 
         // we comeback, it's safe to say that our keys are locked
-        LockGuard { owner: self, keys }
+        MapLockGuard { owner: self, keys }
     }
 }
 
 #[derive(Debug)]
-pub struct LockGuard<'a, T: Clone + Hash + Eq + 'a> {
+pub struct MapLockGuard<'a, T: Clone + Hash + Eq + 'a> {
     owner: &'a MapLock<T>,
     keys: Vec<T>,
 }
 
-impl<'a, T: Clone + Hash + Eq> Drop for LockGuard<'a, T> {
+impl<'a, T: Clone + Hash + Eq> Drop for MapLockGuard<'a, T> {
     fn drop(&mut self) {
         // remove the entry
         self.owner.release_keys(&self.keys);

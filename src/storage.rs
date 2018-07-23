@@ -1121,7 +1121,7 @@ fn generate_queries_to_unspend_witnessing_outputs_spent_in_archived_unit(
     Ok(())
 }
 
-fn find_last_ball_mci_of_mci(db: &Connection, mci: u32) -> Result<u32> {
+pub fn find_last_ball_mci_of_mci(db: &Connection, mci: u32) -> Result<u32> {
     ensure!(mci != 0, "find_last_ball_mci_of_mci called with mci=0");
     let mut stmt = db.prepare_cached(
         "SELECT lb_units.main_chain_index, lb_units.is_on_main_chain \

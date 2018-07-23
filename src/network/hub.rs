@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::network::{Sender, Server, WsConnection};
-use atomic_lock::AtomicLock;
 use catchup;
 use config;
 use db;
@@ -14,7 +13,6 @@ use failure::ResultExt;
 use joint::Joint;
 use joint_storage::{self, ReadyJoint};
 use light;
-use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::{Mutex, RwLock};
@@ -26,6 +24,7 @@ use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
+use utils::{AtomicLock, MapLock};
 use validation;
 pub struct HubData {
     // indicate if this connection is a subscribed peer
@@ -443,8 +442,8 @@ impl HubConn {
         Ok(serde_json::to_value(peers)?)
     }
     fn on_get_witnesses(&self, _: Value) -> Result<Value> {
-        let witnesses: &[String] = &::my_witness::MY_WITNESSES;
-        Ok(serde_json::to_value(witnesses)?)
+        use my_witness::MY_WITNESSES;
+        Ok(serde_json::to_value(&*MY_WITNESSES)?)
     }
 
     fn on_post_joint(&self, param: Value) -> Result<Value> {
@@ -515,8 +514,24 @@ impl HubConn {
         Ok(rsp)
     }
 
-    fn on_get_parents_and_last_ball_and_witness_list_unit(&self, _: Value) -> Result<Value> {
-        unimplemented!();
+    fn on_get_parents_and_last_ball_and_witness_list_unit(&self, param: Value) -> Result<Value> {
+        if !self.is_inbound() {
+            bail!("light clients have to be inbound");
+        }
+
+        let param_witnesses = param["witnesses"]
+            .as_array()
+            .ok_or_else(|| format_err!("no witnesses"))?;
+
+        let ss = param_witnesses
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>();
+        let db = db::DB_POOL.get_connection();
+        let result = light::prepare_parents_and_last_ball_and_witness_list_unit(&ss, &db)
+            .context("failed to get parents_and_last_ball_and_witness_list_unit")?;
+
+        Ok(result)
     }
 }
 
@@ -1318,4 +1333,65 @@ pub fn find_and_handle_joints_that_are_ready(
     // TODO:
     // self.handle_saved_private_payment()?;
     Ok(())
+}
+
+fn notify_light_clients_about_stable_joints(
+    db: &Connection,
+    from_mci: u32,
+    to_mci: u32,
+) -> Result<()> {
+    let mut stmt = db.prepare_cached(
+		"SELECT peer FROM units JOIN unit_authors USING(unit) JOIN watched_light_addresses USING(address) \
+		WHERE main_chain_index>? AND main_chain_index<=? \
+		UNION \
+		SELECT peer FROM units JOIN outputs USING(unit) JOIN watched_light_addresses USING(address) \
+		WHERE main_chain_index>? AND main_chain_index<=? \
+		UNION \
+		SELECT peer FROM units JOIN watched_light_units USING(unit) \
+		WHERE main_chain_index>? AND main_chain_index<=?")?;
+
+    let rows = stmt
+        .query_map(
+            &[&from_mci, &to_mci, &from_mci, &to_mci, &from_mci, &to_mci],
+            |row| row.get(0),
+        )?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    for peer in rows {
+        if let Some(ws) = WSS.get_connection_by_name(&peer) {
+            ws.send_just_saying("light/have_updates", Value::Null)?;
+        }
+    }
+
+    let mut stmt = db.prepare_cached(
+        "DELETE FROM watched_light_units \
+         WHERE unit IN (SELECT unit FROM units WHERE main_chain_index>? AND main_chain_index<=?)",
+    )?;
+
+    stmt.execute(&[&from_mci, &to_mci])?;
+
+    Ok(())
+}
+
+pub fn notify_watchers_about_stable_joints(mci: u32) -> Result<()> {
+    use joint::WRITER_MUTEX;
+    // the event was emitted from inside mysql transaction, make sure it completes so that the changes are visible
+    // If the mci became stable in determineIfStableInLaterUnitsAndUpdateStableMcFlag (rare), write lock is released before the validation commits,
+    // so we might not see this mci as stable yet. Hopefully, it'll complete before light/have_updates roundtrip
+    let g = WRITER_MUTEX.lock().unwrap();
+    // we don't need to block writes, we requested the lock just to wait that the current write completes
+    drop(g);
+    info!("notify_watchers_about_stable_joints, mci={} ", mci);
+    if mci <= 1 {
+        return Ok(());
+    }
+    let db = db::DB_POOL.get_connection();
+
+    let last_ball_mci = storage::find_last_ball_mci_of_mci(&db, mci)?;
+    let prev_last_ball_mci = storage::find_last_ball_mci_of_mci(&db, mci - 1)?;
+
+    if last_ball_mci == prev_last_ball_mci {
+        return Ok(());
+    }
+
+    notify_light_clients_about_stable_joints(&db, prev_last_ball_mci, last_ball_mci)
 }

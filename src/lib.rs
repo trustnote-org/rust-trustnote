@@ -49,6 +49,7 @@ macro_rules! some_if_option {
     }};
 }
 
+#[macro_export]
 macro_rules! t {
     ($e:expr) => {
         match $e {
@@ -61,6 +62,7 @@ macro_rules! t {
 }
 
 // this is a special go macro that can return Result and print the error and backtrace
+#[macro_export]
 macro_rules! try_go {
     ($func:expr) => {{
         fn _go_check<F, E>(f: F) -> F
@@ -78,20 +80,19 @@ macro_rules! try_go {
     }};
 }
 
+#[macro_use]
+pub mod utils;
+
 pub mod config;
 pub mod db;
-#[macro_use]
 pub mod error;
-pub mod atomic_lock;
 pub mod graph;
 pub mod headers_commission;
-pub mod map_lock;
 pub mod mc_outputs;
 pub mod my_witness;
 pub mod network;
 pub mod paid_witnessing;
 pub mod spec;
-mod utils;
 
 pub mod catchup;
 mod definition;
