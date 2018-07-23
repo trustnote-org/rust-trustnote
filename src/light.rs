@@ -6,9 +6,142 @@ use graph;
 use joint::Joint;
 use rusqlite::Connection;
 use serde_json::{self, Value};
+use std::collections::HashSet;
 use storage;
+use witness_proof;
 
-pub fn prepare_history(_param: &Value) -> Result<Value> {
+const MAX_HISTORY_ITEMS: usize = 1000;
+
+#[derive(Deserialize)]
+pub struct HistoryRequest {
+    pub witnesses: Vec<String>,
+    pub addresses: Vec<String>,
+    pub known_stable_units: Vec<String>,
+    pub requested_joints: Vec<String>,
+}
+
+// TODO: return a struct also
+pub fn prepare_history(db: &Connection, history_request: &HistoryRequest) -> Result<Value> {
+    if history_request.addresses.is_empty() {
+        bail!("no addresses");
+    }
+    if history_request.known_stable_units.is_empty() {
+        bail!("known_stable_units must be non-empty array");
+    }
+    if history_request.requested_joints.is_empty() {
+        bail!("no requested joints");
+    }
+    if history_request.witnesses.len() != config::COUNT_WITNESSES {
+        bail!("wrong number of witnesses");
+    }
+
+    let assoc_know_stable_units = history_request
+        .known_stable_units
+        .iter()
+        .map(|s| s)
+        .collect::<HashSet<_>>();
+    let mut selects = Vec::new();
+
+    let addresses_and_shared_address = add_shared_addresses_of_wallet(&history_request.addresses)?;
+    if !addresses_and_shared_address.is_empty() {
+        let address_list = addresses_and_shared_address
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!("SELECT DISTINCT unit, main_chain_index, level FROM outputs JOIN units USING(unit) \
+				WHERE address IN({}) AND (+sequence='good' OR is_stable=1) \
+				UNION \
+				SELECT DISTINCT unit, main_chain_index, level FROM unit_authors JOIN units USING(unit) \
+				WHERE address IN({}) AND (+sequence='good' OR is_stable=1) ", address_list, address_list);
+        selects.push(sql);
+    }
+    if !history_request.requested_joints.is_empty() {
+        let unit_list = history_request
+            .requested_joints
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!("SELECT unit, main_chain_index, level FROM units WHERE unit IN({}) AND (+sequence='good' OR is_stable=1) ", unit_list);
+        selects.push(sql);
+    }
+    let sql = format!(
+        "{} ORDER BY main_chain_index DESC, level DESC",
+        selects.join("UNION ")
+    );
+
+    #[derive(Clone)]
+    struct TempProps {
+        unit: String,
+        main_chain_index: Option<u32>,
+        level: u32,
+    }
+    let mut stmt = db.prepare_cached(&sql)?;
+    let tmp_rows = stmt
+        .query_map(&[], |row| TempProps {
+            unit: row.get(0),
+            main_chain_index: row.get(1),
+            level: row.get(2),
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
+    let rows = tmp_rows
+        .iter()
+        .filter(|s| !assoc_know_stable_units.contains(&s.unit))
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        return Ok(Value::Null);
+    }
+    if rows.len() > MAX_HISTORY_ITEMS {
+        bail!("your history is too large, consider switching to a full client");
+    }
+
+    let prepare_witness_proof =
+        witness_proof::prepare_witness_proof(db, &history_request.witnesses, 0)?;
+
+    let mut joints = Vec::new();
+    let mut proofchain_balls = Vec::new();
+    let mut later_mci = prepare_witness_proof.last_ball_mci + 1;
+
+    for row in rows {
+        match storage::read_joint(db, &row.unit) {
+            Ok(joint) => {
+                joints.push(joint);
+                if row.main_chain_index > Some(prepare_witness_proof.last_ball_mci)
+                    || row.main_chain_index.is_none()
+                {
+                    continue;
+                }
+                build_proof_chain(
+                    later_mci,
+                    row.main_chain_index.unwrap(),
+                    &row.unit,
+                    &mut proofchain_balls,
+                )?;
+                later_mci = row.main_chain_index.unwrap();
+            }
+
+            Err(_) => bail!("prepareJointsWithProofs unit not found {}", row.unit),
+        }
+    }
+
+    #[derive(Serialize)]
+    struct Response {
+        unstable_mc_joints: Vec<Joint>,
+        witness_change_and_definition: Vec<Joint>,
+        joints: Vec<Joint>,
+        proofchain_balls: Vec<Joint>,
+    }
+
+    Ok(serde_json::to_value(Response {
+        unstable_mc_joints: prepare_witness_proof.unstable_mc_joints,
+        witness_change_and_definition: prepare_witness_proof.witness_change_and_definition,
+        joints,
+        proofchain_balls,
+    })?)
+}
+
+fn add_shared_addresses_of_wallet(_addresses: &[String]) -> Result<Vec<String>> {
     unimplemented!()
 }
 
@@ -69,7 +202,7 @@ fn create_link_proof(
 
     let earlier_joint_unit = earlier_joint.get_unit_hash();
     if later_lb_mci >= earlier_mci {
-        buil_proof_chain(later_lb_mci + 1, earlier_mci, earlier_joint_unit, chains)?;
+        build_proof_chain(later_lb_mci + 1, earlier_mci, earlier_joint_unit, chains)?;
     } else {
         if !graph::determine_if_included(&db, &earlier_joint_unit, &[later_unit.to_string()])? {
             bail!("not included");
@@ -81,7 +214,7 @@ fn create_link_proof(
 }
 
 //TODO:
-fn buil_proof_chain(
+fn build_proof_chain(
     _mci: u32,
     _earlier_mci: u32,
     _unit: &String,

@@ -12,7 +12,7 @@ use error::Result;
 use failure::ResultExt;
 use joint::Joint;
 use joint_storage::{self, ReadyJoint};
-use light;
+use light::{self, HistoryRequest};
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::{Mutex, RwLock};
@@ -460,48 +460,11 @@ impl HubConn {
             bail!("light clients have to be inbound");
         }
 
-        // TODO: deserialize real structured params
-        let rsp = light::prepare_history(&param)?;
+        let mut db = db::DB_POOL.get_connection();
+        let history_request: HistoryRequest = serde_json::from_value(param)?;
 
-        let params_addresses = param["addresses"]
-            .as_array()
-            .ok_or_else(|| format_err!("no params.addresses"))?;
-
-        let db = ::db::DB_POOL.get_connection();
-        if !params_addresses.is_empty() {
-            let addresses = params_addresses
-                .iter()
-                .map(|s| format!("('{}','{}')", self.get_peer(), s.as_str().unwrap()))
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let sql = format!(
-                "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES {}",
-                addresses
-            );
-            let mut stmt = db.prepare(&sql)?;
-            stmt.execute(&[])?;
-        }
-
-        let params_requested_joints = param["requested_joints"]
-            .as_array()
-            .ok_or_else(|| format_err!("no params.requested.joints"))?;
-        if !params_requested_joints.is_empty() {
-            let rows = storage::slice_and_execute_query()?;
-            if !rows.is_empty() {
-                let rows = rows
-                    .iter()
-                    .map(|s| format!("('{}','{}')", self.get_peer(), s))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let sql = format!(
-                    "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES {}",
-                    rows
-                );
-                let mut stmt = db.prepare(&sql)?;
-                stmt.execute(&[])?;
-            }
-        }
+        let rsp = light::prepare_history(&db, &history_request)?;
+        self.handle_get_history(history_request, &mut db)?;
 
         Ok(rsp)
     }
@@ -876,6 +839,47 @@ impl HubConn {
             },
         }
 
+        Ok(())
+    }
+
+    fn handle_get_history(
+        &self,
+        history_request: HistoryRequest,
+        db: &mut Connection,
+    ) -> Result<()> {
+        let params_addresses = history_request.addresses;
+        if !params_addresses.is_empty() {
+            let addresses = params_addresses
+                .iter()
+                .map(|s| format!("('{}','{}')", self.get_peer(), s))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            let sql = format!(
+                "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES {}",
+                addresses
+            );
+            let mut stmt = db.prepare(&sql)?;
+            stmt.execute(&[])?;
+        }
+
+        let params_requested_joints = history_request.requested_joints;
+        if !params_requested_joints.is_empty() {
+            let rows = storage::slice_and_execute_query()?;
+            if !rows.is_empty() {
+                let rows = rows
+                    .iter()
+                    .map(|s| format!("('{}','{}')", self.get_peer(), s))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let sql = format!(
+                    "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES {}",
+                    rows
+                );
+                let mut stmt = db.prepare(&sql)?;
+                stmt.execute(&[])?;
+            }
+        }
         Ok(())
     }
 
