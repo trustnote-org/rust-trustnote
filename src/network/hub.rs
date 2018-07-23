@@ -510,8 +510,24 @@ impl HubConn {
         unimplemented!();
     }
 
-    fn on_get_parents_and_last_ball_and_witness_list_unit(&self, _: Value) -> Result<Value> {
-        unimplemented!();
+    fn on_get_parents_and_last_ball_and_witness_list_unit(&self, param: Value) -> Result<Value> {
+        if !self.is_inbound() {
+            bail!("light clients have to be inbound");
+        }
+
+        let param_witnesses = param["witnesses"]
+            .as_array()
+            .ok_or_else(|| format_err!("no witnesses"))?;
+
+        let ss = param_witnesses
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>();
+        let db = db::DB_POOL.get_connection();
+        let result = light::prepare_parents_and_last_ball_and_witness_list_unit(&ss, &db)
+            .expect("failed to get parents_and_last_ball_and_witness_list_unit");
+
+        Ok(serde_json::to_value(result)?)
     }
 }
 
