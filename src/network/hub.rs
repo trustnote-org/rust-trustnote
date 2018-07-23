@@ -13,7 +13,6 @@ use failure::ResultExt;
 use joint::Joint;
 use joint_storage::{self, ReadyJoint};
 use light::{self, HistoryRequest};
-use map_lock::MapLock;
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::{Mutex, RwLock};

@@ -36,24 +36,15 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
     if history_request.witnesses.len() != config::COUNT_WITNESSES {
         bail!("wrong number of witnesses");
     }
+
     let assoc_know_stable_units = history_request
         .known_stable_units
         .iter()
         .map(|s| (s, true))
         .collect::<HashMap<_, _>>();
-
-    #[derive(Serialize)]
-    struct Response {
-        unstable_mc_joints: Vec<Joint>,            //yes
-        witness_change_and_definition: Vec<Joint>, //yes
-        // last_ball_unit: String,                    //
-        // last_ball_mci: u32,
-        joints: Vec<Joint>,
-        proofchain_balls: Vec<String>,
-    }
-
     let mut selects = Vec::new();
-    let addresses_and_shared_address = add_shared_addresses_of_wallet(&history_request.addresses);
+
+    let addresses_and_shared_address = add_shared_addresses_of_wallet(&history_request.addresses)?;
     if !addresses_and_shared_address.is_empty() {
         let address_list = addresses_and_shared_address
             .iter()
@@ -81,6 +72,7 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
         "{} ORDER BY main_chain_index DESC, level DESC",
         selects.join("UNION ")
     );
+
     #[derive(Clone)]
     struct TempProps {
         unit: String,
@@ -105,15 +97,18 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
     if rows.len() > MAX_HISTORY_ITEMS {
         bail!("your history is too large, consider switching to a full client");
     }
+
     let prepare_witness_proof =
         witness_proof::prepare_witness_proof(db, &history_request.witnesses, 0)?;
-    let mut later_mci = prepare_witness_proof.last_ball_mci + 1;
+
     let mut joints = Vec::new();
     let mut proofchain_balls = Vec::new();
+    let mut later_mci = prepare_witness_proof.last_ball_mci + 1;
+
     for row in rows {
         match storage::read_joint(db, &row.unit) {
-            Ok(j) => {
-                joints.push(j);
+            Ok(joint) => {
+                joints.push(joint);
                 if row.main_chain_index > Some(prepare_witness_proof.last_ball_mci)
                     || row.main_chain_index.is_none()
                 {
@@ -132,6 +127,14 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
         }
     }
 
+    #[derive(Serialize)]
+    struct Response {
+        unstable_mc_joints: Vec<Joint>,
+        witness_change_and_definition: Vec<Joint>,
+        joints: Vec<Joint>,
+        proofchain_balls: Vec<String>,
+    }
+
     Ok(serde_json::to_value(Response {
         unstable_mc_joints: prepare_witness_proof.unstable_mc_joints,
         witness_change_and_definition: prepare_witness_proof.witness_change_and_definition,
@@ -139,7 +142,8 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
         proofchain_balls: Vec::new(),
     })?)
 }
-fn add_shared_addresses_of_wallet(_addresses: &Vec<String>) -> Vec<String> {
+
+fn add_shared_addresses_of_wallet(_addresses: &Vec<String>) -> Result<Vec<String>> {
     unimplemented!()
 }
 
