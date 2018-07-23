@@ -509,7 +509,7 @@ impl HubConn {
 
     fn on_get_link_proofs(&self, params: Value) -> Result<Value> {
         if !self.is_inbound() {
-            return Err(format_err!("light clients have to be inbound"));
+            bail!("light clients have to be inbound");
         }
         let rsp = light::prepare_link_proofs(params)?;
         Ok(rsp)
