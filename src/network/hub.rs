@@ -506,8 +506,12 @@ impl HubConn {
         Ok(rsp)
     }
 
-    fn on_get_link_proofs(&self, _: Value) -> Result<Value> {
-        unimplemented!();
+    fn on_get_link_proofs(&self, params: Value) -> Result<Value> {
+        if !self.is_inbound() {
+            bail!("light clients have to be inbound");
+        }
+        let rsp = light::prepare_link_proofs(params)?;
+        Ok(rsp)
     }
 
     fn on_get_parents_and_last_ball_and_witness_list_unit(&self, param: Value) -> Result<Value> {
