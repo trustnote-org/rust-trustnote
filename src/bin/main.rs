@@ -4,10 +4,12 @@ extern crate base64;
 extern crate chrono;
 extern crate fern;
 extern crate serde_json;
+#[macro_use]
 extern crate trustnote;
 #[macro_use]
 extern crate may;
 extern crate may_signal;
+
 use trustnote::*;
 
 fn log_init() {
@@ -65,8 +67,17 @@ fn network_cleanup() {
     network::hub::WSS.close_all();
 }
 
+// register golbal event handlers
+fn register_event_handlers() {
+    use main_chain::MciStableEvent;
+    use utils::event::Event;
+
+    MciStableEvent::add_handler(|v| t!(::network::hub::notify_watchers_about_stable_joints(v.mci)));
+}
+
 // the hub server logic that run in coroutine context
 fn run_hub_server() -> Result<()> {
+    register_event_handlers();
     let _server = start_ws_server();
     connect_to_remote()?;
     time::start_global_timers();
