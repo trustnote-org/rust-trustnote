@@ -1,3 +1,4 @@
+use config;
 use db;
 use error::Result;
 use failure::ResultExt;
