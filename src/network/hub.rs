@@ -1352,26 +1352,26 @@ fn notify_light_clients_about_stable_joints(
     Ok(())
 }
 
-pub fn notify_watchers_about_stable_joints(mci: u32) {
+pub fn notify_watchers_about_stable_joints(mci: u32) -> Result<()> {
     use joint::WRITER_MUTEX;
-    // we do this in a seperate thread
-    try_go!(move || -> Result<()> {
-        // the event was emitted from inside mysql transaction, make sure it completes so that the changes are visible
-        // If the mci became stable in determineIfStableInLaterUnitsAndUpdateStableMcFlag (rare), write lock is released before the validation commits,
-        // so we might not see this mci as stable yet. Hopefully, it'll complete before light/have_updates roundtrip
-        let g = WRITER_MUTEX.lock().unwrap();
-        // we don't need to block writes, we requested the lock just to wait that the current write completes
-        drop(g);
-        info!("notify_watchers_about_stable_joints, mci={} ", mci);
-        if mci <= 1 {
-            return Ok(());
-        }
-        let db = db::DB_POOL.get_connection();
-        let last_ball_mci = storage::find_last_ball_mci_of_mci(&db, mci)?;
-        let prev_last_ball_mci = storage::find_last_ball_mci_of_mci(&db, mci - 1)?;
-        if last_ball_mci == prev_last_ball_mci {
-            return Ok(());
-        }
-        notify_light_clients_about_stable_joints(&db, prev_last_ball_mci, last_ball_mci)
-    });
+    // the event was emitted from inside mysql transaction, make sure it completes so that the changes are visible
+    // If the mci became stable in determineIfStableInLaterUnitsAndUpdateStableMcFlag (rare), write lock is released before the validation commits,
+    // so we might not see this mci as stable yet. Hopefully, it'll complete before light/have_updates roundtrip
+    let g = WRITER_MUTEX.lock().unwrap();
+    // we don't need to block writes, we requested the lock just to wait that the current write completes
+    drop(g);
+    info!("notify_watchers_about_stable_joints, mci={} ", mci);
+    if mci <= 1 {
+        return Ok(());
+    }
+    let db = db::DB_POOL.get_connection();
+
+    let last_ball_mci = storage::find_last_ball_mci_of_mci(&db, mci)?;
+    let prev_last_ball_mci = storage::find_last_ball_mci_of_mci(&db, mci - 1)?;
+
+    if last_ball_mci == prev_last_ball_mci {
+        return Ok(());
+    }
+
+    notify_light_clients_about_stable_joints(&db, prev_last_ball_mci, last_ball_mci)
 }
