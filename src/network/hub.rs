@@ -463,7 +463,7 @@ impl HubConn {
         let mut db = db::DB_POOL.get_connection();
         let history_request: HistoryRequest = serde_json::from_value(param)?;
 
-        let rsp = light::prepare_history(&history_request, &mut db)?;
+        let rsp = light::prepare_history(&db, &history_request)?;
         self.handle_get_history(history_request, &mut db)?;
 
         Ok(rsp)

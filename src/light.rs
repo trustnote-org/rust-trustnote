@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::HashSet;
 use db;
 use config;
 use error::Result;
@@ -14,16 +14,14 @@ const MAX_HISTORY_ITEMS: usize = 1000;
 
 #[derive(Deserialize)]
 pub struct HistoryRequest {
-    pub known_stable_units: Vec<String>,
     pub witnesses: Vec<String>,
     pub addresses: Vec<String>,
+    pub known_stable_units: Vec<String>,
     pub requested_joints: Vec<String>,
 }
 
-pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) -> Result<Value> {
-    if history_request.addresses.is_empty() && history_request.requested_joints.is_empty() {
-        bail!("neither addresses nor joints requested");
-    }
+// TODO: return a struct also
+pub fn prepare_history(db: &Connection, history_request: &HistoryRequest) -> Result<Value> {
     if history_request.addresses.is_empty() {
         bail!("no addresses");
     }
@@ -40,8 +38,8 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
     let assoc_know_stable_units = history_request
         .known_stable_units
         .iter()
-        .map(|s| (s, true))
-        .collect::<HashMap<_, _>>();
+        .map(|s| s)
+        .collect::<HashSet<_>>();
     let mut selects = Vec::new();
 
     let addresses_and_shared_address = add_shared_addresses_of_wallet(&history_request.addresses)?;
@@ -89,7 +87,7 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
         .collect::<::std::result::Result<Vec<_>, _>>()?;
     let rows = tmp_rows
         .iter()
-        .filter(|s| !assoc_know_stable_units[&s.unit])
+        .filter(|s| !assoc_know_stable_units.contains(&s.unit))
         .collect::<Vec<_>>();
     if rows.is_empty() {
         return Ok(Value::Null);
@@ -123,7 +121,7 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
                 later_mci = row.main_chain_index.unwrap();
             }
 
-            Err(_) => error!("prepareJointsWithProofs unit not found {}", row.unit),
+            Err(_) => bail!("prepareJointsWithProofs unit not found {}", row.unit),
         }
     }
 
@@ -138,8 +136,8 @@ pub fn prepare_history(history_request: &HistoryRequest, db: &mut Connection) ->
     Ok(serde_json::to_value(Response {
         unstable_mc_joints: prepare_witness_proof.unstable_mc_joints,
         witness_change_and_definition: prepare_witness_proof.witness_change_and_definition,
-        joints: joints,
-        proofchain_balls: Vec::new(),
+        joints,
+        proofchain_balls,
     })?)
 }
 
