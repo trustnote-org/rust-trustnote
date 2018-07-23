@@ -166,6 +166,7 @@ fn build_paid_witnesses(
 }
 
 fn build_paid_witnesses_for_main_chain_index(db: &Connection, main_chain_index: u32) -> Result<()> {
+    info!("updating paid witnesses mci {}", main_chain_index);
     let mut stmt = db.prepare_cached(
         "SELECT COUNT(*) AS count, \
          SUM(CASE WHEN is_stable=1 THEN 1 ELSE 0 END) AS count_on_stable_mc \
@@ -236,8 +237,9 @@ fn build_paid_witnesses_for_main_chain_index(db: &Connection, main_chain_index: 
         let unit_prop = row?;
 
         build_paid_witnesses(db, unit_prop, &witnesses)?;
+    }
 
-        let mut stmt = db.prepare_cached(
+    let mut stmt = db.prepare_cached(
             "INSERT INTO witnessing_outputs (main_chain_index, address, amount) \
             SELECT main_chain_index, address, \
             SUM(CASE WHEN sequence='good' THEN ROUND(1.0*payload_commission/count_paid_witnesses) ELSE 0 END) \
@@ -247,8 +249,7 @@ fn build_paid_witnesses_for_main_chain_index(db: &Connection, main_chain_index: 
             WHERE main_chain_index=? \
             GROUP BY address"
         )?;
-        stmt.execute(&[&main_chain_index])?;
-    }
+    stmt.execute(&[&main_chain_index])?;
 
     Ok(())
 }
@@ -273,6 +274,7 @@ fn build_paid_witnesses_till_main_chain_index(
 }
 
 pub fn update_paid_witnesses(db: &Connection) -> Result<()> {
+    info!("updating paid witnesses");
     let last_stable_mci = storage::read_last_stable_mc_index(db)?;
     let max_spendable_mc_index = get_max_spendable_mci_for_last_ball_mci(last_stable_mci);
 
