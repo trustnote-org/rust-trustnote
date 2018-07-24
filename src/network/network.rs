@@ -218,12 +218,9 @@ impl<T> WsConnection<T> {
                         };
                         let JustSaying { subject, body } =
                             t_c!(serde_json::from_value(value[1].take()));
-                        go!(
-                            move || if let Err(e) = T::on_message(ws.clone(), subject, body) {
-                                let error = json!(e.to_string());
-                                t!(ws.send_error(error));
-                            }
-                        );
+                        go!(move || if let Err(e) = T::on_message(ws, subject, body) {
+                            error!("{}", e);
+                        });
                     }
                     "request" => {
                         #[derive(Deserialize)]

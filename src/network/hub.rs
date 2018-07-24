@@ -631,26 +631,24 @@ impl HubConn {
         }
 
         let login: spec::Login = serde_json::from_value(body)?;
-        ensure!(
-            login.challenge == Some(self.get_challenge()),
-            "wrong challenge"
-        );
-        ensure!(
-            login.pubkey.is_some() && login.signature.is_some(),
-            "no login params"
-        );
+        if login.challenge != Some(self.get_challenge()) {
+            return self.send_error(Value::from("wrong challenge"));
+        }
+
+        if login.pubkey.is_none() || login.signature.is_none() {
+            return self.send_error(Value::from("no login params"));
+        }
 
         let pubkey = login.pubkey.as_ref().unwrap().clone();
         let signature = login.signature.as_ref().unwrap().clone();
 
-        ensure!(
-            pubkey.len() == ::config::PUBKEY_LENGTH,
-            "wrong pubkey length"
-        );
-        ensure!(
-            signature.len() == ::config::SIG_LENGTH,
-            "wrong signature length"
-        );
+        if pubkey.len() != ::config::PUBKEY_LENGTH {
+            return self.send_error(Value::from("wrong pubkey length"));
+        }
+
+        if signature.len() != ::config::SIG_LENGTH {
+            return self.send_error(Value::from("wrong signature length"));
+        };
 
         let device_message = spec::DeviceMessage::Login(login);
         signature::verify(
@@ -1235,7 +1233,7 @@ impl HubConn {
         _db: &Connection,
         _device_address: &String,
     ) -> Result<()> {
-        unimplemented!()
+        Ok(())
     }
 }
 

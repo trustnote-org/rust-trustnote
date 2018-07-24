@@ -354,7 +354,7 @@ impl Unit {
 // because payment address is derived by c-hashing the definition object, while device address is produced from raw public key.
 pub fn get_device_address(b64_pubkey: &String) -> String {
     let mut address = get_chash(&b64_pubkey).expect("get_chash failed");
-    address.push('0');
+    address.insert(0, '0');
     address
 }
 
