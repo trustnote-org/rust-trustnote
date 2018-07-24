@@ -275,6 +275,7 @@ impl Server<HubData> for HubData {
             "catchup" => ws.on_catchup(params)?,
             "get_hash_tree" => ws.on_get_hash_tree(params)?,
             // bellow is wallet used command
+            "get_bots" => ws.on_get_bots(params)?,
             "get_peers" => ws.on_get_peers(params)?,
             "get_witnesses" => ws.on_get_witnesses(params)?,
             "post_joint" => ws.on_post_joint(params)?,
@@ -439,10 +440,37 @@ impl HubConn {
 
         Ok(())
     }
+
+    fn on_get_bots(&self, _param: Value) -> Result<Value> {
+        let db = db::DB_POOL.get_connection();
+        let mut stmt = db.prepare_cached(
+            "SELECT id, name, pairing_cod, description FROM bots ORDER BY rank DESC, id",
+        )?;
+
+        #[derive(Serialize)]
+        struct Bot {
+            id: u32,
+            name: String,
+            pairing_cod: String,
+            description: String,
+        };
+
+        let bots = stmt
+            .query_map(&[], |row| Bot {
+                id: row.get(0),
+                name: row.get(1),
+                pairing_cod: row.get(2),
+                description: row.get(3),
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
+        Ok(serde_json::to_value(bots)?)
+    }
+
     fn on_get_peers(&self, _param: Value) -> Result<Value> {
         let peers = WSS.get_outbound_peers();
         Ok(serde_json::to_value(peers)?)
     }
+
     fn on_get_witnesses(&self, _: Value) -> Result<Value> {
         use my_witness::MY_WITNESSES;
         Ok(serde_json::to_value(&*MY_WITNESSES)?)
