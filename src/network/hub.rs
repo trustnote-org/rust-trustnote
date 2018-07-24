@@ -31,6 +31,9 @@ pub struct HubData {
     is_subscribed: AtomicBool,
     is_source: AtomicBool,
     is_inbound: AtomicBool,
+    is_login_completed: AtomicBool,
+    challenge: RwLock<String>,
+    device_address: RwLock<String>,
 }
 
 pub type HubConn = WsConnection<HubData>;
@@ -247,6 +250,9 @@ impl Default for HubData {
             is_subscribed: AtomicBool::new(false),
             is_source: AtomicBool::new(false),
             is_inbound: AtomicBool::new(false),
+            is_login_completed: AtomicBool::new(false),
+            challenge: RwLock::new(String::new()),
+            device_address: RwLock::new(String::new()),
         }
     }
 }
@@ -263,6 +269,7 @@ impl Server<HubData> for HubData {
             "joint" => ws.on_joint(body)?,
             "refresh" => ws.on_refresh(body)?,
             "light/new_address_to_watch" => ws.on_new_address_to_watch(body)?,
+            "hub/login" => ws.on_hub_login(body)?,
             subject => bail!("on_message unkown subject: {}", subject),
         }
         Ok(())
@@ -321,6 +328,36 @@ impl HubConn {
     pub fn set_inbound(&self) {
         let data = self.get_data();
         data.is_inbound.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_login_completed(&self) -> bool {
+        let data = self.get_data();
+        data.is_login_completed.load(Ordering::Relaxed)
+    }
+
+    pub fn set_login_completed(&self) {
+        let data = self.get_data();
+        data.is_login_completed.store(true, Ordering::Relaxed);
+    }
+
+    pub fn get_challenge(&self) -> String {
+        let data = self.get_data();
+        data.challenge.read().unwrap().clone()
+    }
+
+    pub fn set_challenge(&self, challenge: &String) {
+        let data = self.get_data();
+        *data.challenge.write().unwrap() = challenge.clone();
+    }
+
+    pub fn get_device_address(&self) -> String {
+        let data = self.get_data();
+        data.device_address.read().unwrap().clone()
+    }
+
+    pub fn set_device_address(&self, device_address: &String) {
+        let data = self.get_data();
+        *data.device_address.write().unwrap() = device_address.clone();
     }
 }
 
@@ -583,6 +620,67 @@ impl HubConn {
             .context("failed to get parents_and_last_ball_and_witness_list_unit")?;
 
         Ok(result)
+    }
+
+    fn on_hub_login(&self, body: Value) -> Result<()> {
+        use signature;
+        use spec;
+
+        if body.is_null() {
+            return Ok(());
+        }
+
+        let login: spec::Login = serde_json::from_value(body)?;
+        ensure!(
+            login.challenge == Some(self.get_challenge()),
+            "wrong challenge"
+        );
+        ensure!(
+            login.pubkey.is_some() && login.signature.is_some(),
+            "no login params"
+        );
+
+        let pubkey = login.pubkey.as_ref().unwrap().clone();
+        let signature = login.signature.as_ref().unwrap().clone();
+
+        ensure!(
+            pubkey.len() == ::config::PUBKEY_LENGTH,
+            "wrong pubkey length"
+        );
+        ensure!(
+            signature.len() == ::config::SIG_LENGTH,
+            "wrong signature length"
+        );
+
+        let device_message = spec::DeviceMessage::Login(login);
+        signature::verify(
+            &spec::get_device_message_hash_to_sign(&device_message),
+            &signature,
+            &pubkey,
+        )?;
+
+        let device_address = spec::get_device_address(&pubkey);
+        self.set_device_address(&device_address);
+
+        self.send_just_saying("hub/push_project_number", json!({"projectNumber": 0}))?;
+
+        // after this point the device is authenticated and can send further commands
+        let db = db::DB_POOL.get_connection();
+        let mut stmt = db.prepare_cached("SELECT 1 FROM devices WHERE device_address=?")?;
+        if !stmt.exists(&[&device_address])? {
+            let mut stmt =
+                db.prepare_cached("INSERT INTO devices (device_address, pubkey) VALUES (?,?)")?;
+            stmt.execute(&[&device_address, &pubkey])?;
+            self.send_info(json!("address created"))?;
+        } else {
+            self.send_stored_device_messages(&db, &device_address)?;
+        }
+
+        //finishLogin
+        self.set_login_completed();
+        //TODO: Seems to handle the temp_pubkey message before the login happen
+
+        Ok(())
     }
 }
 
@@ -1131,6 +1229,14 @@ impl HubConn {
         self.send_just_saying("free_joints_end", Value::Null)?;
         Ok(())
     }
+
+    fn send_stored_device_messages(
+        &self,
+        _db: &Connection,
+        _device_address: &String,
+    ) -> Result<()> {
+        unimplemented!()
+    }
 }
 
 // the client side impl
@@ -1151,6 +1257,7 @@ impl HubConn {
 
     fn send_hub_challenge(&self) -> Result<()> {
         let challenge = object_hash::gen_random_string(30);
+        self.set_challenge(&challenge);
         self.send_just_saying("hub/challenge", Value::from(challenge))?;
         Ok(())
     }
