@@ -209,15 +209,17 @@ impl WsConnections {
         None
     }
 
-    fn forward_joint(&self, joint: &Joint) -> Result<()> {
-        let outbound = self.outbound.read().unwrap().to_vec();
-        for c in outbound {
-            c.send_joint(joint)?;
+    fn forward_joint(&self, cur_ws: &HubConn, joint: &Joint) -> Result<()> {
+        for c in &*self.outbound.read().unwrap() {
+            if c.is_subscribed() && !c.conn_eq(cur_ws) {
+                c.send_joint(joint)?;
+            }
         }
 
-        let inbound = self.inbound.read().unwrap().to_vec();
-        for c in inbound {
-            c.send_joint(joint)?;
+        for c in &*self.inbound.read().unwrap() {
+            if c.is_subscribed() && !c.conn_eq(cur_ws) {
+                c.send_joint(joint)?;
+            }
         }
         Ok(())
     }
@@ -554,7 +556,7 @@ impl HubConn {
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
 
                     if !IS_CACTCHING_UP.is_locked() {
-                        WSS.forward_joint(&joint)?;
+                        WSS.forward_joint(self, &joint)?;
                     }
 
                     // must release the guard to let other work continue
@@ -665,12 +667,13 @@ impl HubConn {
                     drop(lock);
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
+                    //TODO: add notify watchers
 
                     const FORWARDING_TIMEOUT: u64 = 10 * 1000;
                     if !IS_CACTCHING_UP.is_locked()
                         && create_ts as u64 > ::time::now() - FORWARDING_TIMEOUT
                     {
-                        WSS.forward_joint(&joint)?;
+                        WSS.forward_joint(self, &joint)?;
                     }
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                     drop(g);
@@ -798,7 +801,7 @@ impl HubConn {
                     drop(lock);
 
                     if !IS_CACTCHING_UP.is_locked() {
-                        WSS.forward_joint(&joint)?;
+                        WSS.forward_joint(self, &joint)?;
                     }
                 }
             },
