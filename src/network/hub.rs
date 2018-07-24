@@ -898,11 +898,17 @@ impl HubConn {
 
         let params_requested_joints = history_request.requested_joints;
         if !params_requested_joints.is_empty() {
-            let rows = storage::slice_and_execute_query()?;
+            let rows = storage::slice_and_execute_query(
+                db,
+                "SELECT unit FROM units WHERE main_chain_index >= ? AND unit IN({})",
+                &[&storage::get_min_retrievable_mci()],
+                &params_requested_joints,
+                |row| row.get(0),
+            )?;
             if !rows.is_empty() {
                 let rows = rows
-                    .iter()
-                    .map(|s| format!("('{}','{}')", self.get_peer(), s))
+                    .into_iter()
+                    .map(|s: String| format!("('{}','{}')", self.get_peer(), s))
                     .collect::<Vec<_>>()
                     .join(", ");
                 let sql = format!(

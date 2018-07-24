@@ -4,7 +4,7 @@ use error::Result;
 use failure::ResultExt;
 use joint::Joint;
 use may::sync::RwLock;
-use rusqlite::Connection;
+use rusqlite::{self, Connection};
 use serde_json::{self, Value};
 use spec::*;
 use std::collections::HashMap;
@@ -282,10 +282,7 @@ pub fn read_joint(db: &Connection, unit: &String) -> Result<Joint> {
 }
 
 pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint> {
-    let min_retrievable_mci = {
-        let g = MIN_RETRIEVABLE_MCI.read().unwrap();
-        *g
-    };
+    let min_retrievable_mci = *MIN_RETRIEVABLE_MCI.read().unwrap();
 
     let mut stmt = db.prepare_cached(
         "SELECT units.unit, version, alt, witness_list_unit, last_ball_unit, \
@@ -1367,6 +1364,37 @@ fn build_list_of_mc_units_with_potentially_different_witness_lists(
     Ok(mc_units)
 }
 
-pub fn slice_and_execute_query() -> Result<Vec<String>> {
-    unimplemented!()
+#[inline]
+pub fn get_min_retrievable_mci() -> u32 {
+    *MIN_RETRIEVABLE_MCI.read().unwrap()
+}
+
+pub fn slice_and_execute_query<S, F, T>(
+    db: &Connection,
+    sql_str: &str,
+    param: &[&rusqlite::types::ToSql],
+    array_para: &[S],
+    mut f: F,
+) -> Result<Vec<T>>
+where
+    S: ::std::fmt::Display,
+    F: FnMut(&rusqlite::Row) -> T,
+{
+    let mut ret = Vec::new();
+    for chunk in array_para.chunks(100) {
+        let array_str = chunk
+            .iter()
+            .map(|s| format!("'{}'", s))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let sql = sql_str.replace("{}", &array_str);
+        let mut stmt = db.prepare(&sql)?;
+        let rows = stmt.query_map(param, |row| f(row))?;
+        for row in rows {
+            ret.push(row?);
+        }
+    }
+
+    Ok(ret)
 }
