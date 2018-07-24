@@ -558,6 +558,7 @@ impl HubConn {
                     if !IS_CACTCHING_UP.is_locked() {
                         WSS.forward_joint(self, &joint)?;
                     }
+                    notify_watchers(db, &joint, self)?;
 
                     // must release the guard to let other work continue
                     drop(g);
@@ -667,7 +668,6 @@ impl HubConn {
                     drop(lock);
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
-                    //TODO: add notify watchers
 
                     const FORWARDING_TIMEOUT: u64 = 10 * 1000;
                     if !IS_CACTCHING_UP.is_locked()
@@ -675,6 +675,7 @@ impl HubConn {
                     {
                         WSS.forward_joint(self, &joint)?;
                     }
+                    notify_watchers(db, &joint, self)?;
                     joint_storage::remove_unhandled_joint_and_dependencies(db, unit)?;
                     drop(g);
 
@@ -803,6 +804,7 @@ impl HubConn {
                     if !IS_CACTCHING_UP.is_locked() {
                         WSS.forward_joint(self, &joint)?;
                     }
+                    notify_watchers(db, &joint, self)?;
                 }
             },
             Err(err) => match err {
@@ -1011,12 +1013,6 @@ impl HubConn {
         catchup::process_hash_tree(db, balls)?;
         self.request_new_missing_joints(db, &units)?;
         Ok(())
-    }
-
-    #[allow(dead_code)]
-    fn notify_watchers(&self, joint: &Joint) -> Result<()> {
-        let _ = joint;
-        unimplemented!()
     }
 
     #[inline]
@@ -1339,6 +1335,68 @@ pub fn find_and_handle_joints_that_are_ready(
 
     // TODO:
     // self.handle_saved_private_payment()?;
+    Ok(())
+}
+
+fn notify_watchers(db: &Connection, joint: &Joint, cur_ws: &HubConn) -> Result<()> {
+    let unit = &joint.unit;
+    if unit.messages.is_empty() {
+        return Ok(());
+    }
+
+    // already stable, light clients will require a proof
+    if joint.ball.is_some() {
+        return Ok(());
+    }
+
+    let mut addresses = unit.authors.iter().map(|a| &a.address).collect::<Vec<_>>();
+    for message in &unit.messages {
+        use spec::Payload;
+        if message.app != "payment" || message.payload.is_none() {
+            continue;
+        }
+        match message.payload {
+            Some(Payload::Payment(ref payment)) => for output in &payment.outputs {
+                let address = output.address.as_ref().expect("no address in output");
+                if !addresses.contains(&address) {
+                    addresses.push(address);
+                }
+            },
+            _ => unreachable!("payload shoudl be a payment"),
+        }
+    }
+
+    let addresses_str = addresses
+        .into_iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT peer FROM watched_light_addresses WHERE address IN({})",
+        addresses_str
+    );
+
+    let mut stmt = db.prepare(&sql)?;
+    let rows = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    // light clients need timestamp
+    let mut joint = joint.clone();
+    joint.unit.timestamp = Some(::time::now() / 1000);
+
+    for peer in rows {
+        if let Some(ws) = WSS.get_connection_by_name(&peer) {
+            if !ws.conn_eq(cur_ws) {
+                ws.send_joint(&joint)?;
+            }
+        }
+    }
+
     Ok(())
 }
 
