@@ -560,7 +560,9 @@ impl HubConn {
         if !self.is_inbound() {
             bail!("light clients have to be inbound");
         }
-        let rsp = light::prepare_link_proofs(params)?;
+        let units: Vec<String> =
+            serde_json::from_value(params).context("prepare_Link_proofs.params is error")?;
+        let rsp = light::prepare_link_proofs(&units)?;
         Ok(rsp)
     }
 
