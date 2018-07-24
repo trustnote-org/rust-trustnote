@@ -262,6 +262,7 @@ impl Server<HubData> for HubData {
             "result" => info!("recevie result: {}", body),
             "joint" => ws.on_joint(body)?,
             "refresh" => ws.on_refresh(body)?,
+            "light/new_address_to_watch" => ws.on_new_address_to_watch(body)?,
             subject => bail!("on_message unkown subject: {}", subject),
         }
         Ok(())
@@ -370,7 +371,7 @@ impl HubConn {
             Ok(())
         });
 
-        Ok(json!("subscribed"))
+        Ok(Value::from("subscribed"))
     }
 
     fn on_hub_challenge(&self, param: Value) -> Result<()> {
@@ -404,7 +405,7 @@ impl HubConn {
             )?;
 
             if stmt.exists(&[joint.unit.unit.as_ref().unwrap()])? {
-                return self.send_error(json!("this unit is already known and archived"));
+                return self.send_error(Value::from("this unit is already known and archived"));
             }
         }
         self.handle_online_joint(joint, &mut db)
@@ -436,6 +437,62 @@ impl HubConn {
             self.send_joints_since_mci(&db, mci as u32)?;
         } else {
             self.send_free_joints(&db)?;
+        }
+
+        Ok(())
+    }
+
+    fn on_new_address_to_watch(&self, param: Value) -> Result<()> {
+        if !self.is_inbound() {
+            return self.send_error(Value::from("light clients have to be inbound"));
+        }
+
+        let address: String = serde_json::from_value(param).context("not an address string")?;
+        if !::object_hash::is_chash_valid(&address) {
+            return self.send_error(Value::from("address not valid"));
+        }
+
+        let db = db::DB_POOL.get_connection();
+        let mut stmt = db.prepare_cached(
+            "INSERT OR IGNORE INTO watched_light_addresses (peer, address) VALUES (?,?)",
+        )?;
+        stmt.execute(&[self.get_peer(), &address])?;
+        self.send_info(Value::from(format!("now watching {}", address)))?;
+
+        let mut stmt = db.prepare_cached(
+            "SELECT unit, is_stable FROM unit_authors JOIN units USING(unit) WHERE address=? \
+             UNION \
+             SELECT unit, is_stable FROM outputs JOIN units USING(unit) WHERE address=? \
+             ORDER BY is_stable LIMIT 10",
+        )?;
+
+        struct TempUnit {
+            unit: String,
+            is_stable: u32,
+        }
+
+        let rows = stmt
+            .query_map(&[&address, &address], |row| TempUnit {
+                unit: row.get(0),
+                is_stable: row.get(1),
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+        if rows.is_empty() {
+            return Ok(());
+        }
+
+        if rows.len() == 10 || rows.iter().any(|r| r.is_stable == 1) {
+            self.send_just_saying("light/have_updates", Value::Null)?;
+        }
+
+        for row in rows {
+            if row.is_stable == 1 {
+                continue;
+            }
+            let joint = storage::read_joint(&db, &row.unit)
+                .context(format!("watched unit {} not found", row.unit))?;
+            self.send_joint(&joint)?;
         }
 
         Ok(())
@@ -1093,7 +1150,7 @@ impl HubConn {
 
     fn send_hub_challenge(&self) -> Result<()> {
         let challenge = object_hash::gen_random_string(30);
-        self.send_just_saying("hub/challenge", json!(challenge))?;
+        self.send_just_saying("hub/challenge", Value::from(challenge))?;
         Ok(())
     }
 
@@ -1132,7 +1189,7 @@ impl HubConn {
                 return Ok(());
             }
 
-            let mut v = ws.send_request("get_joint", &json!(unit))?;
+            let mut v = ws.send_request("get_joint", &Value::from(unit))?;
             if v["joint_not_found"].as_str() == Some(&unit) {
                 // TODO: if self connection failed to request jonit, should
                 // let available ws to try a again here. see #72
@@ -1150,7 +1207,7 @@ impl HubConn {
                 Some(unit_hash) => {
                     if unit_hash != unit {
                         let err = format!("I didn't request this unit from you: {}", unit_hash);
-                        return ws.send_error(json!(err));
+                        return ws.send_error(Value::from(err));
                     }
                 }
             }
