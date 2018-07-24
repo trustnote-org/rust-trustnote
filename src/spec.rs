@@ -6,18 +6,18 @@ use serde_json::Value;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Login {
-    pub challenge: Option<String>,
-    pub pubkey: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature: Option<String>,
+    pub challenge: String,
+    pub pubkey: String,
+    #[serde(skip_serializing)]
+    pub signature: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TempPubkey {
-    pub pubkey: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub signature: Option<String>,
-    pub temp_pubkey: Option<String>,
+    pub pubkey: String,
+    #[serde(skip_serializing)]
+    pub signature: String,
+    pub temp_pubkey: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -25,7 +25,6 @@ pub struct TempPubkey {
 pub enum DeviceMessage {
     Login(Login),
     TempPubkey(TempPubkey),
-    Other(Value),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -361,16 +360,8 @@ pub fn get_device_address(b64_pubkey: &String) -> String {
 pub fn get_device_message_hash_to_sign(device_message: &DeviceMessage) -> Vec<u8> {
     use sha2::{Digest, Sha256};
 
-    let source_string;
-    match device_message {
-        DeviceMessage::Login(login) => {
-            let mut login = login.clone();
-            login.signature = None;
-            source_string = obj_ser::to_string(&login).expect("Login to string failed")
-        }
-        _ => unimplemented!(),
-    }
-
+    let source_string =
+        obj_ser::to_string(&device_message).expect("DeviceMessage to string failed");
     Sha256::digest(source_string.as_bytes()).to_vec()
 }
 

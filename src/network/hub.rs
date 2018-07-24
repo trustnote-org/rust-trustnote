@@ -630,53 +630,60 @@ impl HubConn {
             return Ok(());
         }
 
-        let login: spec::Login = serde_json::from_value(body)?;
-        if login.challenge != Some(self.get_challenge()) {
-            return self.send_error(Value::from("wrong challenge"));
+        match serde_json::from_value::<spec::DeviceMessage>(body) {
+            Err(_) => {
+                return self.send_error(Value::from("no login params"));
+            }
+            Ok(device_message) => {
+                if let spec::DeviceMessage::Login(ref login) = &device_message {
+                    if login.challenge != self.get_challenge() {
+                        return self.send_error(Value::from("wrong challenge"));
+                    }
+
+                    if login.pubkey.len() != ::config::PUBKEY_LENGTH {
+                        return self.send_error(Value::from("wrong pubkey length"));
+                    }
+
+                    if login.signature.len() != ::config::SIG_LENGTH {
+                        return self.send_error(Value::from("wrong signature length"));
+                    };
+
+                    if signature::verify(
+                        &spec::get_device_message_hash_to_sign(&device_message),
+                        &login.signature,
+                        &login.pubkey,
+                    ).is_err()
+                    {
+                        return self.send_error(Value::from("wrong signature"));
+                    }
+
+                    let device_address = spec::get_device_address(&login.pubkey);
+                    self.set_device_address(&device_address);
+
+                    self.send_just_saying("hub/push_project_number", json!({"projectNumber": 0}))?;
+
+                    // after this point the device is authenticated and can send further commands
+                    let db = db::DB_POOL.get_connection();
+                    let mut stmt =
+                        db.prepare_cached("SELECT 1 FROM devices WHERE device_address=?")?;
+                    if !stmt.exists(&[&device_address])? {
+                        let mut stmt = db.prepare_cached(
+                            "INSERT INTO devices (device_address, pubkey) VALUES (?,?)",
+                        )?;
+                        stmt.execute(&[&device_address, &login.pubkey])?;
+                        self.send_info(json!("address created"))?;
+                    } else {
+                        self.send_stored_device_messages(&db, &device_address)?;
+                    }
+
+                    //finishLogin
+                    self.set_login_completed();
+                //TODO: Seems to handle the temp_pubkey message before the login happen
+                } else {
+                    return self.send_error(Value::from("no login params"));
+                }
+            }
         }
-
-        if login.pubkey.is_none() || login.signature.is_none() {
-            return self.send_error(Value::from("no login params"));
-        }
-
-        let pubkey = login.pubkey.as_ref().unwrap().clone();
-        let signature = login.signature.as_ref().unwrap().clone();
-
-        if pubkey.len() != ::config::PUBKEY_LENGTH {
-            return self.send_error(Value::from("wrong pubkey length"));
-        }
-
-        if signature.len() != ::config::SIG_LENGTH {
-            return self.send_error(Value::from("wrong signature length"));
-        };
-
-        let device_message = spec::DeviceMessage::Login(login);
-        signature::verify(
-            &spec::get_device_message_hash_to_sign(&device_message),
-            &signature,
-            &pubkey,
-        )?;
-
-        let device_address = spec::get_device_address(&pubkey);
-        self.set_device_address(&device_address);
-
-        self.send_just_saying("hub/push_project_number", json!({"projectNumber": 0}))?;
-
-        // after this point the device is authenticated and can send further commands
-        let db = db::DB_POOL.get_connection();
-        let mut stmt = db.prepare_cached("SELECT 1 FROM devices WHERE device_address=?")?;
-        if !stmt.exists(&[&device_address])? {
-            let mut stmt =
-                db.prepare_cached("INSERT INTO devices (device_address, pubkey) VALUES (?,?)")?;
-            stmt.execute(&[&device_address, &pubkey])?;
-            self.send_info(json!("address created"))?;
-        } else {
-            self.send_stored_device_messages(&db, &device_address)?;
-        }
-
-        //finishLogin
-        self.set_login_completed();
-        //TODO: Seems to handle the temp_pubkey message before the login happen
 
         Ok(())
     }
