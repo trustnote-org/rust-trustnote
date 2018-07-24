@@ -27,16 +27,13 @@ impl<T: Event> Default for EventHandlers<T> {
 }
 
 impl<T: Event + Send> EventHandlers<T> {
-    #[allow(dead_code)]
     fn add_op<F>(&self, f: F)
     where
         F: Fn(&T) -> () + Send + Sync + 'static,
     {
-        let mut g = self.ops.write().unwrap();
-        g.push(Box::new(f));
+        self.ops.write().unwrap().push(Box::new(f));
     }
 
-    // #[allow(dead_code)]
     fn run(&'static self, data: T) {
         let g = self.ops.read().unwrap();
         if !g.is_empty() {
