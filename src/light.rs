@@ -30,9 +30,9 @@ pub struct Response {
 
 #[derive(Serialize)]
 struct ProofBalls {
-    ball: Option<String>,
-    unit: Option<String>,
-    parent_balls: Vec<Option<String>>,
+    ball: String,
+    unit: String,
+    parent_balls: Vec<String>,
     content_hash: Option<String>,
     is_nonserial: Option<bool>,
     skiplist_balls: Vec<Option<String>>,
@@ -309,8 +309,8 @@ fn find_parent_and_add_ball(
         let mut stmt =
             db.prepare("SELECT unit, ball FROM units JOIN balls USING(unit) WHERE unit=?")?;
         struct TempUnit {
-            unit: Option<String>,
-            ball: Option<String>,
+            unit: String,
+            ball: String,
         }
         let rows = stmt
             .query_map(&[&cur_unit], |row| TempUnit {
@@ -330,6 +330,10 @@ fn find_parent_and_add_ball(
         if parent_rows.iter().any(|row| row.is_none()) {
             bail!("some parents have no balls");
         }
+        let parent_rows = parent_rows
+            .into_iter()
+            .map(|row| row.unwrap())
+            .collect::<Vec<_>>();
 
         balls.push(ProofBalls {
             ball: rows[0].ball.clone(),
