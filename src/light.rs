@@ -533,8 +533,8 @@ struct ProofBalls {
     ball: Option<String>,
     content_hash: Option<String>,
     is_nonserial: Option<bool>,
-    parent_balls: Vec<Option<String>>,
-    skiplist_balls: Vec<Option<String>>,
+    parent_balls: Vec<String>,
+    skiplist_balls: Vec<String>,
 }
 #[allow(dead_code)]
 fn build_proof_chain_on_mc(
@@ -578,7 +578,7 @@ fn build_proof_chain_on_mc(
         let ball = &mut tmp_balls[0];
         if let Some(_) = ball.content_hash {
             ball.is_nonserial = Some(true);
-            ball.content_hash.as_mut().unwrap().clear();
+            ball.content_hash = None;
         }
         let sql = format!(
             "SELECT ball FROM parenthoods LEFT JOIN balls ON parent_unit=balls.unit \
@@ -589,12 +589,13 @@ fn build_proof_chain_on_mc(
 
         let parent_rows = stmt
             .query_map(&[], |v| v.get(0))?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
-        if parent_rows.is_empty() {
-            bail!("some parents have no balls")
+            .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
+        if parent_rows.iter().any(|row| row.is_none()) {
+            bail!("some parents have no balls");
         }
+
         for parent_row in parent_rows {
-            ball.parent_balls.push(Some(parent_row));
+            ball.parent_balls.push(parent_row.unwrap());
         }
         let sql = format!(
             "SELECT ball, main_chain_index \
@@ -615,13 +616,13 @@ fn build_proof_chain_on_mc(
             .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         for scrow in &srows {
-            ball.skiplist_balls.push(Some(
+            ball.skiplist_balls.push(
                 scrow
                     .ball
                     .as_ref()
                     .expect("some skiplist units have no balls")
                     .to_owned(),
-            ));
+            );
         }
         balls.push(ball.clone());
         if tmp_mci as u32 == earlier_mci {
