@@ -1398,3 +1398,32 @@ where
 
     Ok(ret)
 }
+
+pub fn find_witness_list_unit(
+    db: &Connection,
+    witnesses: &[String],
+    last_ball_mci: u32,
+) -> Result<String> {
+    let witness_list = witnesses
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(",");
+
+    let sql = format!(
+        "SELECT witness_list_hashes.witness_list_unit \
+         FROM witness_list_hashes CROSS JOIN units ON witness_list_hashes.witness_list_unit=unit \
+         WHERE witness_list_hash={} AND sequence='good' AND is_stable=1 AND main_chain_index<={}",
+        witness_list, last_ball_mci
+    );
+    let mut stmt = db.prepare(&sql)?;
+    let mut rows = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    if rows.is_empty() {
+        return Ok("".to_string());
+    }
+
+    Ok(rows.remove(0))
+}

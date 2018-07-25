@@ -667,15 +667,16 @@ impl HubConn {
             .as_array()
             .ok_or_else(|| format_err!("no witnesses"))?;
 
-        let ss = param_witnesses
+        let witnesses_list = param_witnesses
             .iter()
             .map(|c| c.to_string())
             .collect::<Vec<String>>();
         let db = db::DB_POOL.get_connection();
-        let result = light::prepare_parents_and_last_ball_and_witness_list_unit(&ss, &db)
-            .context("failed to get parents_and_last_ball_and_witness_list_unit")?;
+        let result =
+            light::prepare_parents_and_last_ball_and_witness_list_unit(&witnesses_list, &db)
+                .context("failed to get parents_and_last_ball_and_witness_list_unit")?;
 
-        Ok(result)
+        Ok(serde_json::to_value(result)?)
     }
 
     fn on_hub_login(&self, body: Value) -> Result<()> {

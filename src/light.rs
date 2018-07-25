@@ -4,8 +4,9 @@ use error::Result;
 use failure::ResultExt;
 use graph;
 use joint::Joint;
+use parent_composer;
 use rusqlite::Connection;
-use serde_json::Value;
+use serde_json::{self, Value};
 use std::collections::HashSet;
 use storage;
 use witness_proof;
@@ -502,10 +503,29 @@ fn build_path(
 }
 
 // TODO: better to return a struct instead of Value
+
+#[derive(Serialize)]
+pub struct TempLastStableBall {
+    pub last_stable_mc_ball: String,
+    pub last_stable_mc_ball_unit: String,
+    pub last_stable_mc_ball_mci: u32,
+}
+#[derive(Serialize)]
+#[allow(dead_code)]
+pub struct TempLastStableBallAndParentUnits {
+    pub last_stable_ball: TempLastStableBall,
+    pub parent_units: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct TempLastStableBallAndParentUnitsAndWitnessListUnit {
+    last_stable_ball_and_parent_units: TempLastStableBallAndParentUnits,
+    witness_list_unit: String,
+}
 pub fn prepare_parents_and_last_ball_and_witness_list_unit(
     witness: &[String],
     db: &Connection,
-) -> Result<Value> {
+) -> Result<TempLastStableBallAndParentUnitsAndWitnessListUnit> {
     if witness.len() != config::COUNT_WITNESSES {
         bail!("wrong number of witnesses");
     }
@@ -513,9 +533,26 @@ pub fn prepare_parents_and_last_ball_and_witness_list_unit(
     if storage::determine_if_witness_and_address_definition_have_refs(db, witness)? {
         bail!("some witnesses have references in their addresses");
     }
-    //TODO: impl pickParentUnitsAndLastBall()
 
-    unimplemented!()
+    let last_stable_result = parent_composer::pick_parent_untis_and_last_ball(db, witness)
+        .context("unable to find parents.")?;
+
+    let witness_list_unit = storage::find_witness_list_unit(
+        db,
+        witness,
+        last_stable_result.last_stable_ball.last_stable_mc_ball_mci,
+    )?;
+
+    let mut result_parents_lastball_witnesslistunit =
+        TempLastStableBallAndParentUnitsAndWitnessListUnit {
+            last_stable_ball_and_parent_units: last_stable_result,
+            witness_list_unit: "".to_string(),
+        };
+    if !witness_list_unit.is_empty() {
+        result_parents_lastball_witnesslistunit.witness_list_unit = witness_list_unit;
+    }
+
+    Ok(result_parents_lastball_witnesslistunit)
 }
 
 fn build_proof_chain_on_mc(
