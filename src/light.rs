@@ -145,11 +145,7 @@ fn add_shared_addresses_of_wallet(_addresses: &[String]) -> Result<Vec<String>> 
     unimplemented!()
 }
 
-// TODO: better use specil struct instead of Value
-pub fn prepare_link_proofs(params: Value) -> Result<Value> {
-    let units: Vec<String> =
-        serde_json::from_value(params).context("prepare_Link_proofs.params is error")?;
-
+pub fn prepare_link_proofs(units: &Vec<String>) -> Result<Vec<Joint>> {
     if units.is_empty() {
         bail!("no units array");
     } else if units.len() == 1 {
@@ -161,8 +157,7 @@ pub fn prepare_link_proofs(params: Value) -> Result<Value> {
     for two_units in units.windows(2) {
         create_link_proof(&db, &two_units[0], &two_units[1], &mut chains)?;
     }
-
-    Ok(serde_json::to_value(chains)?)
+    Ok(chains)
 }
 
 fn create_link_proof(
@@ -207,7 +202,8 @@ fn create_link_proof(
         if !graph::determine_if_included(&db, &earlier_joint_unit, &[later_unit.to_string()])? {
             bail!("not included");
         }
-        build_path(&later_joint, &earlier_joint, chains)?;
+
+        build_path(db, later_joint.clone(), earlier_joint.clone(), chains)?;
     }
 
     Ok(())
@@ -225,9 +221,144 @@ fn build_proof_chain(
 
 //TODO:
 fn build_path(
-    _later_joint: &Joint,
-    _earlier_joint: &Joint,
-    _chains: &mut Vec<Joint>,
+    db: &Connection,
+    later_joint: Joint,
+    earlier_joint: Joint,
+    chains: &mut Vec<Joint>,
+) -> Result<()> {
+    fn add_joint(db: &Connection, unit: &String, chains: &mut Vec<Joint>) -> Result<Joint> {
+        let later_joint = storage::read_joint(&db, &unit)
+            .or_else(|e| bail!("nonserial unit not found?, err={}", e))?;
+        chains.push(later_joint.clone());
+        Ok(later_joint)
+    };
+
+    fn go_up(
+        db: &Connection,
+        later_joint: Joint,
+        earlier_joint: Joint,
+        chains: &mut Vec<Joint>,
+    ) -> Result<()> {
+        let mut loop_joint = later_joint.clone();
+        struct Tmp {
+            main_chain_index: Option<u32>,
+            unit: Option<String>,
+        }
+        loop {
+            let sql = format!(
+                "SELECT parent.unit, parent.main_chain_index \
+                 FROM units AS child JOIN units AS parent ON child.best_parent_unit=parent.unit \
+                 WHERE child.unit='{}'",
+                loop_joint.unit.unit.as_ref().map_or_else(|| "", |v| v)
+            );
+            let mut stmt = db.prepare_cached(&sql)?;
+            let rows = stmt
+                .query_map(&[], |v| Tmp {
+                    main_chain_index: v.get(1),
+                    unit: v.get(0),
+                })?
+                .collect::<::std::result::Result<Vec<_>, _>>()?;
+            if rows[0].main_chain_index < earlier_joint.unit.main_chain_index {
+                return build_path_to_earlier_unit(db, &loop_joint, &earlier_joint, chains);
+            }
+
+            let tmp_joint = add_joint(
+                db,
+                &rows[0].unit.as_ref().map_or_else(|| "", |v| v).to_string(),
+                chains,
+            )?;
+            if tmp_joint.unit.main_chain_index == earlier_joint.unit.main_chain_index {
+                build_path_to_earlier_unit(db, &tmp_joint, &earlier_joint, chains)?;
+                return Ok(());
+            } else {
+                loop_joint = tmp_joint;
+            }
+        }
+    };
+
+    fn build_path_to_earlier_unit(
+        db: &Connection,
+        joint: &Joint,
+        earlier_joint: &Joint,
+        chains: &mut Vec<Joint>,
+    ) -> Result<()> {
+        let mut tmp_joint = joint.clone();
+        let mut parent_units: Vec<Vec<String>> = Vec::new();
+        loop {
+            let sql = format!(
+                "SELECT unit FROM parenthoods JOIN units ON parent_unit=unit \
+                 WHERE child_unit='{}' AND main_chain_index=?",
+                tmp_joint.unit.unit.as_ref().map_or_else(|| "", |v| v)
+            );
+
+            let mut stmt = db.prepare_cached(&sql)?;
+            let loop_parent_units = stmt
+                .query_map(&[&tmp_joint.unit.main_chain_index], |v| v.get(0))?
+                .collect::<::std::result::Result<Vec<String>, _>>()?;
+            if loop_parent_units.is_empty() {
+                bail!("no parents with same mci?");
+            }
+
+            if loop_parent_units.contains(&earlier_joint.unit.unit.as_ref().expect("unit is none"))
+            {
+                return Ok(());
+            }
+            if loop_parent_units.len() == 1 {
+                tmp_joint = add_joint(db, &loop_parent_units[0], chains)?;
+                continue;
+            } else {
+                parent_units.push(loop_parent_units.clone());
+            }
+
+            //for loop_parent_units in &mut parent_units {
+            while parent_units.last().unwrap().is_empty() {
+                parent_units.pop();
+            }
+            if let Some(loop_parent_units) = parent_units.last_mut() {
+                while let Some(parent_unit) = loop_parent_units.pop() {
+                    if graph::determine_if_included(
+                        db,
+                        earlier_joint.unit.unit.as_ref().expect("unit is none"),
+                        &[parent_unit.to_string()],
+                    )? {
+                        return Ok(());
+                    }
+                    if parent_unit.is_empty() {
+                        bail!("none of the parents includes earlier unit")
+                    }
+                    tmp_joint = add_joint(db, &parent_unit, chains)?;
+                }
+            }
+        }
+    };
+
+    if later_joint.unit.unit == earlier_joint.unit.unit {
+        return Ok(());
+    }
+    if later_joint.unit.main_chain_index == earlier_joint.unit.main_chain_index {
+        return build_path_to_earlier_unit(db, &later_joint, &earlier_joint, chains);
+    } else {
+        return go_up(db, later_joint, earlier_joint, chains);
+    }
+}
+
+//TODO:
+#[allow(dead_code)]
+fn build_last_mile_of_proof_chain(
+    _db: &Connection,
+    _later_mci: u32,
+    _earlier_mci: u32,
+    _balls: &mut Vec<Joint>,
+) -> Result<()> {
+    unimplemented!()
+}
+
+#[allow(dead_code)]
+fn build_proof_chain_on_mc(
+    _db: &Connection,
+    _later_mci: u32,
+    _earlier_mci: u32,
+    _balls: &mut Vec<Joint>,
 ) -> Result<()> {
     unimplemented!()
 }
