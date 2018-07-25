@@ -291,8 +291,7 @@ fn build_last_mile_of_proof_chain(
     if &rows[0] == unit {
         return Ok(());
     }
-    find_parent_and_add_ball(db, earlier_mci, rows[0].clone(), balls)?;
-    Ok(())
+    find_parent_and_add_ball(db, earlier_mci, rows[0].clone(), balls)
 }
 
 fn find_parent_and_add_ball(
@@ -489,27 +488,6 @@ fn build_path(
     } else {
         return go_up(db, later_joint, earlier_joint, chains);
     }
-}
-
-//TODO:
-#[allow(dead_code)]
-fn build_last_mile_of_proof_chain(
-    _db: &Connection,
-    _later_mci: u32,
-    _earlier_mci: u32,
-    _balls: &mut Vec<Joint>,
-) -> Result<()> {
-    unimplemented!()
-}
-
-#[allow(dead_code)]
-fn build_proof_chain_on_mc(
-    _db: &Connection,
-    _later_mci: u32,
-    _earlier_mci: u32,
-    _balls: &mut Vec<Joint>,
-) -> Result<()> {
-    unimplemented!()
 }
 
 // TODO: better to return a struct instead of Value
