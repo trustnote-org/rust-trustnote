@@ -4,6 +4,8 @@ use self::config::*;
 use may::sync::RwLock;
 
 pub const HASH_LENGTH: usize = 44;
+pub const PUBKEY_LENGTH: usize = 44;
+pub const SIG_LENGTH: usize = 88;
 pub const MAX_COMPLEXITY: usize = 100;
 pub const COUNT_WITNESSES: usize = 12;
 pub const TOTAL_WHITEBYTES: i64 = 500_000_000_000_000;
