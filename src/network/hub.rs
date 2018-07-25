@@ -648,7 +648,7 @@ impl HubConn {
         let rsp = light::prepare_history(&db, &history_request)?;
         self.handle_get_history(history_request, &mut db)?;
 
-        Ok(rsp)
+        Ok(serde_json::to_value(rsp)?)
     }
 
     fn on_get_link_proofs(&self, params: Value) -> Result<Value> {
