@@ -145,7 +145,7 @@ fn add_shared_addresses_of_wallet(_addresses: &[String]) -> Result<Vec<String>> 
     unimplemented!()
 }
 
-pub fn prepare_link_proofs(units: &Vec<String>) -> Result<Value> {
+pub fn prepare_link_proofs(units: &Vec<String>) -> Result<Vec<Joint>> {
     if units.is_empty() {
         bail!("no units array");
     } else if units.len() == 1 {
@@ -157,8 +157,7 @@ pub fn prepare_link_proofs(units: &Vec<String>) -> Result<Value> {
     for two_units in units.windows(2) {
         create_link_proof(&db, &two_units[0], &two_units[1], &mut chains)?;
     }
-
-    Ok(serde_json::to_value(chains)?)
+    Ok(chains)
 }
 
 fn create_link_proof(
