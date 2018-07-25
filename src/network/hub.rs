@@ -7,6 +7,7 @@ use std::time::Duration;
 use super::network::{Sender, Server, WsConnection};
 use catchup;
 use config;
+use crossbeam::atomic::ArcCell;
 use db;
 use error::Result;
 use failure::ResultExt;
@@ -19,6 +20,7 @@ use may::sync::{Mutex, RwLock};
 use object_hash;
 use rusqlite::Connection;
 use serde_json::{self, Value};
+use signature;
 use storage;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
@@ -33,18 +35,6 @@ pub struct Login {
     pub pubkey: String,
     #[serde(skip_serializing)]
     pub signature: String,
-}
-
-impl Login {
-    // prefix device addresses with 0 to avoid confusion with payment addresses
-    // Note that 0 is not a member of base32 alphabet, which makes device addresses easily distinguishable from payment addresses
-    // but still selectable by double-click.  Stripping the leading 0 will not produce a payment address that the device owner knows a private key for,
-    // because payment address is derived by c-hashing the definition object, while device address is produced from raw public key.
-    fn get_device_address(&self) -> String {
-        let mut address = object_hash::get_chash(&self.pubkey).expect("get_chash failed");
-        address.insert(0, '0');
-        address
-    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -63,6 +53,22 @@ pub enum DeviceMessage {
 }
 
 impl DeviceMessage {
+    // prefix device addresses with 0 to avoid confusion with payment addresses
+    // Note that 0 is not a member of base32 alphabet, which makes device addresses easily distinguishable from payment addresses
+    // but still selectable by double-click.  Stripping the leading 0 will not produce a payment address that the device owner knows a private key for,
+    // because payment address is derived by c-hashing the definition object, while device address is produced from raw public key.
+    fn get_device_address(&self) -> Result<String> {
+        let mut address = match *self {
+            DeviceMessage::Login(ref login) => object_hash::get_chash(&login.pubkey)?,
+            DeviceMessage::TempPubkey(ref temp_pubkey) => {
+                object_hash::get_chash(&temp_pubkey.pubkey)?
+            }
+        };
+
+        address.insert(0, '0');
+        Ok(address)
+    }
+
     fn get_device_message_hash_to_sign(&self) -> Vec<u8> {
         use sha2::{Digest, Sha256};
 
@@ -77,8 +83,8 @@ pub struct HubData {
     is_source: AtomicBool,
     is_inbound: AtomicBool,
     is_login_completed: AtomicBool,
-    challenge: RwLock<String>,
-    device_address: RwLock<String>,
+    challenge: ArcCell<Option<String>>,
+    device_address: ArcCell<Option<String>>,
 }
 
 pub type HubConn = WsConnection<HubData>;
@@ -296,8 +302,8 @@ impl Default for HubData {
             is_source: AtomicBool::new(false),
             is_inbound: AtomicBool::new(false),
             is_login_completed: AtomicBool::new(false),
-            challenge: RwLock::new(String::new()),
-            device_address: RwLock::new(String::new()),
+            challenge: ArcCell::new(Arc::new(None)),
+            device_address: ArcCell::new(Arc::new(None)),
         }
     }
 }
@@ -308,14 +314,18 @@ impl Server<HubData> for HubData {
             "version" => ws.on_version(body)?,
             "hub/challenge" => ws.on_hub_challenge(body)?,
             "free_joints_end" => {} // not handled
-            "error" => error!("recevie error: {}", body),
-            "info" => info!("recevie info: {}", body),
-            "result" => info!("recevie result: {}", body),
+            "error" => error!("receive error: {}", body),
+            "info" => info!("receive info: {}", body),
+            "result" => info!("receive result: {}", body),
             "joint" => ws.on_joint(body)?,
             "refresh" => ws.on_refresh(body)?,
             "light/new_address_to_watch" => ws.on_new_address_to_watch(body)?,
             "hub/login" => ws.on_hub_login(body)?,
-            subject => bail!("on_message unkown subject: {}", subject),
+            subject => bail!(
+                "on_message unknown subject: {} body {}",
+                subject,
+                body.to_string()
+            ),
         }
         Ok(())
     }
@@ -329,6 +339,7 @@ impl Server<HubData> for HubData {
             "get_hash_tree" => ws.on_get_hash_tree(params)?,
             // bellow is wallet used command
             "get_bots" => ws.on_get_bots(params)?,
+            "hub/temp_pubkey" => ws.on_hub_temp_pubkey(params)?,
             "get_peers" => ws.on_get_peers(params)?,
             "get_witnesses" => ws.on_get_witnesses(params)?,
             "post_joint" => ws.on_post_joint(params)?,
@@ -385,24 +396,26 @@ impl HubConn {
         data.is_login_completed.store(true, Ordering::Relaxed);
     }
 
-    pub fn get_challenge(&self) -> String {
+    pub fn get_challenge(&self) -> Arc<Option<String>> {
         let data = self.get_data();
-        data.challenge.read().unwrap().clone()
+        data.challenge.get()
     }
 
-    pub fn set_challenge(&self, challenge: &String) {
+    pub fn set_challenge(&self, challenge: &str) {
         let data = self.get_data();
-        *data.challenge.write().unwrap() = challenge.clone();
+        data.challenge.set(Arc::new(Some(challenge.to_owned())));
     }
 
-    pub fn get_device_address(&self) -> String {
+    pub fn get_device_address(&self) -> Arc<Option<String>> {
         let data = self.get_data();
-        data.device_address.read().unwrap().clone()
+        data.device_address.get()
     }
 
-    pub fn set_device_address(&self, device_address: &String) {
+    pub fn set_device_address(&self, device_address: &str) {
+        info!("set_device_address {}", device_address);
         let data = self.get_data();
-        *data.device_address.write().unwrap() = device_address.clone();
+        data.device_address
+            .set(Arc::new(Some(device_address.to_owned())));
     }
 }
 
@@ -668,8 +681,6 @@ impl HubConn {
     }
 
     fn on_hub_login(&self, body: Value) -> Result<()> {
-        use signature;
-
         match serde_json::from_value::<DeviceMessage>(body) {
             Err(e) => {
                 error!("hub_login: serde err= {}", e);
@@ -677,7 +688,7 @@ impl HubConn {
             }
             Ok(device_message) => {
                 if let DeviceMessage::Login(ref login) = &device_message {
-                    if login.challenge != self.get_challenge() {
+                    if Some(&login.challenge) != (*self.get_challenge()).as_ref() {
                         return self.send_error(Value::from("wrong challenge"));
                     }
 
@@ -698,7 +709,7 @@ impl HubConn {
                         return self.send_error(Value::from("wrong signature"));
                     }
 
-                    let device_address = login.get_device_address();
+                    let device_address = device_message.get_device_address()?;
                     self.set_device_address(&device_address);
 
                     self.send_just_saying("hub/push_project_number", json!({"projectNumber": 0}))?;
@@ -727,6 +738,58 @@ impl HubConn {
         }
 
         Ok(())
+    }
+
+    fn on_hub_temp_pubkey(&self, param: Value) -> Result<Value> {
+        let mut try_limit = 20;
+        while try_limit > 0 && self.get_device_address().is_none() {
+            try_limit -= 1;
+            coroutine::sleep(Duration::from_millis(100));
+        }
+
+        let device_address = self.get_device_address();
+
+        // ensure!(device_address.is_some(), "please log in first");
+
+        match serde_json::from_value::<DeviceMessage>(param) {
+            Err(e) => {
+                error!("temp_pubkey serde err={}", e);
+                bail!("wrong temp_pubkey params");
+            }
+
+            Ok(device_message) => {
+                if let DeviceMessage::TempPubkey(ref temp_pubkey) = &device_message {
+                    ensure!(
+                        temp_pubkey.temp_pubkey.len() == ::config::PUBKEY_LENGTH,
+                        "wrong temp_pubkey length"
+                    );
+                    ensure!(
+                        Some(device_message.get_device_address()?) == *self.get_device_address(),
+                        "signed by another pubkey"
+                    );
+
+                    if signature::verify(
+                        &device_message.get_device_message_hash_to_sign(),
+                        &temp_pubkey.signature,
+                        &temp_pubkey.pubkey,
+                    ).is_err()
+                    {
+                        bail!("wrong signature");
+                    }
+
+                    let db = db::DB_POOL.get_connection();
+                    let mut stmt = db.prepare_cached(
+                        "UPDATE devices SET temp_pubkey_package=? WHERE device_address=?",
+                    )?;
+                    // TODO: here need to add signature back
+                    stmt.execute(&[&serde_json::to_string(temp_pubkey)?, &*device_address])?;
+
+                    return Ok(Value::from("updated"));
+                } else {
+                    bail!("not a valid temp_pubkey params");
+                }
+            }
+        }
     }
 }
 
@@ -1281,6 +1344,7 @@ impl HubConn {
         _db: &Connection,
         _device_address: &String,
     ) -> Result<()> {
+        //TODO: save and send device messages
         Ok(())
     }
 }

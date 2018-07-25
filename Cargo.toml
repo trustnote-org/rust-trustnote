@@ -6,19 +6,20 @@ authors = ["Xudong Huang <huangxu008@hotmail.com>"]
 license = "MIT"
 
 [dependencies]
-log = "0.4"
 may = "0.3"
+log = "0.4"
 url = "1.7"
 fern = "0.5"
 rand = "0.4"
+chrono = "0.4"
 config = "0.8"
 failure = "0.1"
-chrono = "0.4"
+indexmap = "1.0"
 num_cpus = "1"
+crossbeam = "0.4"
 may_waiter = "0.1"
 lazy_static = "1"
 tungstenite = "0.5"
-indexmap = "1.0"
 
 serde = "1"
 serde_json = "1"
@@ -32,6 +33,7 @@ sha2 = "0.7"
 ripemd160 = "0.7"
 bit-vec = "0.4.4"
 app_dirs = "1.2"
+
 may_thread = { git = "https://github.com/Xudong-Huang/may_thread.git" }
 may_signal = {git = "https://github.com/Xudong-Huang/may_signal.git"}
 
