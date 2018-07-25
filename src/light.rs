@@ -198,7 +198,7 @@ pub fn prepare_link_proofs(units: &Vec<String>) -> Result<Vec<Joint>> {
     } else if units.len() == 1 {
         bail!("chain of one element");
     }
-    let mut chains = Vec::new();
+    let mut chains: Vec<Joint> = Vec::new();
 
     let db = db::DB_POOL.get_connection();
     for two_units in units.windows(2) {
@@ -226,14 +226,19 @@ fn create_link_proof(
 
     let unit_props = storage::read_unit_props(&db, laster_ball_unit)?;
 
-    let later_lb_mci = unit_props.main_chain_index;
+    let later_lb_mci = unit_props
+        .main_chain_index
+        .ok_or_else(|| format_err!("main_chain_index is error"))?;
 
     let earlier_joint =
         storage::read_joint(&db, earlier_unit).context("nonserial unit not found?")?;
 
-    let earlier_mci = earlier_joint.unit.main_chain_index;
+    let earlier_mci = earlier_joint
+        .unit
+        .main_chain_index
+        .ok_or_else(|| format_err!("mci is None"))?;
 
-    if later_mci.is_none() || later_mci < earlier_mci {
+    if later_mci.is_none() || later_mci < Some(earlier_mci) {
         bail!("not included");
     }
 
