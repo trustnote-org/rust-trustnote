@@ -1,31 +1,8 @@
 use std::collections::HashMap;
 
 use obj_ser;
-use object_hash::{get_base64_hash, get_chash};
+use object_hash::get_base64_hash;
 use serde_json::Value;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Login {
-    pub challenge: String,
-    pub pubkey: String,
-    #[serde(skip_serializing)]
-    pub signature: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct TempPubkey {
-    pub pubkey: String,
-    #[serde(skip_serializing)]
-    pub signature: String,
-    pub temp_pubkey: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum DeviceMessage {
-    Login(Login),
-    TempPubkey(TempPubkey),
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -343,26 +320,6 @@ impl Unit {
             }
         }
     }
-}
-
-// -----------------
-
-// prefix device addresses with 0 to avoid confusion with payment addresses
-// Note that 0 is not a member of base32 alphabet, which makes device addresses easily distinguishable from payment addresses
-// but still selectable by double-click.  Stripping the leading 0 will not produce a payment address that the device owner knows a private key for,
-// because payment address is derived by c-hashing the definition object, while device address is produced from raw public key.
-pub fn get_device_address(b64_pubkey: &String) -> String {
-    let mut address = get_chash(&b64_pubkey).expect("get_chash failed");
-    address.insert(0, '0');
-    address
-}
-
-pub fn get_device_message_hash_to_sign(device_message: &DeviceMessage) -> Vec<u8> {
-    use sha2::{Digest, Sha256};
-
-    let source_string =
-        obj_ser::to_string(&device_message).expect("DeviceMessage to string failed");
-    Sha256::digest(source_string.as_bytes()).to_vec()
 }
 
 #[test]

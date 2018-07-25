@@ -26,6 +26,51 @@ use tungstenite::protocol::Role;
 use url::Url;
 use utils::{AtomicLock, MapLock};
 use validation;
+
+#[derive(Serialize, Deserialize)]
+pub struct Login {
+    pub challenge: String,
+    pub pubkey: String,
+    #[serde(skip_serializing)]
+    pub signature: String,
+}
+
+impl Login {
+    // prefix device addresses with 0 to avoid confusion with payment addresses
+    // Note that 0 is not a member of base32 alphabet, which makes device addresses easily distinguishable from payment addresses
+    // but still selectable by double-click.  Stripping the leading 0 will not produce a payment address that the device owner knows a private key for,
+    // because payment address is derived by c-hashing the definition object, while device address is produced from raw public key.
+    fn get_device_address(&self) -> String {
+        let mut address = object_hash::get_chash(&self.pubkey).expect("get_chash failed");
+        address.insert(0, '0');
+        address
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct TempPubkey {
+    pub pubkey: String,
+    pub temp_pubkey: String,
+    #[serde(skip_serializing)]
+    pub signature: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DeviceMessage {
+    Login(Login),
+    TempPubkey(TempPubkey),
+}
+
+impl DeviceMessage {
+    fn get_device_message_hash_to_sign(&self) -> Vec<u8> {
+        use sha2::{Digest, Sha256};
+
+        let source_string = ::obj_ser::to_string(self).expect("DeviceMessage to string failed");
+        Sha256::digest(source_string.as_bytes()).to_vec()
+    }
+}
+
 pub struct HubData {
     // indicate if this connection is a subscribed peer
     is_subscribed: AtomicBool,
@@ -624,18 +669,14 @@ impl HubConn {
 
     fn on_hub_login(&self, body: Value) -> Result<()> {
         use signature;
-        use spec;
 
-        if body.is_null() {
-            return Ok(());
-        }
-
-        match serde_json::from_value::<spec::DeviceMessage>(body) {
-            Err(_) => {
+        match serde_json::from_value::<DeviceMessage>(body) {
+            Err(e) => {
+                error!("hub_login: serde err= {}", e);
                 return self.send_error(Value::from("no login params"));
             }
             Ok(device_message) => {
-                if let spec::DeviceMessage::Login(ref login) = &device_message {
+                if let DeviceMessage::Login(ref login) = &device_message {
                     if login.challenge != self.get_challenge() {
                         return self.send_error(Value::from("wrong challenge"));
                     }
@@ -649,7 +690,7 @@ impl HubConn {
                     };
 
                     if signature::verify(
-                        &spec::get_device_message_hash_to_sign(&device_message),
+                        &device_message.get_device_message_hash_to_sign(),
                         &login.signature,
                         &login.pubkey,
                     ).is_err()
@@ -657,7 +698,7 @@ impl HubConn {
                         return self.send_error(Value::from("wrong signature"));
                     }
 
-                    let device_address = spec::get_device_address(&login.pubkey);
+                    let device_address = login.get_device_address();
                     self.set_device_address(&device_address);
 
                     self.send_just_saying("hub/push_project_number", json!({"projectNumber": 0}))?;
@@ -680,7 +721,7 @@ impl HubConn {
                     self.set_login_completed();
                 //TODO: Seems to handle the temp_pubkey message before the login happen
                 } else {
-                    return self.send_error(Value::from("no login params"));
+                    return self.send_error(Value::from("not a valid login DeviceMessage"));
                 }
             }
         }
