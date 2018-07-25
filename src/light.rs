@@ -544,7 +544,7 @@ fn build_proof_chain_on_mc(
     balls: &mut Vec<ProofBalls>,
 ) -> Result<()> {
     if earlier_mci > later_mci {
-        return Err(format_err!("earlier > later"));
+        bail!("earlier > later")
     }
     if earlier_mci == later_mci {
         return Ok(());
