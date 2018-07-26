@@ -314,7 +314,7 @@ fn find_parent_and_add_ball(
 ) -> Result<()> {
     let mut add_ball = |cur_unit: String| -> Result<()> {
         let mut stmt =
-            db.prepare("SELECT unit, ball FROM units JOIN balls USING(unit) WHERE unit=?")?;
+            db.prepare_cached("SELECT unit, ball FROM units JOIN balls USING(unit) WHERE unit=?")?;
         struct TempUnit {
             unit: String,
             ball: String,
@@ -330,7 +330,7 @@ fn find_parent_and_add_ball(
         }
 
         let mut stmt =
-            db.prepare("SELECT ball FROM parenthoods LEFT JOIN balls ON parent_unit=balls.unit WHERE child_unit=? ORDER BY ball")?;
+            db.prepare_cached("SELECT ball FROM parenthoods LEFT JOIN balls ON parent_unit=balls.unit WHERE child_unit=? ORDER BY ball")?;
         let parent_rows = stmt
             .query_map(&[&rows[0].unit], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
@@ -378,16 +378,7 @@ fn find_parent_and_add_ball(
     }
 }
 
-fn build_proof_chain_on_mc(
-    _db: &Connection,
-    _later_mci: u32,
-    _earlier_mci: u32,
-    _balls: &mut Vec<ProofBalls>,
-) -> Result<()> {
-    unimplemented!()
-}
-
-//TODO:
+// FIXME: this is only used by private payment which is not used currently
 fn build_path(
     db: &Connection,
     later_joint: Joint,
@@ -525,4 +516,110 @@ pub fn prepare_parents_and_last_ball_and_witness_list_unit(
     //TODO: impl pickParentUnitsAndLastBall()
 
     unimplemented!()
+}
+
+fn build_proof_chain_on_mc(
+    db: &Connection,
+    later_mci: u32,
+    earlier_mci: u32,
+    balls: &mut Vec<ProofBalls>,
+) -> Result<()> {
+    if earlier_mci > later_mci {
+        bail!("earlier > later")
+    }
+
+    if earlier_mci == later_mci {
+        return Ok(());
+    }
+
+    let mut tmp_mci = later_mci - 1;
+
+    loop {
+        let mut stmt = db.prepare_cached(
+            "SELECT unit, ball, content_hash FROM units JOIN balls USING(unit) \
+             WHERE main_chain_index=? AND is_on_main_chain=1",
+        )?;
+        let tmp_balls = stmt
+            .query_map(&[&tmp_mci], |v| ProofBalls {
+                unit: v.get(0),
+                ball: v.get(1),
+                content_hash: v.get(2),
+                is_nonserial: None,
+                parent_balls: Vec::new(),
+                skiplist_balls: Vec::new(),
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
+        if tmp_balls.len() != 1 {
+            bail!(
+                "no prev chain element? mci={}, later_mci={}, earlier_mci={}",
+                tmp_mci,
+                later_mci,
+                earlier_mci
+            );
+        }
+
+        let mut ball = tmp_balls.into_iter().nth(0).unwrap();
+        if ball.content_hash.is_some() {
+            ball.is_nonserial = Some(true);
+            ball.content_hash = None;
+        }
+
+        let mut stmt = db.prepare_cached(
+            "SELECT ball FROM parenthoods LEFT JOIN balls ON parent_unit=balls.unit \
+             WHERE child_unit=? ORDER BY ball",
+        )?;
+
+        let parent_rows = stmt
+            .query_map(&[&ball.unit], |v| v.get(0))?
+            .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
+        if parent_rows.iter().any(|row| row.is_none()) {
+            bail!("some parents have no balls");
+        }
+
+        for parent_row in parent_rows {
+            ball.parent_balls.push(parent_row.unwrap());
+        }
+
+        struct TmpScrow {
+            ball: Option<String>,
+            main_chain_index: Option<u32>,
+        }
+
+        let mut stmt = db.prepare_cached(
+            "SELECT ball, main_chain_index \
+             FROM skiplist_units JOIN units ON skiplist_unit=units.unit LEFT JOIN balls \
+             ON units.unit=balls.unit WHERE skiplist_units.unit=? ORDER BY ball",
+        )?;
+
+        let srows = stmt
+            .query_map(&[&ball.unit], |v| TmpScrow {
+                ball: v.get(0),
+                main_chain_index: v.get(1),
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
+
+        if srows.iter().any(|s| s.ball.is_none()) {
+            bail!("some skiplist units have no balls");
+        }
+
+        for scrow in &srows {
+            ball.skiplist_balls
+                .push(scrow.ball.as_ref().unwrap().to_owned());
+        }
+        balls.push(ball);
+
+        if tmp_mci == earlier_mci || tmp_mci == 0 {
+            return Ok(());
+        }
+
+        tmp_mci -= 1;
+        for skip in srows.into_iter().rev() {
+            if let Some(next_skiplist_mci) = skip.main_chain_index {
+                if next_skiplist_mci < tmp_mci && next_skiplist_mci >= earlier_mci {
+                    tmp_mci = next_skiplist_mci;
+                    break;
+                }
+            }
+        }
+    }
 }
