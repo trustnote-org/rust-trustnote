@@ -510,6 +510,7 @@ pub struct TempLastStableBall {
     pub last_stable_mc_ball_unit: String,
     pub last_stable_mc_ball_mci: u32,
 }
+
 #[derive(Serialize)]
 #[allow(dead_code)]
 pub struct TempLastStableBallAndParentUnits {
@@ -523,8 +524,8 @@ pub struct TempLastStableBallAndParentUnitsAndWitnessListUnit {
     witness_list_unit: String,
 }
 pub fn prepare_parents_and_last_ball_and_witness_list_unit(
-    witness: &[String],
     db: &Connection,
+    witness: &[String],
 ) -> Result<TempLastStableBallAndParentUnitsAndWitnessListUnit> {
     if witness.len() != config::COUNT_WITNESSES {
         bail!("wrong number of witnesses");
@@ -534,7 +535,7 @@ pub fn prepare_parents_and_last_ball_and_witness_list_unit(
         bail!("some witnesses have references in their addresses");
     }
 
-    let last_stable_result = parent_composer::pick_parent_untis_and_last_ball(db, witness)
+    let last_stable_result = parent_composer::pick_parent_units_and_last_ball(db, witness)
         .context("unable to find parents.")?;
 
     let witness_list_unit = storage::find_witness_list_unit(
@@ -543,16 +544,16 @@ pub fn prepare_parents_and_last_ball_and_witness_list_unit(
         last_stable_result.last_stable_ball.last_stable_mc_ball_mci,
     )?;
 
-    let mut result_parents_lastball_witnesslistunit =
+    let mut result_parents_last_ball_witness_list_unit =
         TempLastStableBallAndParentUnitsAndWitnessListUnit {
             last_stable_ball_and_parent_units: last_stable_result,
             witness_list_unit: "".to_string(),
         };
     if !witness_list_unit.is_empty() {
-        result_parents_lastball_witnesslistunit.witness_list_unit = witness_list_unit;
+        result_parents_last_ball_witness_list_unit.witness_list_unit = witness_list_unit;
     }
 
-    Ok(result_parents_lastball_witnesslistunit)
+    Ok(result_parents_last_ball_witness_list_unit)
 }
 
 fn build_proof_chain_on_mc(

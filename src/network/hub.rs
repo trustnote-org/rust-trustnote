@@ -673,7 +673,7 @@ impl HubConn {
             .collect::<Vec<String>>();
         let db = db::DB_POOL.get_connection();
         let result =
-            light::prepare_parents_and_last_ball_and_witness_list_unit(&witnesses_list, &db)
+            light::prepare_parents_and_last_ball_and_witness_list_unit(&db, &witnesses_list)
                 .context("failed to get parents_and_last_ball_and_witness_list_unit")?;
 
         Ok(serde_json::to_value(result)?)
