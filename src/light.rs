@@ -15,13 +15,16 @@ const MAX_HISTORY_ITEMS: usize = 1000;
 #[derive(Deserialize)]
 pub struct HistoryRequest {
     pub witnesses: Vec<String>,
+    #[serde(default)]
     pub addresses: Vec<String>,
+    #[serde(default)]
     pub known_stable_units: Vec<String>,
+    #[serde(default)]
     pub requested_joints: Vec<String>,
 }
 
 #[derive(Serialize)]
-pub struct Response {
+pub struct HistoryResponse {
     unstable_mc_joints: Vec<Joint>,
     witness_change_and_definition: Vec<Joint>,
     joints: Vec<Joint>,
@@ -33,12 +36,18 @@ struct ProofBalls {
     ball: String,
     unit: String,
     parent_balls: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     content_hash: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     is_nonserial: Option<bool>,
-    skiplist_balls: Vec<Option<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    skiplist_balls: Vec<String>,
 }
 
-pub fn prepare_history(db: &Connection, history_request: &HistoryRequest) -> Result<Response> {
+pub fn prepare_history(
+    db: &Connection,
+    history_request: &HistoryRequest,
+) -> Result<HistoryResponse> {
     if history_request.addresses.is_empty() {
         bail!("no addresses");
     }
@@ -52,7 +61,7 @@ pub fn prepare_history(db: &Connection, history_request: &HistoryRequest) -> Res
         bail!("wrong number of witnesses");
     }
 
-    let assoc_know_stable_units = history_request
+    let known_stable_units = history_request
         .known_stable_units
         .iter()
         .map(|s| s)
@@ -105,10 +114,10 @@ pub fn prepare_history(db: &Connection, history_request: &HistoryRequest) -> Res
         .collect::<::std::result::Result<Vec<_>, _>>()?;
     let rows = tmp_rows
         .iter()
-        .filter(|s| !assoc_know_stable_units.contains(&s.unit))
+        .filter(|s| !known_stable_units.contains(&s.unit))
         .collect::<Vec<_>>();
     if rows.is_empty() {
-        return Ok(Response {
+        return Ok(HistoryResponse {
             unstable_mc_joints: Vec::new(),
             witness_change_and_definition: Vec::new(),
             joints: Vec::new(),
@@ -130,15 +139,15 @@ pub fn prepare_history(db: &Connection, history_request: &HistoryRequest) -> Res
         match storage::read_joint(db, &row.unit) {
             Ok(joint) => {
                 joints.push(joint);
-                if row.main_chain_index > Some(prepare_witness_proof.last_ball_mci)
-                    || row.main_chain_index.is_none()
+                if row.main_chain_index.is_none()
+                    || row.main_chain_index > Some(prepare_witness_proof.last_ball_mci)
                 {
                     continue;
                 }
                 build_proof_chain(
                     db,
-                    Some(later_mci),
-                    row.main_chain_index,
+                    later_mci,
+                    row.main_chain_index.unwrap(),
                     &row.unit,
                     &mut proofchain_balls,
                 )?;
@@ -149,7 +158,7 @@ pub fn prepare_history(db: &Connection, history_request: &HistoryRequest) -> Res
         }
     }
 
-    Ok(Response {
+    Ok(HistoryResponse {
         unstable_mc_joints: prepare_witness_proof.unstable_mc_joints,
         witness_change_and_definition: prepare_witness_proof.witness_change_and_definition,
         joints,
@@ -264,45 +273,43 @@ fn create_link_proof(
 
 fn build_proof_chain(
     db: &Connection,
-    later_mci: Option<u32>,
-    earlier_mci: Option<u32>,
+    later_mci: u32,
+    earlier_mci: u32,
     unit: &String,
     balls: &mut Vec<ProofBalls>,
 ) -> Result<()> {
-    if later_mci.is_none() {
-        bail!("earlier_mci=null, unit={}", unit);
+    if later_mci > earlier_mci {
+        build_proof_chain_on_mc(db, later_mci, earlier_mci, balls)?;
     }
-    if later_mci == earlier_mci {
-        return build_last_mile_of_proof_chain(db, earlier_mci, unit, balls);
-    }
-    build_proof_chain_on_mc(later_mci, earlier_mci, balls)?;
+
     build_last_mile_of_proof_chain(db, earlier_mci, unit, balls)
 }
 
 fn build_last_mile_of_proof_chain(
     db: &Connection,
-    earlier_mci: Option<u32>,
+    earlier_mci: u32,
     unit: &String,
     balls: &mut Vec<ProofBalls>,
 ) -> Result<()> {
-    let mut stmt =
-        db.prepare("SELECT unit FROM units WHERE main_chain_index=? AND is_on_main_chain=1")?;
+    let mut stmt = db
+        .prepare_cached("SELECT unit FROM units WHERE main_chain_index=? AND is_on_main_chain=1")?;
     let rows = stmt
         .query_map(&[&earlier_mci], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if rows.len() != 1 {
         bail!("no mc unit?");
     }
-    if &rows[0] == unit {
+    let cur_unit = rows.into_iter().nth(0).unwrap();
+    if unit == &cur_unit {
         return Ok(());
     }
-    find_parent_and_add_ball(db, earlier_mci, rows[0].clone(), balls)
+    find_parent_and_add_ball(db, earlier_mci, cur_unit, balls)
 }
 
 fn find_parent_and_add_ball(
     db: &Connection,
-    mci: Option<u32>,
-    interim_unit: String,
+    mci: u32,
+    mut interim_unit: String,
     balls: &mut Vec<ProofBalls>,
 ) -> Result<()> {
     let mut add_ball = |cur_unit: String| -> Result<()> {
@@ -330,14 +337,12 @@ fn find_parent_and_add_ball(
         if parent_rows.iter().any(|row| row.is_none()) {
             bail!("some parents have no balls");
         }
-        let parent_rows = parent_rows
-            .into_iter()
-            .map(|row| row.unwrap())
-            .collect::<Vec<_>>();
+        let cur_unit = rows.into_iter().nth(0).unwrap();
+        let parent_rows = parent_rows.into_iter().collect::<Option<Vec<_>>>().unwrap();
 
         balls.push(ProofBalls {
-            ball: rows[0].ball.clone(),
-            unit: rows[0].unit.clone(),
+            ball: cur_unit.ball,
+            unit: cur_unit.unit,
             parent_balls: parent_rows,
             content_hash: None,
             is_nonserial: None,
@@ -346,10 +351,9 @@ fn find_parent_and_add_ball(
         Ok(())
     };
 
-    let mut interim_unit = interim_unit;
     loop {
         let mut stmt =
-        db.prepare("SELECT parent_unit FROM parenthoods JOIN units ON parent_unit=unit WHERE child_unit=? AND main_chain_index=?")?;
+        db.prepare_cached("SELECT parent_unit FROM parenthoods JOIN units ON parent_unit=unit WHERE child_unit=? AND main_chain_index=?")?;
         let parents = stmt
             .query_map(&[&interim_unit, &mci], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
@@ -357,20 +361,27 @@ fn find_parent_and_add_ball(
             add_ball(interim_unit)?; // push last parent to vector balls
             return Ok(());
         }
+
+        let mut is_found = false;
         for parent_unit in parents {
-            let parent = parent_unit.clone();
-            if graph::determine_if_included(db, &interim_unit, &[parent_unit])? {
+            if graph::determine_if_included(db, &interim_unit, &[parent_unit.clone()])? {
                 add_ball(interim_unit)?; //push curent parent to balls and continue loop
-                interim_unit = parent.clone();
+                interim_unit = parent_unit;
+                is_found = true;
                 break;
             }
+        }
+
+        if !is_found {
+            bail!("no parent that includes target unit");
         }
     }
 }
 
 fn build_proof_chain_on_mc(
-    _later_mci: Option<u32>,
-    _earlier_mci: Option<u32>,
+    _db: &Connection,
+    _later_mci: u32,
+    _earlier_mci: u32,
     _balls: &mut Vec<ProofBalls>,
 ) -> Result<()> {
     unimplemented!()
