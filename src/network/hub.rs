@@ -13,7 +13,7 @@ use error::Result;
 use failure::ResultExt;
 use joint::Joint;
 use joint_storage::{self, ReadyJoint};
-use light::{self, HistoryRequest};
+use light::{self, HistoryRequest, HistoryResponse};
 use may::coroutine;
 use may::net::TcpStream;
 use may::sync::{Mutex, RwLock};
@@ -642,13 +642,11 @@ impl HubConn {
             bail!("light clients have to be inbound");
         }
 
-        let mut db = db::DB_POOL.get_connection();
         let history_request: HistoryRequest = serde_json::from_value(param)?;
 
-        let rsp = light::prepare_history(&db, &history_request)?;
-        self.handle_get_history(history_request, &mut db)?;
+        let ret = self.handle_get_history(history_request)?;
 
-        Ok(rsp)
+        Ok(serde_json::to_value(ret)?)
     }
 
     fn on_get_link_proofs(&self, params: Value) -> Result<Value> {
@@ -1140,11 +1138,10 @@ impl HubConn {
         Ok(())
     }
 
-    fn handle_get_history(
-        &self,
-        history_request: HistoryRequest,
-        db: &mut Connection,
-    ) -> Result<()> {
+    fn handle_get_history(&self, history_request: HistoryRequest) -> Result<HistoryResponse> {
+        let db = db::DB_POOL.get_connection();
+        let ret = light::prepare_history(&db, &history_request)?;
+
         let params_addresses = history_request.addresses;
         if !params_addresses.is_empty() {
             let addresses = params_addresses
@@ -1164,7 +1161,7 @@ impl HubConn {
         let params_requested_joints = history_request.requested_joints;
         if !params_requested_joints.is_empty() {
             let rows = storage::slice_and_execute_query(
-                db,
+                &db,
                 "SELECT unit FROM units WHERE main_chain_index >= ? AND unit IN({})",
                 &[&storage::get_min_retrievable_mci()],
                 &params_requested_joints,
@@ -1184,7 +1181,7 @@ impl HubConn {
                 stmt.execute(&[])?;
             }
         }
-        Ok(())
+        Ok(ret)
     }
 
     // record peer event in database
