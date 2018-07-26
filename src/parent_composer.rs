@@ -22,7 +22,7 @@ pub struct LastStableBallAndParentUnits {
 
 pub fn pick_parent_units_and_last_ball(
     db: &Connection,
-    witnesses: &[String],
+    witnesses: &Vec<String>,
 ) -> Result<LastStableBallAndParentUnits> {
     let parent_units = pick_parent_units(db, witnesses).context("parent units are not found")?;
 
@@ -51,9 +51,7 @@ pub fn pick_parent_units_and_last_ball(
 
     let mut tmp_unit = Unit::default();
     tmp_unit.parent_units = last_stable_ball_and_parents.parent_units.clone();
-    if !witness_list_unit.is_empty() {
-        tmp_unit.witness_list_unit = Some(witness_list_unit);
-    }
+    tmp_unit.witness_list_unit = witness_list_unit;
 
     storage::determine_if_has_witness_list_mutations_along_mc(
         db,
@@ -84,11 +82,7 @@ fn pick_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<String
         alt: String,
         count_matching_witnesses: u32,
     }
-    let ss = if config::STORAGE == "sqlite" {
-        "INDEXED BY byFree".to_string()
-    } else {
-        "".to_string()
-    };
+    let ss = "INDEXED BY byFree";
     let witnesses_list = witnesses
         .iter()
         .map(|s| format!("'{}'", s))

@@ -526,40 +526,42 @@ fn build_path(
 
 #[derive(Serialize)]
 pub struct LastStableBallAndParentUnitsAndWitnessListUnit {
-    last_stable_ball_and_parent_units: parent_composer::LastStableBallAndParentUnits,
-    witness_list_unit: String,
+    last_stable_mc_ball: String,
+    last_stable_mc_ball_mci: u32,
+    last_stable_mc_ball_unit: String,
+    parent_units: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    witness_list_unit: Option<String>,
 }
+
 pub fn prepare_parents_and_last_ball_and_witness_list_unit(
-    db: &Connection,
-    witness: &[String],
+    witnesses: &Vec<String>,
 ) -> Result<LastStableBallAndParentUnitsAndWitnessListUnit> {
-    if witness.len() != config::COUNT_WITNESSES {
+    let db = db::DB_POOL.get_connection();
+    if witnesses.len() != config::COUNT_WITNESSES {
         bail!("wrong number of witnesses");
     }
 
-    if storage::determine_if_witness_and_address_definition_have_refs(db, witness)? {
+    if storage::determine_if_witness_and_address_definition_have_refs(&db, witnesses)? {
         bail!("some witnesses have references in their addresses");
     }
 
-    let last_stable_result = parent_composer::pick_parent_units_and_last_ball(db, witness)
-        .context("unable to find parents.")?;
+    let last_stable_result = parent_composer::pick_parent_units_and_last_ball(&db, witnesses)
+        .context("unable to find parents")?;
 
     let witness_list_unit = storage::find_witness_list_unit(
-        db,
-        witness,
+        &db,
+        witnesses,
         last_stable_result.last_stable_ball.last_stable_mc_ball_mci,
     )?;
 
-    let mut result_parents_last_ball_witness_list_unit =
-        LastStableBallAndParentUnitsAndWitnessListUnit {
-            last_stable_ball_and_parent_units: last_stable_result,
-            witness_list_unit: "".to_string(),
-        };
-    if !witness_list_unit.is_empty() {
-        result_parents_last_ball_witness_list_unit.witness_list_unit = witness_list_unit;
-    }
-
-    Ok(result_parents_last_ball_witness_list_unit)
+    Ok(LastStableBallAndParentUnitsAndWitnessListUnit {
+        last_stable_mc_ball: last_stable_result.last_stable_ball.last_stable_mc_ball,
+        last_stable_mc_ball_mci: last_stable_result.last_stable_ball.last_stable_mc_ball_mci,
+        last_stable_mc_ball_unit: last_stable_result.last_stable_ball.last_stable_mc_ball_unit,
+        parent_units: last_stable_result.parent_units,
+        witness_list_unit,
+    })
 }
 
 fn build_proof_chain_on_mc(

@@ -335,12 +335,12 @@ impl Default for Unit {
             last_ball_unit: None,
             main_chain_index: None,
             messages: Vec::new(),
-            parent_units: vec!["".to_string()],
+            parent_units: Vec::new(),
             payload_commission: None,
             timestamp: None,
             unit: None,
             version: config::VERSION.to_string(),
-            witnesses: vec!["".to_string()],
+            witnesses: Vec::new(),
             witness_list_unit: None,
         }
     }
