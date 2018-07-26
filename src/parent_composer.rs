@@ -18,10 +18,16 @@ pub fn pick_parent_units_and_last_ball(
     db: &Connection,
     witnesses: &Vec<String>,
 ) -> Result<LastStableBallAndParentUnits> {
-    let parent_units = pick_parent_units(db, witnesses).context("parent units are not found")?;
+    let witnesses_list = witnesses
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
 
-    let last_stable_mc_ball_unit =
-        find_last_stable_mc_ball(db, witnesses).context("failed to find_last_stable_mc_ball")?;
+    let parent_units = pick_parent_units(db, &witnesses_list).context("parent units not found")?;
+
+    let last_stable_mc_ball_unit = find_last_stable_mc_ball(db, &witnesses_list)
+        .context("failed to find_last_stable_mc_ball")?;
 
     let LastStableBallAndParentUnits {
         last_stable_mc_ball,
@@ -30,9 +36,9 @@ pub fn pick_parent_units_and_last_ball(
         parent_units,
     } = adjust_last_stable_mc_ball_and_parents(
         db,
-        &last_stable_mc_ball_unit,
-        &parent_units,
-        witnesses,
+        last_stable_mc_ball_unit,
+        parent_units,
+        &witnesses_list,
     ).context("failed to adjust_last_stable_mc_ball_and_parents")?;
 
     let witness_list_unit =
@@ -57,19 +63,13 @@ pub fn pick_parent_units_and_last_ball(
     })
 }
 
-fn pick_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<String>> {
+fn pick_parent_units(db: &Connection, witnesses_list: &str) -> Result<Vec<String>> {
     struct TempUnit {
         unit: String,
         version: String,
         alt: String,
         count_matching_witnesses: u32,
     }
-
-    let witnesses_list = witnesses
-        .iter()
-        .map(|s| format!("'{}'", s))
-        .collect::<Vec<_>>()
-        .join(", ");
 
     let sql = format!(
         "SELECT unit, version, alt, ( \
@@ -106,20 +106,14 @@ fn pick_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<String
 
     if tmp_units.is_empty() {
         let parent_units =
-            pick_deep_parent_units(db, witnesses).context("failed to pick deep parent units")?;
+            pick_deep_parent_units(db, witnesses_list).context("failed to pick deep parent units")?;
         Ok(parent_units)
     } else {
         Ok(tmp_units.into_iter().map(|x| x.unit).collect::<Vec<_>>())
     }
 }
 
-fn pick_deep_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<String>> {
-    let witnesses_list = witnesses
-        .iter()
-        .map(|s| format!("'{}'", s))
-        .collect::<Vec<_>>()
-        .join(", ");
-
+fn pick_deep_parent_units(db: &Connection, witnesses_list: &str) -> Result<Vec<String>> {
     let sql = format!(
         "SELECT unit \
          FROM units \
@@ -145,13 +139,7 @@ fn pick_deep_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<S
     Ok(rows)
 }
 
-fn find_last_stable_mc_ball(db: &Connection, witnesses: &[String]) -> Result<String> {
-    let witnesses_list = witnesses
-        .iter()
-        .map(|s| format!("'{}'", s))
-        .collect::<Vec<_>>()
-        .join(", ");
-
+fn find_last_stable_mc_ball(db: &Connection, witnesses_list: &str) -> Result<String> {
     let sql = format!(
         "SELECT ball, unit, main_chain_index FROM units JOIN balls USING(unit) \
          WHERE is_on_main_chain=1 AND is_stable=1 AND +sequence='good' AND ( \
@@ -176,73 +164,60 @@ fn find_last_stable_mc_ball(db: &Connection, witnesses: &[String]) -> Result<Str
 
 fn adjust_last_stable_mc_ball_and_parents(
     db: &Connection,
-    last_stable_mc_ball_unit: &String,
-    parent_units: &[String],
-    witnesses: &[String],
+    mut last_stable_mc_ball_unit: String,
+    mut parent_units: Vec<String>,
+    witnesses_list: &str,
 ) -> Result<LastStableBallAndParentUnits> {
-    let is_stable = main_chain::determin_if_stable_in_laster_units(
-        db,
-        &last_stable_mc_ball_unit,
-        parent_units,
-    )?;
-    if is_stable {
-        struct TempBallMci {
-            ball: String,
-            main_chain_index: u32,
+    loop {
+        let is_stable = main_chain::determin_if_stable_in_laster_units(
+            db,
+            &last_stable_mc_ball_unit,
+            &parent_units,
+        )?;
+        if is_stable {
+            struct TempBallMci {
+                ball: String,
+                main_chain_index: u32,
+            }
+
+            let mut stmt = db.prepare(
+                "SELECT ball, main_chain_index FROM units JOIN balls USING(unit) WHERE unit=?",
+            )?;
+            let rows = stmt
+                .query_map(&[&last_stable_mc_ball_unit], |row| TempBallMci {
+                    ball: row.get(0),
+                    main_chain_index: row.get(1),
+                })?
+                .collect::<::std::result::Result<Vec<_>, _>>()?;
+            if rows.len() != 1 {
+                bail!("not 1 ball by unit {}", last_stable_mc_ball_unit);
+            }
+
+            let row = rows.into_iter().nth(0).unwrap();
+            return Ok(LastStableBallAndParentUnits {
+                last_stable_mc_ball: row.ball,
+                last_stable_mc_ball_unit: last_stable_mc_ball_unit,
+                last_stable_mc_ball_mci: row.main_chain_index,
+                parent_units: parent_units,
+            });
         }
 
-        let sql = format!(
-            "SELECT ball, main_chain_index FROM units JOIN balls USING(unit) WHERE unit='{}'",
-            last_stable_mc_ball_unit
+        info!(
+            "will adjust last stable ball because {} is not stable in view of parents {:?}",
+            &last_stable_mc_ball_unit, parent_units
         );
-        let mut stmt = db.prepare(&sql)?;
-        let rows = stmt
-            .query_map(&[], |row| TempBallMci {
-                ball: row.get(0),
-                main_chain_index: row.get(1),
-            })?
-            .collect::<::std::result::Result<Vec<_>, _>>()?;
-        if rows.len() != 1 {
-            bail!("not 1 ball by unit {}", last_stable_mc_ball_unit);
+
+        if parent_units.len() > 1 {
+            parent_units = pick_deep_parent_units(db, witnesses_list)
+                .context("pick_deep_parent_units in adjust failed: ")?;
+            continue;
         }
-        let row = rows.into_iter().nth(0).unwrap();
-        return Ok(LastStableBallAndParentUnits {
-            last_stable_mc_ball: row.ball,
-            last_stable_mc_ball_unit: last_stable_mc_ball_unit.to_owned(),
-            last_stable_mc_ball_mci: row.main_chain_index,
-            parent_units: parent_units.to_owned(),
-        });
+
+        let obj_unit_props = storage::read_static_unit_property(db, &last_stable_mc_ball_unit)?;
+        if let Some(unit) = obj_unit_props.best_parent_unit {
+            last_stable_mc_ball_unit = unit;
+        } else {
+            bail!("no best parent of {}", last_stable_mc_ball_unit);
+        }
     }
-    let parent_units_list = parent_units
-        .iter()
-        .map(|s| format!("'{}'", s))
-        .collect::<Vec<_>>()
-        .join(", ");
-    info!(
-        "will adjust last stable ball because {} is not stable in view of parents {}",
-        &last_stable_mc_ball_unit, parent_units_list
-    );
-    if parent_units.len() > 1 {
-        let deep_parent_units = pick_deep_parent_units(db, witnesses)
-            .context("pick_deep_parent_units in adjust failed: ")?;
-        adjust_last_stable_mc_ball_and_parents(
-            db,
-            last_stable_mc_ball_unit,
-            &deep_parent_units,
-            witnesses,
-        );
-        //TODO: return what?
-    }
-    let obj_unit_props = storage::read_static_unit_property(db, &last_stable_mc_ball_unit)?;
-    if obj_unit_props.best_parent_unit.is_none() {
-        bail!("no best parent of {}", last_stable_mc_ball_unit);
-    }
-    adjust_last_stable_mc_ball_and_parents(
-        db,
-        &obj_unit_props.best_parent_unit.unwrap(),
-        parent_units,
-        witnesses,
-    );
-    //TODO: why call fn (adjust_last_stable_mc_ball_and_parent) again?
-    unimplemented!()
 }
