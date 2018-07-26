@@ -7,17 +7,11 @@ use main_chain;
 use spec::Unit;
 use storage;
 
-#[derive(Serialize)]
-pub struct LastStableBall {
+pub struct LastStableBallAndParentUnits {
+    pub parent_units: Vec<String>,
     pub last_stable_mc_ball: String,
     pub last_stable_mc_ball_mci: u32,
     pub last_stable_mc_ball_unit: String,
-}
-
-#[derive(Serialize)]
-pub struct LastStableBallAndParentUnits {
-    pub parent_units: Vec<String>,
-    pub last_stable_ball: LastStableBall,
 }
 
 pub fn pick_parent_units_and_last_ball(
@@ -26,54 +20,41 @@ pub fn pick_parent_units_and_last_ball(
 ) -> Result<LastStableBallAndParentUnits> {
     let parent_units = pick_parent_units(db, witnesses).context("parent units are not found")?;
 
-    let last_stable_mc_ball =
+    let last_stable_mc_ball_unit =
         find_last_stable_mc_ball(db, witnesses).context("failed to find_last_stable_mc_ball")?;
 
-    let last_stable_ball_and_parents =
-        adjust_last_stable_mc_ball_and_parents(
-            db,
-            &last_stable_mc_ball.last_stable_mc_ball_unit,
-            &parent_units,
-            witnesses,
-        ).context("failed to adjust_last_stable_mc_ball_and_parents")?;
-
-    let witness_list_unit = storage::find_witness_list_unit(
+    let LastStableBallAndParentUnits {
+        last_stable_mc_ball,
+        last_stable_mc_ball_mci,
+        last_stable_mc_ball_unit,
+        parent_units,
+    } = adjust_last_stable_mc_ball_and_parents(
         db,
+        &last_stable_mc_ball_unit,
+        &parent_units,
         witnesses,
-        last_stable_ball_and_parents
-            .last_stable_ball
-            .last_stable_mc_ball_mci,
-    )?;
+    ).context("failed to adjust_last_stable_mc_ball_and_parents")?;
 
-    let last_stable_unit = last_stable_ball_and_parents
-        .last_stable_ball
-        .last_stable_mc_ball_unit;
+    let witness_list_unit =
+        storage::find_witness_list_unit(db, witnesses, last_stable_mc_ball_mci)?;
 
     let mut tmp_unit = Unit::default();
-    tmp_unit.parent_units = last_stable_ball_and_parents.parent_units.clone();
+    tmp_unit.parent_units = parent_units.clone();
     tmp_unit.witness_list_unit = witness_list_unit;
 
     storage::determine_if_has_witness_list_mutations_along_mc(
         db,
         &tmp_unit,
-        &last_stable_unit,
+        &last_stable_mc_ball_unit,
         witnesses,
     ).context("failed to determine_if_has_witness_list_mutations_along_mc.")?;
-    let last_stable_ball = LastStableBall {
-        last_stable_mc_ball: last_stable_ball_and_parents
-            .last_stable_ball
-            .last_stable_mc_ball,
-        last_stable_mc_ball_unit: last_stable_unit,
-        last_stable_mc_ball_mci: last_stable_ball_and_parents
-            .last_stable_ball
-            .last_stable_mc_ball_mci,
-    };
-    let result_last_stable = LastStableBallAndParentUnits {
-        last_stable_ball,
-        parent_units: last_stable_ball_and_parents.parent_units,
-    };
 
-    Ok(result_last_stable)
+    Ok(LastStableBallAndParentUnits {
+        last_stable_mc_ball_unit,
+        last_stable_mc_ball,
+        last_stable_mc_ball_mci,
+        parent_units,
+    })
 }
 fn pick_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<String>> {
     struct TempUnit {
@@ -162,7 +143,7 @@ fn pick_deep_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<S
     Ok(rows)
 }
 
-fn find_last_stable_mc_ball(db: &Connection, witnesses: &[String]) -> Result<LastStableBall> {
+fn find_last_stable_mc_ball(db: &Connection, witnesses: &[String]) -> Result<String> {
     let witnesses_list = witnesses
         .iter()
         .map(|s| format!("'{}'", s))
@@ -182,17 +163,13 @@ fn find_last_stable_mc_ball(db: &Connection, witnesses: &[String]) -> Result<Las
     );
 
     let mut stmt = db.prepare(&sql)?;
-    let mut rows = stmt
-        .query_map(&[], |row| LastStableBall {
-            last_stable_mc_ball: row.get(0),
-            last_stable_mc_ball_unit: row.get(1),
-            last_stable_mc_ball_mci: row.get(2),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+    let rows = stmt
+        .query_map(&[], |row| row.get(1))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
     if rows.is_empty() {
         bail!("failed to find last stable ball");
     }
-    Ok(rows.remove(0))
+    Ok(rows.into_iter().nth(0).unwrap())
 }
 
 fn adjust_last_stable_mc_ball_and_parents(
@@ -217,7 +194,7 @@ fn adjust_last_stable_mc_ball_and_parents(
             last_stable_mc_ball_unit
         );
         let mut stmt = db.prepare(&sql)?;
-        let mut rows = stmt
+        let rows = stmt
             .query_map(&[], |row| TempBallMci {
                 ball: row.get(0),
                 main_chain_index: row.get(1),
@@ -226,14 +203,11 @@ fn adjust_last_stable_mc_ball_and_parents(
         if rows.len() != 1 {
             bail!("not 1 ball by unit {}", last_stable_mc_ball_unit);
         }
-        let row = rows.remove(0);
-        let last_stable_ball = LastStableBall {
+        let row = rows.into_iter().nth(0).unwrap();
+        return Ok(LastStableBallAndParentUnits {
             last_stable_mc_ball: row.ball,
             last_stable_mc_ball_unit: last_stable_mc_ball_unit.to_owned(),
             last_stable_mc_ball_mci: row.main_chain_index,
-        };
-        return Ok(LastStableBallAndParentUnits {
-            last_stable_ball,
             parent_units: parent_units.to_owned(),
         });
     }

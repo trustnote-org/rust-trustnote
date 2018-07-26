@@ -546,20 +546,22 @@ pub fn prepare_parents_and_last_ball_and_witness_list_unit(
         bail!("some witnesses have references in their addresses");
     }
 
-    let last_stable_result = parent_composer::pick_parent_units_and_last_ball(&db, witnesses)
+    let parent_composer::LastStableBallAndParentUnits {
+        parent_units,
+        last_stable_mc_ball,
+        last_stable_mc_ball_mci,
+        last_stable_mc_ball_unit,
+    } = parent_composer::pick_parent_units_and_last_ball(&db, witnesses)
         .context("unable to find parents")?;
 
-    let witness_list_unit = storage::find_witness_list_unit(
-        &db,
-        witnesses,
-        last_stable_result.last_stable_ball.last_stable_mc_ball_mci,
-    )?;
+    let witness_list_unit =
+        storage::find_witness_list_unit(&db, witnesses, last_stable_mc_ball_mci)?;
 
     Ok(LastStableBallAndParentUnitsAndWitnessListUnit {
-        last_stable_mc_ball: last_stable_result.last_stable_ball.last_stable_mc_ball,
-        last_stable_mc_ball_mci: last_stable_result.last_stable_ball.last_stable_mc_ball_mci,
-        last_stable_mc_ball_unit: last_stable_result.last_stable_ball.last_stable_mc_ball_unit,
-        parent_units: last_stable_result.parent_units,
+        last_stable_mc_ball,
+        last_stable_mc_ball_mci,
+        last_stable_mc_ball_unit,
+        parent_units,
         witness_list_unit,
     })
 }
