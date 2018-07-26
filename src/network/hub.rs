@@ -149,6 +149,7 @@ pub struct WsConnections {
     outbound: RwLock<Vec<Arc<HubConn>>>,
     next_inbound: AtomicUsize,
     next_outbound: AtomicUsize,
+    peer_size: usize,
 }
 
 impl WsConnections {
@@ -158,6 +159,7 @@ impl WsConnections {
             outbound: RwLock::new(Vec::new()),
             next_inbound: AtomicUsize::new(0),
             next_outbound: AtomicUsize::new(0),
+            peer_size: 20,
         }
     }
 
@@ -295,6 +297,82 @@ impl WsConnections {
             .collect()
     }
 }
+
+//FIXME:
+impl WsConnections {
+    pub fn get_need_peer_counts(&self) -> usize {
+        self.peer_size - self.outbound.read().unwrap().len() - self.inbound.read().unwrap().len()
+    }
+    pub fn is_connected(&self, addr: &String) -> bool {
+        let outbounds = self.outbound.read().unwrap();
+        let inbounds = self.inbound.read().unwrap();
+        (*outbounds).iter().any(|v| v.get_peer() == addr)
+            || (*inbounds).iter().any(|v| v.get_peer() == addr)
+    }
+    pub fn get_peers_in_config(&self) -> Option<String> {
+        let config_peer = config::get_remote_hub_url();
+        if self.is_connected(&config_peer) {
+            return None;
+        }
+        Some(config_peer)
+    }
+    pub fn get_peers_in_db(&self) -> Result<Vec<String>> {
+        let outbounds = self.outbound.read().unwrap();
+        let inbounds = self.inbound.read().unwrap();
+
+        let mut sql_out = String::from("");
+        if !outbounds.is_empty() {
+            sql_out = outbounds
+                .iter()
+                .map(|s| format!("'{}'", s.get_peer()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            sql_out.insert_str(0, "AND peer NOT IN(");
+            sql_out.push_str(")\n");
+        };
+
+        let mut sql_in = String::from("");
+        if !inbounds.is_empty() {
+            sql_in = outbounds
+                .iter()
+                .map(|s| format!("'{}'", s.get_peer()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            sql_in.insert_str(
+                0,
+                "AND (peer_host_urls.peer_host IS NULL OR peer_host_urls.peer_host NOT IN(",
+            );
+            sql_in.push_str(")) \n");
+        };
+
+        let db = db::DB_POOL.get_connection();
+
+        let sql = format!("SELECT peer FROM peers \
+            JOIN peer_hosts USING(peer_host) \
+            LEFT JOIN peer_host_urls ON peer=url AND is_active=1 \
+            WHERE (count_invalid_joints/count_new_good_joints<? \
+			OR count_new_good_joints=0 AND count_nonserial_joints=0 AND count_invalid_joints=0) {}{} AND is_self=0 \
+		    ORDER BY random() LIMIT ?",sql_out,sql_in);
+        let mut stmt = db.prepare_cached(&sql)?;
+        let peers = stmt
+            .query_map(&[&20], |v| v.get(0))?
+            .collect::<::std::result::Result<Vec<String>, _>>()?;
+        Ok(peers
+            .into_iter()
+            .filter(|peer| self.is_connected(peer))
+            .collect::<Vec<_>>())
+    }
+    pub fn get_remote_peer(&self) -> Option<String> {
+        unimplemented!()
+    }
+    pub fn auto_conntection(&self) {
+        let counts = self.get_need_peer_counts();
+        if counts == 0 {
+            return;
+        }
+    }
+}
+
 impl Default for HubData {
     fn default() -> Self {
         HubData {
