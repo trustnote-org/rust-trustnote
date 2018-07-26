@@ -4,8 +4,8 @@ use error::Result;
 use failure::ResultExt;
 use graph;
 use joint::Joint;
+use parent_composer;
 use rusqlite::Connection;
-use serde_json::Value;
 use std::collections::HashSet;
 use storage;
 use witness_proof;
@@ -25,9 +25,13 @@ pub struct HistoryRequest {
 
 #[derive(Serialize)]
 pub struct HistoryResponse {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     unstable_mc_joints: Vec<Joint>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     witness_change_and_definition: Vec<Joint>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     joints: Vec<Joint>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     proofchain_balls: Vec<ProofBalls>,
 }
 
@@ -72,15 +76,17 @@ pub fn prepare_history(
         add_shared_addresses_of_wallet(db, &history_request.addresses)?;
     if !addresses_and_shared_address.is_empty() {
         let address_list = addresses_and_shared_address
-            .iter()
+            .into_iter()
             .map(|s| format!("'{}'", s))
             .collect::<Vec<_>>()
             .join(", ");
-        let sql = format!("SELECT DISTINCT unit, main_chain_index, level FROM outputs JOIN units USING(unit) \
-				WHERE address IN({}) AND (+sequence='good' OR is_stable=1) \
-				UNION \
-				SELECT DISTINCT unit, main_chain_index, level FROM unit_authors JOIN units USING(unit) \
-				WHERE address IN({}) AND (+sequence='good' OR is_stable=1) ", address_list, address_list);
+        let sql = format!(
+            "SELECT DISTINCT unit, main_chain_index, level FROM outputs JOIN units USING(unit) \
+             WHERE address IN({}) AND (+sequence='good' OR is_stable=1) \
+             UNION \
+             SELECT DISTINCT unit, main_chain_index, level FROM unit_authors JOIN units USING(unit) \
+             WHERE address IN({}) AND (+sequence='good' OR is_stable=1)",
+            address_list, address_list);
         selects.push(sql);
     }
     if !history_request.requested_joints.is_empty() {
@@ -90,12 +96,16 @@ pub fn prepare_history(
             .map(|s| format!("'{}'", s))
             .collect::<Vec<_>>()
             .join(", ");
-        let sql = format!("SELECT unit, main_chain_index, level FROM units WHERE unit IN({}) AND (+sequence='good' OR is_stable=1) ", unit_list);
+        let sql = format!(
+            "SELECT unit, main_chain_index, level FROM units \
+             WHERE unit IN({}) AND (+sequence='good' OR is_stable=1)",
+            unit_list
+        );
         selects.push(sql);
     }
     let sql = format!(
         "{} ORDER BY main_chain_index DESC, level DESC",
-        selects.join("UNION ")
+        selects.join(" UNION ")
     );
 
     #[derive(Clone)]
@@ -113,7 +123,7 @@ pub fn prepare_history(
         })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
     let rows = tmp_rows
-        .iter()
+        .into_iter()
         .filter(|s| !known_stable_units.contains(&s.unit))
         .collect::<Vec<_>>();
     if rows.is_empty() {
@@ -148,7 +158,7 @@ pub fn prepare_history(
                     db,
                     later_mci,
                     row.main_chain_index.unwrap(),
-                    &row.unit,
+                    row.unit,
                     &mut proofchain_balls,
                 )?;
                 later_mci = row.main_chain_index.unwrap();
@@ -275,7 +285,7 @@ fn build_proof_chain(
     db: &Connection,
     later_mci: u32,
     earlier_mci: u32,
-    unit: &String,
+    unit: String,
     balls: &mut Vec<ProofBalls>,
 ) -> Result<()> {
     if later_mci > earlier_mci {
@@ -288,7 +298,7 @@ fn build_proof_chain(
 fn build_last_mile_of_proof_chain(
     db: &Connection,
     earlier_mci: u32,
-    unit: &String,
+    unit: String,
     balls: &mut Vec<ProofBalls>,
 ) -> Result<()> {
     let mut stmt = db
@@ -300,50 +310,61 @@ fn build_last_mile_of_proof_chain(
         bail!("no mc unit?");
     }
     let cur_unit = rows.into_iter().nth(0).unwrap();
-    if unit == &cur_unit {
+    if unit == cur_unit {
         return Ok(());
     }
-    find_parent_and_add_ball(db, earlier_mci, cur_unit, balls)
+    find_parent_and_add_ball(db, earlier_mci, cur_unit, unit, balls)
 }
 
 fn find_parent_and_add_ball(
     db: &Connection,
     mci: u32,
     mut interim_unit: String,
+    dest_unit: String,
     balls: &mut Vec<ProofBalls>,
 ) -> Result<()> {
     let mut add_ball = |cur_unit: String| -> Result<()> {
-        let mut stmt =
-            db.prepare_cached("SELECT unit, ball FROM units JOIN balls USING(unit) WHERE unit=?")?;
         struct TempUnit {
             unit: String,
             ball: String,
         }
+
+        let mut stmt = db.prepare_cached(
+            "SELECT unit, ball FROM units JOIN balls USING(unit) \
+             WHERE unit=?",
+        )?;
         let rows = stmt
             .query_map(&[&cur_unit], |row| TempUnit {
                 unit: row.get(0),
                 ball: row.get(1),
             })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
+
         if rows.len() != 1 {
             bail!("no unit?");
         }
-
-        let mut stmt =
-            db.prepare_cached("SELECT ball FROM parenthoods LEFT JOIN balls ON parent_unit=balls.unit WHERE child_unit=? ORDER BY ball")?;
-        let parent_rows = stmt
-            .query_map(&[&rows[0].unit], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
-        if parent_rows.iter().any(|row| row.is_none()) {
-            bail!("some parents have no balls");
-        }
         let cur_unit = rows.into_iter().nth(0).unwrap();
-        let parent_rows = parent_rows.into_iter().collect::<Option<Vec<_>>>().unwrap();
+
+        let mut stmt = db.prepare_cached(
+            "SELECT ball FROM parenthoods LEFT JOIN balls ON parent_unit=balls.unit \
+             WHERE child_unit=? ORDER BY ball",
+        )?;
+
+        let mut parent_balls = Vec::new();
+        let parent_rows = stmt.query_map(&[&cur_unit.unit], |row| row.get::<_, Option<String>>(0))?;
+
+        for row in parent_rows {
+            if let Some(ball) = row? {
+                parent_balls.push(ball);
+            } else {
+                bail!("some parents have no balls");
+            }
+        }
 
         balls.push(ProofBalls {
             ball: cur_unit.ball,
             unit: cur_unit.unit,
-            parent_balls: parent_rows,
+            parent_balls,
             content_hash: None,
             is_nonserial: None,
             skiplist_balls: Vec::new(),
@@ -352,19 +373,21 @@ fn find_parent_and_add_ball(
     };
 
     loop {
-        let mut stmt =
-        db.prepare_cached("SELECT parent_unit FROM parenthoods JOIN units ON parent_unit=unit WHERE child_unit=? AND main_chain_index=?")?;
+        let mut stmt = db.prepare_cached(
+            "SELECT parent_unit FROM parenthoods JOIN units ON parent_unit=unit \
+             WHERE child_unit=? AND main_chain_index=?",
+        )?;
         let parents = stmt
             .query_map(&[&interim_unit, &mci], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
-        if parents.contains(&interim_unit) {
-            add_ball(interim_unit)?; // push last parent to vector balls
+        if parents.contains(&dest_unit) {
+            add_ball(dest_unit)?;
             return Ok(());
         }
 
         let mut is_found = false;
         for parent_unit in parents {
-            if graph::determine_if_included(db, &interim_unit, &[parent_unit.clone()])? {
+            if graph::determine_if_included(db, &dest_unit, &[parent_unit.clone()])? {
                 add_ball(interim_unit)?; //push curent parent to balls and continue loop
                 interim_unit = parent_unit;
                 is_found = true;
@@ -501,21 +524,46 @@ fn build_path(
     }
 }
 
-// TODO: better to return a struct instead of Value
+#[derive(Serialize)]
+pub struct LastStableBallAndParentUnitsAndWitnessListUnit {
+    last_stable_mc_ball: String,
+    last_stable_mc_ball_mci: u32,
+    last_stable_mc_ball_unit: String,
+    parent_units: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    witness_list_unit: Option<String>,
+}
+
 pub fn prepare_parents_and_last_ball_and_witness_list_unit(
-    witness: &[String],
-    db: &Connection,
-) -> Result<Value> {
-    if witness.len() != config::COUNT_WITNESSES {
+    witnesses: &Vec<String>,
+) -> Result<LastStableBallAndParentUnitsAndWitnessListUnit> {
+    let db = db::DB_POOL.get_connection();
+    if witnesses.len() != config::COUNT_WITNESSES {
         bail!("wrong number of witnesses");
     }
 
-    if storage::determine_if_witness_and_address_definition_have_refs(db, witness)? {
+    if storage::determine_if_witness_and_address_definition_have_refs(&db, witnesses)? {
         bail!("some witnesses have references in their addresses");
     }
-    //TODO: impl pickParentUnitsAndLastBall()
 
-    unimplemented!()
+    let parent_composer::LastStableBallAndParentUnits {
+        parent_units,
+        last_stable_mc_ball,
+        last_stable_mc_ball_mci,
+        last_stable_mc_ball_unit,
+    } = parent_composer::pick_parent_units_and_last_ball(&db, witnesses)
+        .context("unable to find parents")?;
+
+    let witness_list_unit =
+        storage::find_witness_list_unit(&db, witnesses, last_stable_mc_ball_mci)?;
+
+    Ok(LastStableBallAndParentUnitsAndWitnessListUnit {
+        last_stable_mc_ball,
+        last_stable_mc_ball_mci,
+        last_stable_mc_ball_unit,
+        parent_units,
+        witness_list_unit,
+    })
 }
 
 fn build_proof_chain_on_mc(

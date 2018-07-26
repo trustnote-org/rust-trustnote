@@ -1398,3 +1398,21 @@ where
 
     Ok(ret)
 }
+
+pub fn find_witness_list_unit(
+    db: &Connection,
+    witnesses: &Vec<String>,
+    last_ball_mci: u32,
+) -> Result<Option<String>> {
+    let mut stmt = db.prepare_cached(
+        "SELECT witness_list_hashes.witness_list_unit \
+         FROM witness_list_hashes CROSS JOIN units ON witness_list_hashes.witness_list_unit=unit \
+         WHERE witness_list_hash=? AND sequence='good' AND is_stable=1 AND main_chain_index<=?",
+    )?;
+    let witness_list_hash = ::object_hash::get_base64_hash(witnesses)?;
+    let rows = stmt
+        .query_map(&[&witness_list_hash, &last_ball_mci], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    Ok(rows.into_iter().nth(0))
+}

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use config;
 use obj_ser;
 use object_hash::get_base64_hash;
 use serde_json::Value;
@@ -318,6 +319,29 @@ impl Unit {
                 error!("failed to get payload size, err={}", e);
                 0
             }
+        }
+    }
+}
+
+impl Default for Unit {
+    fn default() -> Self {
+        Unit {
+            alt: config::ALT.to_string(),
+            authors: Vec::new(),
+            content_hash: None,
+            earned_headers_commission_recipients: Vec::new(),
+            headers_commission: None,
+            last_ball: None,
+            last_ball_unit: None,
+            main_chain_index: None,
+            messages: Vec::new(),
+            parent_units: Vec::new(),
+            payload_commission: None,
+            timestamp: None,
+            unit: None,
+            version: config::VERSION.to_string(),
+            witnesses: Vec::new(),
+            witness_list_unit: None,
         }
     }
 }

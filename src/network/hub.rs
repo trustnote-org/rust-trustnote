@@ -663,19 +663,17 @@ impl HubConn {
             bail!("light clients have to be inbound");
         }
 
-        let param_witnesses = param["witnesses"]
-            .as_array()
-            .ok_or_else(|| format_err!("no witnesses"))?;
+        #[derive(Deserialize)]
+        struct TempWitnesses {
+            witnesses: Vec<String>,
+        }
 
-        let ss = param_witnesses
-            .iter()
-            .map(|c| c.to_string())
-            .collect::<Vec<String>>();
-        let db = db::DB_POOL.get_connection();
-        let result = light::prepare_parents_and_last_ball_and_witness_list_unit(&ss, &db)
+        let witnesses: TempWitnesses = serde_json::from_value(param).context("no witnesses")?;
+
+        let ret = light::prepare_parents_and_last_ball_and_witness_list_unit(&witnesses.witnesses)
             .context("failed to get parents_and_last_ball_and_witness_list_unit")?;
 
-        Ok(result)
+        Ok(serde_json::to_value(ret)?)
     }
 
     fn on_hub_login(&self, body: Value) -> Result<()> {
