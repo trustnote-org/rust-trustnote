@@ -39,7 +39,7 @@ pub fn pick_parent_units_and_last_ball(
         storage::find_witness_list_unit(db, witnesses, last_stable_mc_ball_mci)?;
 
     let mut tmp_unit = Unit::default();
-    tmp_unit.parent_units = parent_units.clone();
+    tmp_unit.parent_units = parent_units;
     tmp_unit.witness_list_unit = witness_list_unit;
 
     storage::determine_if_has_witness_list_mutations_along_mc(
@@ -53,9 +53,10 @@ pub fn pick_parent_units_and_last_ball(
         last_stable_mc_ball_unit,
         last_stable_mc_ball,
         last_stable_mc_ball_mci,
-        parent_units,
+        parent_units: tmp_unit.parent_units,
     })
 }
+
 fn pick_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<String>> {
     struct TempUnit {
         unit: String,
@@ -63,24 +64,25 @@ fn pick_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<String
         alt: String,
         count_matching_witnesses: u32,
     }
-    let ss = "INDEXED BY byFree";
+
     let witnesses_list = witnesses
         .iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
         .join(", ");
 
-    let sql = format!("SELECT unit, version, alt, (\
+    let sql = format!(
+        "SELECT unit, version, alt, ( \
             SELECT COUNT(*) \
 			FROM unit_witnesses \
 			WHERE unit_witnesses.unit IN(units.unit, units.witness_list_unit) AND address IN({}) \
-		) AS count_matching_witnesses \
-		FROM units '{}'\
-		LEFT JOIN archived_joints USING(unit) \
-		WHERE + sequence = 'good' AND is_free=1 AND archived_joints.unit IS NULL ORDER BY unit LIMIT {}",
-        witnesses_list, ss, config::MAX_PARENT_PER_UNIT);
+		 ) AS count_matching_witnesses \
+		 FROM units INDEXED BY byFree \
+		 LEFT JOIN archived_joints USING(unit) \
+		 WHERE + sequence = 'good' AND is_free=1 AND archived_joints.unit IS NULL ORDER BY unit LIMIT {}",
+        witnesses_list, config::MAX_PARENT_PER_UNIT);
 
-    let mut stmt = db.prepare(&sql)?;
+    let mut stmt = db.prepare_cached(&sql)?;
     let rows = stmt
         .query_map(&[], |row| TempUnit {
             unit: row.get(0),
@@ -132,7 +134,7 @@ fn pick_deep_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<S
         config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS
     );
 
-    let mut stmt = db.prepare(&sql)?;
+    let mut stmt = db.prepare_cached(&sql)?;
     let rows = stmt
         .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
@@ -162,7 +164,7 @@ fn find_last_stable_mc_ball(db: &Connection, witnesses: &[String]) -> Result<Str
         config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS,
     );
 
-    let mut stmt = db.prepare(&sql)?;
+    let mut stmt = db.prepare_cached(&sql)?;
     let rows = stmt
         .query_map(&[], |row| row.get(1))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
