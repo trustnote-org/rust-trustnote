@@ -52,15 +52,10 @@ pub fn prepare_history(
     db: &Connection,
     history_request: &HistoryRequest,
 ) -> Result<HistoryResponse> {
-    if history_request.addresses.is_empty() {
-        bail!("no addresses");
+    if history_request.addresses.is_empty() && history_request.requested_joints.is_empty() {
+        bail!("neither addresses nor joints requested");
     }
-    if history_request.known_stable_units.is_empty() {
-        bail!("known_stable_units must be non-empty array");
-    }
-    if history_request.requested_joints.is_empty() {
-        bail!("no requested joints");
-    }
+
     if history_request.witnesses.len() != config::COUNT_WITNESSES {
         bail!("wrong number of witnesses");
     }
