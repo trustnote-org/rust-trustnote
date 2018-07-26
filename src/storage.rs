@@ -1240,7 +1240,7 @@ pub fn determine_best_parents(
         "SELECT unit \
     FROM units AS parent_units \
     WHERE unit IN({}) \
-      AND (witness_list_unit={} OR ( \
+      AND (witness_list_unit='{}' OR ( \
         SELECT COUNT(*) \
         FROM unit_witnesses AS parent_witnesses \
         WHERE parent_witnesses.unit IN(parent_units.unit, parent_units.witness_list_unit) AND address IN({}) \
@@ -1249,7 +1249,7 @@ pub fn determine_best_parents(
       level-witnessed_level ASC, \
       unit ASC \
     LIMIT 1",
-        parent_units,witness_list,witness_list_unit,config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS
+        parent_units, witness_list_unit, witness_list, config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS
     );
 
     let mut stmt = db.prepare(&sql)?;
@@ -1280,12 +1280,13 @@ pub fn determine_if_has_witness_list_mutations_along_mc(
         .collect::<Vec<_>>()
         .join(",");
 
-    let mc_units = build_list_of_mc_units_with_potentially_different_witness_lists(
-        db,
-        unit,
-        last_ball_unit,
-        witnesses,
-    )?;
+    let mc_units =
+        build_list_of_mc_units_with_potentially_different_witness_lists(
+            db,
+            unit,
+            last_ball_unit,
+            witnesses,
+        ).context("failed to build list of mc units with potentially different witness lists")?;
 
     info!("###### MC units {:?}", mc_units);
 
@@ -1299,8 +1300,8 @@ pub fn determine_if_has_witness_list_mutations_along_mc(
         .collect::<Vec<_>>()
         .join(",");
 
-    let sql = format!("
-        SELECT units.unit, COUNT(*) AS count_matching_witnesses \
+    let sql = format!(
+        "SELECT units.unit, COUNT(*) AS count_matching_witnesses \
         FROM units CROSS JOIN unit_witnesses \
         ON (units.unit=unit_witnesses.unit OR units.witness_list_unit=unit_witnesses.unit) AND address IN({}) \
         WHERE units.unit IN({}) \
@@ -1331,13 +1332,15 @@ fn build_list_of_mc_units_with_potentially_different_witness_lists(
 ) -> Result<(Vec<String>)> {
     let mut mc_units = Vec::new();
 
-    let best_parent_unit = determine_best_parents(db, unit, witnesses)?;
+    let best_parent_unit =
+        determine_best_parents(db, unit, witnesses).context("failed to determine best parent")?;
     ensure!(best_parent_unit.is_some(), "no compatible best parent");
 
     //Add and go up
     let mut parent_hash = best_parent_unit.unwrap();
     loop {
-        let parent_props = read_static_unit_property(db, &parent_hash)?;
+        let parent_props = read_static_unit_property(db, &parent_hash)
+            .context("failed to read static unit property")?;
 
         // the parent has the same witness list and the parent has already passed the MC compatibility test
         if unit.witness_list_unit.is_some()
