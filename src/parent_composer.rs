@@ -3,16 +3,27 @@ use failure::ResultExt;
 use rusqlite::Connection;
 
 use config;
-use light::TempLastStableBall;
-use light::TempLastStableBallAndParentUnits;
 use main_chain;
 use spec::Unit;
 use storage;
 
+#[derive(Serialize)]
+pub struct LastStableBall {
+    pub last_stable_mc_ball: String,
+    pub last_stable_mc_ball_mci: u32,
+    pub last_stable_mc_ball_unit: String,
+}
+
+#[derive(Serialize)]
+pub struct LastStableBallAndParentUnits {
+    pub parent_units: Vec<String>,
+    pub last_stable_ball: LastStableBall,
+}
+
 pub fn pick_parent_units_and_last_ball(
     db: &Connection,
     witnesses: &[String],
-) -> Result<TempLastStableBallAndParentUnits> {
+) -> Result<LastStableBallAndParentUnits> {
     let parent_units = pick_parent_units(db, witnesses).context("parent units are not found")?;
 
     let last_stable_mc_ball =
@@ -50,7 +61,7 @@ pub fn pick_parent_units_and_last_ball(
         &last_stable_unit,
         witnesses,
     ).context("failed to determine_if_has_witness_list_mutations_along_mc.")?;
-    let last_stable_ball = TempLastStableBall {
+    let last_stable_ball = LastStableBall {
         last_stable_mc_ball: last_stable_ball_and_parents
             .last_stable_ball
             .last_stable_mc_ball,
@@ -59,7 +70,7 @@ pub fn pick_parent_units_and_last_ball(
             .last_stable_ball
             .last_stable_mc_ball_mci,
     };
-    let result_last_stable = TempLastStableBallAndParentUnits {
+    let result_last_stable = LastStableBallAndParentUnits {
         last_stable_ball,
         parent_units: last_stable_ball_and_parents.parent_units,
     };
@@ -157,7 +168,7 @@ fn pick_deep_parent_units(db: &Connection, witnesses: &[String]) -> Result<Vec<S
     Ok(rows)
 }
 
-fn find_last_stable_mc_ball(db: &Connection, witnesses: &[String]) -> Result<TempLastStableBall> {
+fn find_last_stable_mc_ball(db: &Connection, witnesses: &[String]) -> Result<LastStableBall> {
     let witnesses_list = witnesses
         .iter()
         .map(|s| format!("'{}'", s))
@@ -178,7 +189,7 @@ fn find_last_stable_mc_ball(db: &Connection, witnesses: &[String]) -> Result<Tem
 
     let mut stmt = db.prepare(&sql)?;
     let mut rows = stmt
-        .query_map(&[], |row| TempLastStableBall {
+        .query_map(&[], |row| LastStableBall {
             last_stable_mc_ball: row.get(0),
             last_stable_mc_ball_unit: row.get(1),
             last_stable_mc_ball_mci: row.get(2),
@@ -195,7 +206,7 @@ fn adjust_last_stable_mc_ball_and_parents(
     last_stable_mc_ball_unit: &String,
     parent_units: &[String],
     witnesses: &[String],
-) -> Result<TempLastStableBallAndParentUnits> {
+) -> Result<LastStableBallAndParentUnits> {
     let is_stable = main_chain::determin_if_stable_in_laster_units(
         db,
         &last_stable_mc_ball_unit,
@@ -222,12 +233,12 @@ fn adjust_last_stable_mc_ball_and_parents(
             bail!("not 1 ball by unit {}", last_stable_mc_ball_unit);
         }
         let row = rows.remove(0);
-        let last_stable_ball = TempLastStableBall {
+        let last_stable_ball = LastStableBall {
             last_stable_mc_ball: row.ball,
             last_stable_mc_ball_unit: last_stable_mc_ball_unit.to_owned(),
             last_stable_mc_ball_mci: row.main_chain_index,
         };
-        return Ok(TempLastStableBallAndParentUnits {
+        return Ok(LastStableBallAndParentUnits {
             last_stable_ball,
             parent_units: parent_units.to_owned(),
         });
