@@ -5,7 +5,7 @@ use failure::ResultExt;
 use graph;
 use joint::Joint;
 use rusqlite::Connection;
-use serde_json::{self, Value};
+use serde_json::Value;
 use std::collections::HashSet;
 use storage;
 use witness_proof;
