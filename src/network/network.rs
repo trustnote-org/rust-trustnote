@@ -243,6 +243,7 @@ impl<T> WsConnection<T> {
                                     t!(ws.send_response(&tag, rsp));
                                 }
                                 Err(e) => {
+                                    error!("{:?}", e);
                                     let error = json!(e.to_string());
                                     t!(ws.send_error_response(&tag, error));
                                 }

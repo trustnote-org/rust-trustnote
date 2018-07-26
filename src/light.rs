@@ -28,7 +28,7 @@ pub struct HistoryResponse {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     unstable_mc_joints: Vec<Joint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    witness_change_and_definition: Vec<Joint>,
+    witness_change_and_definition_joints: Vec<Joint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     joints: Vec<Joint>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -124,7 +124,7 @@ pub fn prepare_history(
     if rows.is_empty() {
         return Ok(HistoryResponse {
             unstable_mc_joints: Vec::new(),
-            witness_change_and_definition: Vec::new(),
+            witness_change_and_definition_joints: Vec::new(),
             joints: Vec::new(),
             proofchain_balls: Vec::new(),
         });
@@ -165,7 +165,7 @@ pub fn prepare_history(
 
     Ok(HistoryResponse {
         unstable_mc_joints: prepare_witness_proof.unstable_mc_joints,
-        witness_change_and_definition: prepare_witness_proof.witness_change_and_definition,
+        witness_change_and_definition_joints: prepare_witness_proof.witness_change_and_definition,
         joints,
         proofchain_balls,
     })
