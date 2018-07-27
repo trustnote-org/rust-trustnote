@@ -299,13 +299,14 @@ impl WsConnections {
 }
 
 //FIXME:
-impl WsConnections {
+
+impl HubConn {
     pub fn get_need_peer_counts(&self) -> usize {
-        self.peer_size - self.outbound.read().unwrap().len() - self.inbound.read().unwrap().len()
+        WSS.peer_size - WSS.outbound.read().unwrap().len() - WSS.inbound.read().unwrap().len()
     }
     pub fn is_connected(&self, addr: &String) -> bool {
-        let outbounds = self.outbound.read().unwrap();
-        let inbounds = self.inbound.read().unwrap();
+        let outbounds = WSS.outbound.read().unwrap();
+        let inbounds = WSS.inbound.read().unwrap();
         (*outbounds).iter().any(|v| v.get_peer() == addr)
             || (*inbounds).iter().any(|v| v.get_peer() == addr)
     }
@@ -317,8 +318,8 @@ impl WsConnections {
         Some(config_peer)
     }
     pub fn get_peers_in_db(&self) -> Result<Vec<String>> {
-        let outbounds = self.outbound.read().unwrap();
-        let inbounds = self.inbound.read().unwrap();
+        let outbounds = WSS.outbound.read().unwrap();
+        let inbounds = WSS.inbound.read().unwrap();
 
         let mut sql_out = String::from("");
         if !outbounds.is_empty() {
@@ -350,7 +351,7 @@ impl WsConnections {
         let sql = format!("SELECT peer FROM peers \
             JOIN peer_hosts USING(peer_host) \
             LEFT JOIN peer_host_urls ON peer=url AND is_active=1 \
-            WHERE (count_invalid_joints/count_new_good_joints<? \
+            WHERE (count_invalid_joints/count_new_good_joints<4 \
 			OR count_new_good_joints=0 AND count_nonserial_joints=0 AND count_invalid_joints=0) {}{} AND is_self=0 \
 		    ORDER BY random() LIMIT ?",sql_out,sql_in);
         let mut stmt = db.prepare_cached(&sql)?;
@@ -362,17 +363,48 @@ impl WsConnections {
             .filter(|peer| self.is_connected(peer))
             .collect::<Vec<_>>())
     }
-    pub fn get_remote_peer(&self) -> Option<String> {
-        unimplemented!()
+    pub fn get_remote_peer(&self) -> Result<Vec<String>> {
+        let peers: Vec<String> =
+            serde_json::from_value(self.send_request("get_peers", &Value::Null)?)?;
+        Ok(peers
+            .into_iter()
+            .filter(|peer| self.is_connected(peer))
+            .collect::<Vec<_>>())
     }
-    pub fn auto_conntection(&self) {
-        let counts = self.get_need_peer_counts();
+    pub fn connect_to_remote(addr: &String) -> Result<()> {
+        create_outbound_conn(addr)?;
+        go!(move || if let Err(e) = start_catchup() {
+            error!("catchup error: {}", e);
+            error!("back_trace={}", e.backtrace());
+            ::std::process::abort();
+        });
+        Ok(())
+    }
+    pub fn auto_conntection(&self) -> Result<()> {
+        let mut counts = self.get_need_peer_counts();
         if counts == 0 {
-            return;
+            return Ok(());
         }
+        while counts != 0 {
+            if let Some(v) = self.get_peers_in_config() {
+                Self::connect_to_remote(&v)?;
+
+                counts -= 1;
+            } else if let Ok(v) = self.get_peers_in_db() {
+                if !v.is_empty() {
+                    for peer in &v {
+                        Self::connect_to_remote(peer)?;
+                        counts -= 1;
+                    }
+                }
+            } else if let Some(v) = self.get_peers_in_config() {
+                Self::connect_to_remote(&v)?;
+                counts -= 1;
+            }
+        }
+        Ok(())
     }
 }
-
 impl Default for HubData {
     fn default() -> Self {
         HubData {

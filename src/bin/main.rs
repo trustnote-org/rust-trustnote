@@ -52,17 +52,6 @@ fn start_ws_server() -> Result<::may::coroutine::JoinHandle<()>> {
     Ok(server)
 }
 
-fn connect_to_remote() -> Result<()> {
-    use network::hub;
-    hub::create_outbound_conn(config::get_remote_hub_url())?;
-    go!(move || if let Err(e) = hub::start_catchup() {
-        error!("catchup error: {}", e);
-        error!("back_trace={}", e.backtrace());
-        ::std::process::abort();
-    });
-    Ok(())
-}
-
 fn network_cleanup() {
     network::hub::WSS.close_all();
 }
@@ -76,10 +65,11 @@ fn register_event_handlers() {
 }
 
 // the hub server logic that run in coroutine context
+use network::hub::HubConn;
 fn run_hub_server() -> Result<()> {
     register_event_handlers();
     let _server = start_ws_server();
-    connect_to_remote()?;
+    HubConn::connect_to_remote(&config::get_remote_hub_url())?;
     time::start_global_timers();
     Ok(())
 }
