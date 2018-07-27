@@ -45,4 +45,9 @@ pub fn start_global_timers() {
         info!("purge_uncovered_nonserial_joints_under_lock");
         t!(joint_storage::purge_uncovered_nonserial_joints_under_lock());
     });
+    go!(move || loop {
+        coroutine::sleep(Duration::from_secs(60));
+        info!("auto conntect to other peers");
+        t!(hub::auto_connection());
+    });
 }
