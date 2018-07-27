@@ -29,8 +29,7 @@ pub const COUNT_MC_BALLS_FOR_PAID_WITNESSING: u32 = 100;
 pub const MAX_DATA_FEED_NAME_LENGTH: usize = 64;
 pub const MAX_DATA_FEED_VALUE_LENGTH: usize = 64;
 pub const MAX_ITEMS_IN_CACHE: usize = 1000;
-pub const MAX_OUTBOUND_CONNECTIONS: usize = 100;
-pub const MAX_TOLERATED_INVALID_RATIO: f64 = 0.1;
+pub const MAX_OUTBOUND_CONNECTIONS: usize = 5;
 
 lazy_static! {
     static ref CONFIG: RwLock<Config> = RwLock::new({

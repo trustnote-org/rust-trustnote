@@ -113,8 +113,8 @@ fn main() -> Result<()> {
     };
     may::config()
         .set_stack_size(stack_size)
-        .set_io_workers(4)
-        .set_workers(2);
+        .set_io_workers(0)
+        .set_workers(1);
 
     log_init();
     config::show_config();
