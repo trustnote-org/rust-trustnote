@@ -24,7 +24,6 @@ fn read_my_witnesses() -> Result<Vec<String>> {
             witnesses_str
         );
 
-        println!("sql = {}", sql);
         let mut stmt = db.prepare_cached(&sql)?;
         stmt.execute(&[])?;
         Ok(config_witnesses.to_vec())

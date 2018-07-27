@@ -1242,13 +1242,13 @@ impl HubConn {
         let catchup_chain: catchup::CatchupChain = serde_json::from_value(ret).unwrap();
 
         // print out unsupported messages!
-        for j in &catchup_chain.stable_last_ball_joints {
-            for m in &j.unit.messages {
-                if let Some(::spec::Payload::Other(v)) = &m.payload {
-                    error!("app = {}, v = {}", m.app, v);
-                }
-            }
-        }
+        // for j in &catchup_chain.stable_last_ball_joints {
+        //     for m in &j.unit.messages {
+        //         if let Some(::spec::Payload::Other(v)) = &m.payload {
+        //             error!("app = {}, v = {}", m.app, v);
+        //         }
+        //     }
+        // }
 
         catchup::process_catchup_chain(&db, catchup_chain)?;
 
@@ -1505,6 +1505,7 @@ pub fn start_catchup() -> Result<()> {
         None => bail!("no outbound connection found"),
         Some(c) => c,
     };
+    error!("catchup started");
 
     let mut db = db::DB_POOL.get_connection();
     catchup::purge_handled_balls_from_hash_tree(&db)?;
@@ -1555,7 +1556,6 @@ pub fn start_catchup() -> Result<()> {
 
         if let Err(e) = ws.request_next_hash_tree(&mut db, &balls[0], &balls[1]) {
             error!("request_next_hash_tree err={}", e);
-            ws.close();
             // we try with a different connection
             ws = match WSS.get_next_outbound() {
                 None => bail!("can't find outbound connection"),
@@ -1572,7 +1572,7 @@ pub fn start_catchup() -> Result<()> {
         coroutine::sleep(Duration::from_secs(1));
     }
     WSS.request_free_joints_from_all_outbound_peers()?;
-
+    error!("catchup done");
     Ok(())
 }
 
@@ -1583,14 +1583,16 @@ pub fn re_requeset_lost_joints(db: &Connection) -> Result<()> {
         None => return Ok(()),
     };
 
+    let units = joint_storage::find_lost_joints(db)?;
+    if units.is_empty() {
+        return Ok(());
+    }
+    info!("lost units {:?}", units);
+
     let ws = match WSS.get_next_peer() {
         None => bail!("failed to find next peer"),
         Some(c) => c,
     };
-
-    let units = joint_storage::find_lost_joints(db)?;
-    info!("lost units {:?}", units);
-
     info!("found next peer {}", ws.get_peer());
 
     // this is not an atomic operation, but it's fine to request the unit in working

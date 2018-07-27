@@ -50,7 +50,9 @@ impl DatabasePool {
                 go!(s, || {
                     let conn = match Connection::open_with_flags(
                         &db_path,
-                        OpenFlags::SQLITE_OPEN_READ_WRITE,
+                        OpenFlags::SQLITE_OPEN_READ_WRITE
+                            // | OpenFlags::SQLITE_OPEN_SHARED_CACHE
+                            // | OpenFlags::SQLITE_OPEN_NO_MUTEX,
                     ) {
                         Ok(conn) => conn,
                         Err(e) => {
