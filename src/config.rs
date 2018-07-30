@@ -29,6 +29,7 @@ pub const COUNT_MC_BALLS_FOR_PAID_WITNESSING: u32 = 100;
 pub const MAX_DATA_FEED_NAME_LENGTH: usize = 64;
 pub const MAX_DATA_FEED_VALUE_LENGTH: usize = 64;
 pub const MAX_ITEMS_IN_CACHE: usize = 1000;
+pub const MAX_OUTBOUND_CONNECTIONS: usize = 5;
 
 lazy_static! {
     static ref CONFIG: RwLock<Config> = RwLock::new({
@@ -42,9 +43,8 @@ lazy_static! {
 
 pub fn show_config() {
     println!("\nconfig:");
-    println!("\tremote_hub = {}", get_remote_hub_url());
+    println!("\tremote_hub = {:?}", get_remote_hub_url());
     println!("\thub_server_port = {}", get_hub_server_port());
-    println!("\tremote_hub = {}", get_remote_hub_url());
     println!("\tdatabase_path = {:?}", get_database_path());
     println!("\n");
 }
@@ -61,10 +61,10 @@ pub fn get_genesis_unit() -> String {
         .expect("failed to read genesis unit")
 }
 
-pub fn get_remote_hub_url() -> String {
+pub fn get_remote_hub_url() -> Vec<String> {
     let cfg = CONFIG.read().unwrap();
-    cfg.get::<String>("remote_hub")
-        .unwrap_or_else(|_| "127.0.0.1:6655".to_owned())
+    cfg.get::<Vec<String>>("remote_hub")
+        .unwrap_or_else(|_| vec!["127.0.0.1:6655".to_string()])
 }
 
 pub fn get_hub_server_port() -> u16 {
