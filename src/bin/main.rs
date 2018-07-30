@@ -109,7 +109,7 @@ fn main() -> Result<()> {
     let stack_size = if cfg!(debug_assertions) {
         0x4000
     } else {
-        0x1000
+        0x4000
     };
     may::config()
         .set_stack_size(stack_size)

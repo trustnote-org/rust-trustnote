@@ -1769,20 +1769,21 @@ pub fn notify_watchers_about_stable_joints(mci: u32) -> Result<()> {
 
 #[allow(dead_code)]
 pub fn test_local_catchup() -> Result<()> {
-    use validation::{ValidationError, ValidationOk};
-    let db_local = Connection::open(
-        "/Users/joyious/Library/Application Support/rust-trustnote-test/trustnote.sqlite",
-    ).unwrap();
+    use rusqlite::OpenFlags;
+    use validation::ValidationOk;
+    let db_local =
+        Connection::open_with_flags("trustnote.sqlite", OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
     let mut stmt = db_local.prepare_cached("SELECT unit FROM units ORDER BY level")?;
 
     let rows = stmt
-        .query_map(&[], |row| row.get(0))?
-        .collect::<::std::result::Result<Vec<String>, _>>()?;
+        .query_map(&[], |row| row.get::<_, String>(0))?
+        .map(|u| storage::read_joint_directly(&db_local, u.as_ref().unwrap()))
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
 
-    info!("Catchup start");
+    error!("Catchup start");
     let mut db = db::DB_POOL.get_connection();
-    for unit in rows {
-        let joint = storage::read_joint_directly(&db_local, &unit)?;
+    for joint in rows {
+        // let joint = storage::read_joint_directly(&db_local, &unit)?;
 
         //self.handle_online_joint(joint, mut &db)?;
 
@@ -1807,11 +1808,15 @@ pub fn test_local_catchup() -> Result<()> {
                 }
             },
             Err(err) => {
-                error!("validation other err={}, unit={}", err, unit);
+                error!(
+                    "validation other err={}, unit={}",
+                    err,
+                    joint.get_unit_hash()
+                );
             }
         }
     }
 
-    info!("Catchup done");
+    error!("Catchup done");
     Ok(())
 }
