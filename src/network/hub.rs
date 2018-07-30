@@ -1766,3 +1766,52 @@ pub fn notify_watchers_about_stable_joints(mci: u32) -> Result<()> {
 
     notify_light_clients_about_stable_joints(&db, prev_last_ball_mci, last_ball_mci)
 }
+
+#[allow(dead_code)]
+pub fn test_local_catchup() -> Result<()> {
+    use validation::{ValidationError, ValidationOk};
+    let db_local = Connection::open(
+        "/Users/joyious/Library/Application Support/rust-trustnote-test/trustnote.sqlite",
+    ).unwrap();
+    let mut stmt = db_local.prepare_cached("SELECT unit FROM units ORDER BY level")?;
+
+    let rows = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    info!("Catchup start");
+    let mut db = db::DB_POOL.get_connection();
+    for unit in rows {
+        let joint = storage::read_joint_directly(&db_local, &unit)?;
+
+        //self.handle_online_joint(joint, mut &db)?;
+
+        joint_storage::check_new_joint(&db, &joint)?;
+
+        match validation::validate(&mut db, &joint) {
+            Ok(ok) => match ok {
+                ValidationOk::Unsigned(_) => {
+                    if joint.unsigned != Some(true) {
+                        bail!("ifOkUnsigned() signed");
+                    }
+                }
+                ValidationOk::Signed(validate_state, lock) => {
+                    if joint.unsigned == Some(true) {
+                        bail!("ifOk() unsigned");
+                    }
+                    joint.save(validate_state)?;
+                    drop(lock);
+
+                    // wake up other joints that depend on me
+                    //find_and_handle_joints_that_are_ready(&mut db, Some(&unit))?;
+                }
+            },
+            Err(err) => {
+                error!("validation other err={}, unit={}", err, unit);
+            }
+        }
+    }
+
+    info!("Catchup done");
+    Ok(())
+}
