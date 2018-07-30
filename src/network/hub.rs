@@ -245,6 +245,23 @@ impl WsConnections {
         self.get_next_outbound().or_else(|| self.get_next_inbound())
     }
 
+    fn get_peers_from_remote(&self) -> Result<Vec<String>> {
+        let mut peers: Vec<String> = Vec::new();
+        let mut ws_tmp: Option<Arc<HubConn>> = None;
+        while let Some(ws) = self.get_next_peer() {
+            if ws_tmp.is_none() {
+                ws_tmp = Some(ws.clone());
+            } else if ws_tmp.as_ref().unwrap().conn_eq(&ws) {
+                break;
+            }
+
+            let mut tmp: Vec<String> =
+                serde_json::from_value(ws.send_request("get_peers", &Value::Null)?)?;
+            peers.append(&mut tmp);
+        }
+        Ok(peers)
+    }
+
     pub fn get_connection_by_name(&self, peer: &str) -> Option<Arc<HubConn>> {
         let g = self.outbound.read().unwrap();
         for c in &*g {
@@ -331,12 +348,12 @@ impl WsConnections {
 }
 
 // TODO: change config hub to vector
-fn get_unconnected_peers_in_config() -> Option<String> {
-    let config_peer = config::get_remote_hub_url();
-    if WSS.contains(&config_peer) {
-        return None;
-    }
-    Some(config_peer)
+fn get_unconnected_peers_in_config() -> Result<Vec<String>> {
+    let config_peers = config::get_remote_hub_url();
+    Ok(config_peers
+        .into_iter()
+        .filter(|peer| WSS.contains(peer))
+        .collect::<Vec<_>>())
 }
 
 fn get_unconnected_peers_in_db() -> Result<Vec<String>> {
@@ -378,15 +395,14 @@ fn get_unconnected_peers_in_db() -> Result<Vec<String>> {
 
 pub fn get_unconnected_remote_peer() -> Result<Vec<String>> {
     let mut peers: Vec<String> = Vec::new();
-    // TODO: need to collect peers from all outbound connections
-    // let peers = WSS.get_peers_from_remote()?;
-    if let Some(ws) = WSS.get_next_peer() {
-        peers = serde_json::from_value(ws.send_request("get_peers", &Value::Null)?)?;
+
+    if let Ok(mut tmp) = WSS.get_peers_from_remote() {
+        peers.append(&mut tmp);
     };
 
     Ok(peers
         .into_iter()
-        .filter(|peer| WSS.contains(peer))
+        .filter(|peer| !WSS.contains(peer))
         .collect::<Vec<_>>())
 }
 
@@ -396,36 +412,28 @@ pub fn auto_connection() -> Result<()> {
         return Ok(());
     }
 
-    // TODO: unify the processing
-    if let Some(v) = get_unconnected_peers_in_config() {
-        if create_outbound_conn(&v).is_ok() {
-            counts -= 1;
-            if counts == 0 {
-                return Ok(());
+    let mut connect = |peers: &Vec<String>| -> Result<()> {
+        for peer in peers {
+            if create_outbound_conn(peer).is_ok() {
+                counts -= 1;
+                if counts == 0 {
+                    return Ok(());
+                }
             }
         }
+        Ok(())
+    };
+
+    if let Ok(peers) = get_unconnected_peers_in_config() {
+        connect(&peers)?
     }
 
     if let Ok(peers) = get_unconnected_remote_peer() {
-        for peer in &peers {
-            if create_outbound_conn(peer).is_ok() {
-                counts -= 1;
-                if counts == 0 {
-                    return Ok(());
-                }
-            }
-        }
+        connect(&peers)?
     }
 
     if let Ok(peers) = get_unconnected_peers_in_db() {
-        for peer in &peers {
-            if create_outbound_conn(peer).is_ok() {
-                counts -= 1;
-                if counts == 0 {
-                    return Ok(());
-                }
-            }
-        }
+        connect(&peers)?
     }
 
     Ok(())
@@ -1583,10 +1591,11 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<HubConn>
     let req = Request::from(url);
     let (conn, _) = client(req, stream)?;
     // let ws
-    let ws = WsConnection::new(conn, HubData::default(), peer, Role::Client)?;
-
-    WSS.add_outbound(ws.clone());
-    Ok(ws)
+    if let Ok(ws) = WsConnection::new(conn, HubData::default(), peer, Role::Client) {
+        WSS.add_outbound(ws.clone());
+        return Ok(ws);
+    }
+    bail!("fail to connected")
 }
 
 fn check_catchup_leftover(db: &Connection) -> Result<bool> {
