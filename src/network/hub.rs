@@ -247,18 +247,21 @@ impl WsConnections {
 
     fn get_peers_from_remote(&self) -> Result<Vec<String>> {
         let mut peers: Vec<String> = Vec::new();
-        let mut ws_tmp: Option<Arc<HubConn>> = None;
-        while let Some(ws) = self.get_next_peer() {
-            if ws_tmp.is_none() {
-                ws_tmp = Some(ws.clone());
-            } else if ws_tmp.as_ref().unwrap().conn_eq(&ws) {
-                break;
-            }
 
+        let out_bound_peers = self.outbound.read().unwrap().to_vec();
+        for out_bound_peer in out_bound_peers {
             let mut tmp: Vec<String> =
-                serde_json::from_value(ws.send_request("get_peers", &Value::Null)?)?;
+                serde_json::from_value(out_bound_peer.send_request("get_peers", &Value::Null)?)?;
             peers.append(&mut tmp);
         }
+
+        let in_bound_peers = self.inbound.read().unwrap().to_vec();
+        for in_bound_peer in in_bound_peers {
+            let mut tmp: Vec<String> =
+                serde_json::from_value(in_bound_peer.send_request("get_peers", &Value::Null)?)?;
+            peers.append(&mut tmp);
+        }
+
         Ok(peers)
     }
 
@@ -347,12 +350,11 @@ impl WsConnections {
     }
 }
 
-// TODO: change config hub to vector
 fn get_unconnected_peers_in_config() -> Result<Vec<String>> {
     let config_peers = config::get_remote_hub_url();
     Ok(config_peers
         .into_iter()
-        .filter(|peer| WSS.contains(peer))
+        .filter(|peer| !WSS.contains(peer))
         .collect::<Vec<_>>())
 }
 
@@ -393,12 +395,8 @@ fn get_unconnected_peers_in_db() -> Result<Vec<String>> {
     Ok(peers)
 }
 
-pub fn get_unconnected_remote_peer() -> Result<Vec<String>> {
-    let mut peers: Vec<String> = Vec::new();
-
-    if let Ok(mut tmp) = WSS.get_peers_from_remote() {
-        peers.append(&mut tmp);
-    };
+pub fn get_unconnected_remote_peers() -> Result<Vec<String>> {
+    let peers = WSS.get_peers_from_remote()?;
 
     Ok(peers
         .into_iter()
@@ -412,7 +410,7 @@ pub fn auto_connection() -> Result<()> {
         return Ok(());
     }
 
-    let mut connect = |peers: &Vec<String>| -> Result<()> {
+    if let Ok(peers) = get_unconnected_peers_in_config() {
         for peer in peers {
             if create_outbound_conn(peer).is_ok() {
                 counts -= 1;
@@ -421,19 +419,28 @@ pub fn auto_connection() -> Result<()> {
                 }
             }
         }
-        Ok(())
-    };
-
-    if let Ok(peers) = get_unconnected_peers_in_config() {
-        connect(&peers)?
     }
 
-    if let Ok(peers) = get_unconnected_remote_peer() {
-        connect(&peers)?
+    if let Ok(peers) = get_unconnected_remote_peers() {
+        for peer in peers {
+            if create_outbound_conn(peer).is_ok() {
+                counts -= 1;
+                if counts == 0 {
+                    return Ok(());
+                }
+            }
+        }
     }
 
     if let Ok(peers) = get_unconnected_peers_in_db() {
-        connect(&peers)?
+        for peer in peers {
+            if create_outbound_conn(peer).is_ok() {
+                counts -= 1;
+                if counts == 0 {
+                    return Ok(());
+                }
+            }
+        }
     }
 
     Ok(())
@@ -1590,12 +1597,11 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<HubConn>
     let url = Url::parse("wss://localhost/")?;
     let req = Request::from(url);
     let (conn, _) = client(req, stream)?;
-    // let ws
-    if let Ok(ws) = WsConnection::new(conn, HubData::default(), peer, Role::Client) {
-        WSS.add_outbound(ws.clone());
-        return Ok(ws);
-    }
-    bail!("fail to connected")
+
+    let ws = WsConnection::new(conn, HubData::default(), peer, Role::Client)?;
+
+    WSS.add_outbound(ws.clone());
+    Ok(ws)
 }
 
 fn check_catchup_leftover(db: &Connection) -> Result<bool> {

@@ -56,9 +56,9 @@ fn connect_to_remote() -> Result<()> {
     use network::hub;
     let peers = config::get_remote_hub_url();
 
-    for peer in &peers {
-        if hub::create_outbound_conn(peer).is_err() {
-            error!(" fail to connected: {}", peer);
+    for peer in peers {
+        if let Err(e) = hub::create_outbound_conn(&peer) {
+            error!(" fail to connected: {}, err={}", peer, e);
         }
     }
 

@@ -45,7 +45,6 @@ pub fn show_config() {
     println!("\nconfig:");
     println!("\tremote_hub = {:?}", get_remote_hub_url());
     println!("\thub_server_port = {}", get_hub_server_port());
-    println!("\tremote_hub = {:?}", get_remote_hub_url());
     println!("\tdatabase_path = {:?}", get_database_path());
     println!("\n");
 }
@@ -65,7 +64,7 @@ pub fn get_genesis_unit() -> String {
 pub fn get_remote_hub_url() -> Vec<String> {
     let cfg = CONFIG.read().unwrap();
     cfg.get::<Vec<String>>("remote_hub")
-    	.unwrap_or_else(|_| vec!["127.0.0.1:6655".to_string()])
+        .unwrap_or_else(|_| vec!["127.0.0.1:6655".to_string()])
 }
 
 pub fn get_hub_server_port() -> u16 {
