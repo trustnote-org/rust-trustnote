@@ -2,7 +2,6 @@
 extern crate log;
 #[macro_use]
 extern crate may;
-extern crate may_thread;
 extern crate may_waiter;
 extern crate num_cpus;
 extern crate rusqlite;

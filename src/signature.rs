@@ -5,7 +5,7 @@ use secp256k1::{key, Message, Secp256k1, Signature};
 
 lazy_static! {
     // initialize consume too much memory, init it in thread context
-    static ref SECP256K1: Secp256k1 = ::may_thread::join(|| Secp256k1::new());
+    static ref SECP256K1: Secp256k1 = ::std::thread::spawn(|| Secp256k1::new()).join().unwrap();
 }
 
 /// return a bas64 string for the encrypted hash with the priv_key
