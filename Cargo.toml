@@ -50,4 +50,5 @@ lto = true
 members = [
     "hub",
     "cli",
+    "cli/core",
 ]

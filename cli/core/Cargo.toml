@@ -1,0 +1,9 @@
+[package]
+description = "trustnote wallet core rust implmentation"
+name = "trustnote_cli_core"
+version = "0.1.0"
+authors = ["Xudong Huang <huangxu008@hotmail.com>"]
+license = "MIT"
+
+[dependencies]
+log = "0.4"
