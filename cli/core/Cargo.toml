@@ -7,4 +7,6 @@ license = "MIT"
 
 [dependencies]
 log = "0.4"
+rand = "0.5"
+bitcoin = "0.13"
 wallet = { git = "https://github.com/rust-bitcoin/rust-wallet.git" }
