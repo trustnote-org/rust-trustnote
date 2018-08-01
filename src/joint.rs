@@ -108,7 +108,8 @@ impl Joint {
                 stmt.execute(&[unit_hash])?;
             }
         } else {
-            let parents_set = unit.parent_units
+            let parents_set = unit
+                .parent_units
                 .iter()
                 .map(|s| format!("'{}'", s))
                 .collect::<Vec<_>>()
@@ -128,7 +129,8 @@ impl Joint {
         }
 
         let unit_hash = self.get_unit_hash();
-        let mut stmt = tx.prepare_cached("INSERT INTO unit_witnesses (unit, address) VALUES(?,?)")?;
+        let mut stmt =
+            tx.prepare_cached("INSERT INTO unit_witnesses (unit, address) VALUES(?,?)")?;
         for address in &unit.witnesses {
             stmt.execute(&[unit_hash, address])?;
         }
@@ -295,7 +297,8 @@ impl Joint {
 
     fn update_best_parent(&self, tx: &Transaction) -> Result<String> {
         let unit = &self.unit;
-        let parents_set = unit.parent_units
+        let parents_set = unit
+            .parent_units
             .iter()
             .map(|s| format!("'{}'", s))
             .collect::<Vec<_>>()
@@ -338,7 +341,8 @@ impl Joint {
     }
 
     fn update_level(&self, tx: &Transaction) -> Result<()> {
-        let parents_set = self.unit
+        let parents_set = self
+            .unit
             .parent_units
             .iter()
             .map(|s| format!("'{}'", s))
@@ -397,7 +401,8 @@ impl Joint {
 
     fn update_witness_level(&self, tx: &Transaction, best_parent_unit: String) -> Result<()> {
         if self.unit.witnesses.is_empty() {
-            let witnesses_list_unit = self.unit
+            let witnesses_list_unit = self
+                .unit
                 .witness_list_unit
                 .as_ref()
                 .expect("no witnesses list unit");
@@ -604,7 +609,9 @@ impl Joint {
     pub fn get_joint_hash(&self) -> String {
         use base64;
         use sha2::{Digest, Sha256};
-        base64::encode(&Sha256::digest(&serde_json::to_vec(self).expect("joint to json failed")))
+        base64::encode(&Sha256::digest(
+            &serde_json::to_vec(self).expect("joint to json failed"),
+        ))
     }
 }
 

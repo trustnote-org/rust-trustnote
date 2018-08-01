@@ -197,8 +197,10 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
         if content_hash.len() != config::HASH_LENGTH {
             bail_with_validation_err!(UnitError, "wrong content_hash length");
         }
-        if unit.earned_headers_commission_recipients.len() > 0 || unit.headers_commission.is_some()
-            || unit.payload_commission.is_some() || unit.main_chain_index.is_some()
+        if unit.earned_headers_commission_recipients.len() > 0
+            || unit.headers_commission.is_some()
+            || unit.payload_commission.is_some()
+            || unit.main_chain_index.is_some()
             || !unit.messages.is_empty()
         {
             bail_with_validation_err!(UnitError, "unknown fields in nonserial unit");
@@ -384,7 +386,8 @@ fn validate_hash_tree(
         );
     }
 
-    let parent_units = unit.parent_units
+    let parent_units = unit
+        .parent_units
         .iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
@@ -398,7 +401,8 @@ fn validate_hash_tree(
         parent_units, parent_units
     );
     let mut stmt = tx.prepare(&sql)?;
-    let parent_balls = stmt.query_map(&[], |row| row.get(0))?
+    let parent_balls = stmt
+        .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if parent_balls.len() != unit.parent_units.len() {
         bail_with_validation_err!(
@@ -448,7 +452,8 @@ fn validate_hash_tree(
     );
 
     let mut stmt = tx.prepare(&sql)?;
-    let skiplist_balls = stmt.query_map(&[], |row| row.get(0))?
+    let skiplist_balls = stmt
+        .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if skiplist_balls.len() != joint.skiplist_units.len() {
         bail_with_validation_err!(JointError, "some skiplist balls not found");
@@ -475,7 +480,8 @@ fn validate_parents(
     }
 
     let unit_hash = joint.get_unit_hash();
-    let parent_units = unit.parent_units
+    let parent_units = unit
+        .parent_units
         .iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
@@ -519,18 +525,18 @@ fn validate_parents(
             feild, join
         );
         let mut stmt = tx.prepare_cached(&sql)?;
-        let mut rows = stmt.query_map(&[parent_unit], |row| UnitProps {
-            unit_props: graph::UnitProps {
-                unit: row.get("unit"),
-                level: row.get("level"),
-                latest_included_mc_index: row.get("latest_included_mc_index"),
-                main_chain_index: row.get("main_chain_index"),
-                is_on_main_chain: row.get("is_on_main_chain"),
-                is_free: row.get("is_free"),
-            },
-            ball: row.get_checked("ball").unwrap_or(None),
-        })?
-            .collect::<::std::result::Result<Vec<UnitProps>, _>>()?;
+        let mut rows = stmt
+            .query_map(&[parent_unit], |row| UnitProps {
+                unit_props: graph::UnitProps {
+                    unit: row.get("unit"),
+                    level: row.get("level"),
+                    latest_included_mc_index: row.get("latest_included_mc_index"),
+                    main_chain_index: row.get("main_chain_index"),
+                    is_on_main_chain: row.get("is_on_main_chain"),
+                    is_free: row.get("is_free"),
+                },
+                ball: row.get_checked("ball").unwrap_or(None),
+            })?.collect::<::std::result::Result<Vec<UnitProps>, _>>()?;
         if rows.is_empty() {
             missing_parent_units.push(parent_unit.clone());
             continue;
@@ -592,14 +598,14 @@ fn validate_parents(
         ball: Option<String>,
         max_known_mci: u32,
     }
-    let mut rows = stmt.query_map(&[last_ball_unit], |row| LastBallUnitProps {
-        is_stable: row.get(0),
-        is_on_main_chain: row.get(1),
-        main_chain_index: row.get(2),
-        ball: row.get(3),
-        max_known_mci: row.get(4),
-    })?
-        .collect::<::std::result::Result<Vec<LastBallUnitProps>, _>>()?;
+    let mut rows = stmt
+        .query_map(&[last_ball_unit], |row| LastBallUnitProps {
+            is_stable: row.get(0),
+            is_on_main_chain: row.get(1),
+            main_chain_index: row.get(2),
+            ball: row.get(3),
+            max_known_mci: row.get(4),
+        })?.collect::<::std::result::Result<Vec<LastBallUnitProps>, _>>()?;
 
     if rows.len() != 1 {
         return create_err(format!("last ball unit {} not found", last_ball_unit));
@@ -642,7 +648,8 @@ fn validate_parents(
             parent_units
         );
         let mut stmt = tx.prepare(&sql)?;
-        let max_parent_last_ball_mci = stmt.query_map(&[], |row| row.get(0))?
+        let max_parent_last_ball_mci = stmt
+            .query_map(&[], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
         if max_parent_last_ball_mci[0] > Some(validate_state.last_ball_mci) {
             bail_with_validation_err!(
@@ -707,7 +714,8 @@ fn validate_parents(
     }
 
     let mut stmt = tx.prepare_cached("SELECT ball FROM balls WHERE unit=?")?;
-    let balls = stmt.query_map(&[last_ball_unit], |row| row.get(0))?
+    let balls = stmt
+        .query_map(&[last_ball_unit], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if balls.is_empty() {
         return create_err(format!(
@@ -743,8 +751,7 @@ fn validate_skip_list(tx: &Transaction, skip_list: &Vec<String>) -> Result<()> {
                 is_stable: row.get(1),
                 is_on_main_chain: row.get(2),
                 main_chain_index: row.get(3),
-            })?
-            .collect::<::std::result::Result<Vec<TempUnit>, _>>()?;
+            })?.collect::<::std::result::Result<Vec<TempUnit>, _>>()?;
 
         if rows.is_empty() {
             bail_with_validation_err!(UnitError, "skiplist unit {} not found", skip_list_unit);
@@ -784,7 +791,8 @@ fn validate_witnesses(
         let determine_result = storage::determine_if_has_witness_list_mutations_along_mc(
             tx,
             unit,
-            &unit.last_ball_unit
+            &unit
+                .last_ball_unit
                 .as_ref()
                 .expect("last_ball_unit is empty"),
             temp_witnesses,
@@ -839,12 +847,12 @@ fn validate_witnesses(
             is_stable: u32,
             main_chain_index: Option<u32>,
         }
-        let units = stmt.query_map(&[witness_list_unit], |rows| TempUnits {
-            sequence: rows.get(0),
-            is_stable: rows.get(1),
-            main_chain_index: rows.get(2),
-        })?
-            .collect::<::std::result::Result<Vec<_>, _>>()?;
+        let units = stmt
+            .query_map(&[witness_list_unit], |rows| TempUnits {
+                sequence: rows.get(0),
+                is_stable: rows.get(1),
+                main_chain_index: rows.get(2),
+            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
         if units.is_empty() {
             bail_with_validation_err!(UnitError, "referenced witness list unit is empty")
         }
@@ -861,7 +869,8 @@ fn validate_witnesses(
 
         let mut stmt =
             tx.prepare_cached("SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
-        let witnesses = stmt.query_map(&[witness_list_unit], |row| row.get(0))?
+        let witnesses = stmt
+            .query_map(&[witness_list_unit], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
         if witnesses.is_empty() {
             bail_with_validation_err!(UnitError, "referenced witness list unit has no witnessesl")
@@ -888,7 +897,8 @@ fn validate_witnesses(
             validate_witness_list_mutations(&unit.witnesses)?;
             return Ok(());
         }
-        let unit_witnesses: String = unit.witnesses
+        let unit_witnesses: String = unit
+            .witnesses
             .iter()
             .map(|s| format!("'{}'", s))
             .collect::<Vec<String>>()
@@ -967,10 +977,9 @@ fn validate_author(
                                                address_definition: Value,
                                                nonserial: bool|
      -> Result<()> {
-        if !nonserial
-            || !validate_state
-                .addresses_with_forked_path
-                .contains(&author.address)
+        if !nonserial || !validate_state
+            .addresses_with_forked_path
+            .contains(&author.address)
         {
             bail_with_validation_err!(
                 UnitError,
@@ -1037,19 +1046,18 @@ fn validate_author(
         let sql = format!("SELECT unit FROM units {} JOIN unit_authors USING(unit) \
 			WHERE address=? AND definition_chash IS NOT NULL AND ( main_chain_index>? OR main_chain_index IS NULL)",cross);
         let mut stmt = tx.prepare_cached(&sql)?;
-        let rows = stmt.query_map(&[&author.address, &validate_state.last_ball_mci], |row| {
-            row.get(0)
-        })?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
+        let rows = stmt
+            .query_map(&[&author.address, &validate_state.last_ball_mci], |row| {
+                row.get(0)
+            })?.collect::<::std::result::Result<Vec<String>, _>>()?;
 
         if rows.is_empty() {
             validate_definition(validate_state, nonserial)?;
             return Ok(());
         }
-        if !nonserial
-            || !validate_state
-                .addresses_with_forked_path
-                .contains(&author.address)
+        if !nonserial || !validate_state
+            .addresses_with_forked_path
+            .contains(&author.address)
         {
             bail_with_validation_err!(UnitError, "you can't send anything before your last definition is stable and before last ball");
         }
@@ -1071,20 +1079,19 @@ fn validate_author(
             "SELECT unit FROM address_definition_changes JOIN units USING(unit) \
              WHERE address=? AND (is_stable=0 OR main_chain_index>? OR main_chain_index IS NULL)",
         )?;
-        let rows = stmt.query_map(&[&author.address, &validate_state.last_ball_mci], |row| {
-            row.get(0)
-        })?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
+        let rows = stmt
+            .query_map(&[&author.address, &validate_state.last_ball_mci], |row| {
+                row.get(0)
+            })?.collect::<::std::result::Result<Vec<String>, _>>()?;
 
         if rows.is_empty() {
             check_no_pending_definition(validate_state, nonserial)?;
             return Ok(());
         }
 
-        if !nonserial
-            || !validate_state
-                .addresses_with_forked_path
-                .contains(&author.address)
+        if !nonserial || !validate_state
+            .addresses_with_forked_path
+            .contains(&author.address)
         {
             bail_with_validation_err!(
                 UnitError,
@@ -1128,18 +1135,18 @@ fn validate_author(
         );
 
             let mut stmt = tx.prepare_cached(&sql)?;
-            let rows = stmt.query_map(
-                &[
-                    &author.address,
-                    &validate_state.max_parent_limci,
-                    &unit.unit,
-                ],
-                |row| TempUnit {
-                    unit: row.get(0),
-                    is_stable: row.get(1),
-                },
-            )?
-                .collect::<::std::result::Result<Vec<_>, _>>()?;
+            let rows = stmt
+                .query_map(
+                    &[
+                        &author.address,
+                        &validate_state.max_parent_limci,
+                        &unit.unit,
+                    ],
+                    |row| TempUnit {
+                        unit: row.get(0),
+                        is_stable: row.get(1),
+                    },
+                )?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
             let mut conflicting_unit_props = Vec::new();
             for row in &rows {
@@ -1331,7 +1338,8 @@ fn validate_message(
             config::MAX_SPEND_PROOFS_PER_MESSAGE
         );
 
-        let author_addresses = unit.authors
+        let author_addresses = unit
+            .authors
             .iter()
             .map(|a| a.address.clone())
             .collect::<Vec<_>>();
@@ -1386,7 +1394,8 @@ fn validate_message(
         );
     }
 
-    if message.payload_location != "inline" && message.payload_location != "uri"
+    if message.payload_location != "inline"
+        && message.payload_location != "uri"
         && message.payload_location != "none"
     {
         bail_with_validation_err!(
@@ -1482,8 +1491,7 @@ fn validate_spend_proofs(
                 &unit.authors[0].address
             };
             format!("spend_proof='{}' AND address='{}'", s.spend_proof, address)
-        })
-        .collect::<Vec<_>>()
+        }).collect::<Vec<_>>()
         .join(" OR ");
 
     let sql = format!(
@@ -1514,13 +1522,13 @@ fn check_for_double_spend(
         sequence: String,
     };
 
-    let rows = stmt.query_map(&[], |row| ConflictingRecord {
-        address: row.get("address"),
-        unit: row.get("unit"),
-        main_chain_index: row.get("main_chain_index"),
-        sequence: row.get("sequence"),
-    })?
-        .collect::<::std::result::Result<Vec<ConflictingRecord>, _>>()?;
+    let rows = stmt
+        .query_map(&[], |row| ConflictingRecord {
+            address: row.get("address"),
+            unit: row.get("unit"),
+            main_chain_index: row.get("main_chain_index"),
+            sequence: row.get("sequence"),
+        })?.collect::<::std::result::Result<Vec<ConflictingRecord>, _>>()?;
 
     if rows.is_empty() {
         return Ok(());
@@ -1690,7 +1698,8 @@ fn validate_payment(
     //Base currency
     if payment.asset.is_none() {
         ensure_with_validation_err!(
-            payment.address.is_none() && payment.definition_chash.is_none()
+            payment.address.is_none()
+                && payment.definition_chash.is_none()
                 && payment.denomination.is_none(),
             UnitError,
             "unknown fields in payment message"
@@ -1802,7 +1811,8 @@ fn validate_payment_inputs_and_outputs(
 
                 //Should we make Input as a enum and all types as its variants?
                 ensure_with_validation_err!(
-                    input.from_main_chain_index.is_none() && input.message_index.is_none()
+                    input.from_main_chain_index.is_none()
+                        && input.message_index.is_none()
                         && input.output_index.is_none()
                         && input.to_main_chain_index.is_none()
                         && input.unit.is_none(),
@@ -1914,7 +1924,8 @@ fn validate_payment_inputs_and_outputs(
                 }
 
                 ensure_with_validation_err!(
-                    input.address.is_none() && input.amount.is_none()
+                    input.address.is_none()
+                        && input.amount.is_none()
                         && input.from_main_chain_index.is_none()
                         && input.serial_number.is_none()
                         && input.to_main_chain_index.is_none(),
@@ -1975,19 +1986,19 @@ fn validate_payment_inputs_and_outputs(
                     asset: Option<String>,
                 }
 
-                let rows = stmt.query_map(
-                    &[input_unit, &input_message_index, &input_output_index],
-                    |row| OutputTemp {
-                        amount: row.get(0),
-                        // is_stable: row.get(1),
-                        sequence: row.get(2),
-                        address: row.get(3),
-                        main_chain_index: row.get(4),
-                        denomination: row.get(5),
-                        asset: row.get(6),
-                    },
-                )?
-                    .collect::<::std::result::Result<Vec<_>, _>>()?;
+                let rows = stmt
+                    .query_map(
+                        &[input_unit, &input_message_index, &input_output_index],
+                        |row| OutputTemp {
+                            amount: row.get(0),
+                            // is_stable: row.get(1),
+                            sequence: row.get(2),
+                            address: row.get(3),
+                            main_chain_index: row.get(4),
+                            denomination: row.get(5),
+                            asset: row.get(6),
+                        },
+                    )?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
                 if rows.len() > 1 {
                     bail_with_validation_err!(UnitError, "more than 1 src output");
@@ -2069,9 +2080,11 @@ fn validate_payment_inputs_and_outputs(
                     b_have_witnessing = true;
                 }
                 ensure_with_validation_err!(
-                    input.amount.is_none() && input.serial_number.is_none()
+                    input.amount.is_none()
+                        && input.serial_number.is_none()
                         && input.message_index.is_none()
-                        && input.output_index.is_none() && input.unit.is_none(),
+                        && input.output_index.is_none()
+                        && input.unit.is_none(),
                     UnitError,
                     "unknown fields in witnessing input"
                 );
@@ -2210,7 +2223,8 @@ fn validate_payment_inputs_and_outputs(
 
     ensure_with_validation_err!(
         total_input
-            == total_output + unit.headers_commission.unwrap_or(0) as i64
+            == total_output
+                + unit.headers_commission.unwrap_or(0) as i64
                 + unit.payload_commission.unwrap_or(0) as i64,
         UnitError,
         "inputs and outputs do not balance: {} != {} + {} + {}",

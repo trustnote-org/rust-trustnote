@@ -253,7 +253,8 @@ impl<T> WsConnection<T> {
                     "response" => {
                         // set the wait req
                         let tag = match value[1]["tag"].as_str() {
-                            Some(t) => t.parse()
+                            Some(t) => t
+                                .parse()
                                 .unwrap_or_else(|e| panic!("tag {:?} is not u64! err={}", t, e)),
                             None => {
                                 error!("tag is not found for response");

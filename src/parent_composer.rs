@@ -83,27 +83,29 @@ fn pick_parent_units(db: &Connection, witnesses_list: &str) -> Result<Vec<String
         witnesses_list, config::MAX_PARENT_PER_UNIT);
 
     let mut stmt = db.prepare_cached(&sql)?;
-    let rows = stmt.query_map(&[], |row| TempUnit {
-        unit: row.get(0),
-        version: row.get(1),
-        alt: row.get(2),
-        count_matching_witnesses: row.get(3),
-    })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+    let rows = stmt
+        .query_map(&[], |row| TempUnit {
+            unit: row.get(0),
+            version: row.get(1),
+            alt: row.get(2),
+            count_matching_witnesses: row.get(3),
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
-    if rows.iter()
+    if rows
+        .iter()
         .any(|row| row.version != config::VERSION || row.alt != config::ALT)
     {
         bail!("wrong network");
     }
     let count_required_matches = config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS;
-    let tmp_units = rows.into_iter()
+    let tmp_units = rows
+        .into_iter()
         .filter(|row| row.count_matching_witnesses >= count_required_matches as u32)
         .collect::<Vec<_>>();
 
     if tmp_units.is_empty() {
-        let parent_units =
-            pick_deep_parent_units(db, witnesses_list).context("failed to pick deep parent units")?;
+        let parent_units = pick_deep_parent_units(db, witnesses_list)
+            .context("failed to pick deep parent units")?;
         Ok(parent_units)
     } else {
         Ok(tmp_units.into_iter().map(|x| x.unit).collect::<Vec<_>>())
@@ -126,7 +128,8 @@ fn pick_deep_parent_units(db: &Connection, witnesses_list: &str) -> Result<Vec<S
     );
 
     let mut stmt = db.prepare_cached(&sql)?;
-    let rows = stmt.query_map(&[], |row| row.get(0))?
+    let rows = stmt
+        .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if rows.is_empty() {
         bail!("failed to find compatible parents: no deep units");
@@ -149,7 +152,8 @@ fn find_last_stable_mc_ball(db: &Connection, witnesses_list: &str) -> Result<Str
     );
 
     let mut stmt = db.prepare_cached(&sql)?;
-    let rows = stmt.query_map(&[], |row| row.get(1))?
+    let rows = stmt
+        .query_map(&[], |row| row.get(1))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if rows.is_empty() {
         bail!("failed to find last stable ball");
@@ -178,11 +182,11 @@ fn adjust_last_stable_mc_ball_and_parents(
             let mut stmt = db.prepare(
                 "SELECT ball, main_chain_index FROM units JOIN balls USING(unit) WHERE unit=?",
             )?;
-            let rows = stmt.query_map(&[&last_stable_mc_ball_unit], |row| TempBallMci {
-                ball: row.get(0),
-                main_chain_index: row.get(1),
-            })?
-                .collect::<::std::result::Result<Vec<_>, _>>()?;
+            let rows = stmt
+                .query_map(&[&last_stable_mc_ball_unit], |row| TempBallMci {
+                    ball: row.get(0),
+                    main_chain_index: row.get(1),
+                })?.collect::<::std::result::Result<Vec<_>, _>>()?;
             if rows.len() != 1 {
                 bail!("not 1 ball by unit {}", last_stable_mc_ball_unit);
             }

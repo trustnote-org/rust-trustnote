@@ -236,12 +236,12 @@ impl Unit {
 
         let mut stripped_unit = StrippedUnit {
             alt: self.alt.clone(),
-            authors: self.authors
+            authors: self
+                .authors
                 .iter()
                 .map(|a| Address {
                     address: a.address.clone(),
-                })
-                .collect::<Vec<_>>(),
+                }).collect::<Vec<_>>(),
             content_hash: self.get_unit_content_hash(),
             last_ball: None,
             last_ball_unit: None,

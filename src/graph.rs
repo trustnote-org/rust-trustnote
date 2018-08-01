@@ -98,11 +98,13 @@ pub fn compare_unit_props(
 
     if unit_props1.level <= unit_props2.level
         && unit_props1.latest_included_mc_index <= unit_props2.latest_included_mc_index
-        && (unit_props1.main_chain_index == None || unit_props2.main_chain_index == None
+        && (unit_props1.main_chain_index == None
+            || unit_props2.main_chain_index == None
             || unit_props1.main_chain_index <= unit_props2.main_chain_index)
         || unit_props1.level >= unit_props2.level
             && unit_props1.latest_included_mc_index >= unit_props2.latest_included_mc_index
-            && (unit_props1.main_chain_index == None || unit_props2.main_chain_index == None
+            && (unit_props1.main_chain_index == None
+                || unit_props2.main_chain_index == None
                 || unit_props1.main_chain_index >= unit_props2.main_chain_index)
     {
         // still can be comparable
