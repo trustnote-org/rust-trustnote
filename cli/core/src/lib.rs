@@ -7,7 +7,7 @@ extern crate rand;
 extern crate wallet;
 
 use bitcoin::network::constants::Network;
-// use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use rand::{OsRng, RngCore};
 use wallet::error::WalletError;
 use wallet::keyfactory::{KeyFactory, Seed};
@@ -30,12 +30,15 @@ pub fn mnemonic(passphrase: &str) -> Result<String, WalletError> {
 }
 
 /// generator master private key from mnemonic
-pub fn master_private_key(mnemonic: &str, salt: &str) -> Result<String, WalletError> {
+pub fn master_private_key(mnemonic: &str, salt: &str) -> Result<ExtendedPrivKey, WalletError> {
     let mnemonic = Mnemonic::from(mnemonic)?;
     let seed = Seed::new(&mnemonic, salt);
-    Ok(KEY_FACTORY
-        .master_private_key(Network::Bitcoin, &seed)?
-        .to_string())
+    Ok(KEY_FACTORY.master_private_key(Network::Bitcoin, &seed)?)
+}
+
+/// get extended public key for a known private key
+pub fn extended_public_from_private(extended_private_key: &ExtendedPrivKey) -> ExtendedPubKey {
+    KEY_FACTORY.extended_public_from_private(extended_private_key)
 }
 
 #[test]
@@ -48,7 +51,16 @@ fn test_mnemonic() -> Result<(), WalletError> {
 #[test]
 fn test_master_private_key() -> Result<(), WalletError> {
     let mnemonic = mnemonic("")?;
-    let pk = master_private_key(&mnemonic, "")?;
-    println!("master_private_key = {}", pk);
+    let prvk = master_private_key(&mnemonic, "")?;
+    println!("master_private_key = {}", prvk.to_string());
+    Ok(())
+}
+
+#[test]
+fn test_extended_public_from_private() -> Result<(), WalletError> {
+    let mnemonic = mnemonic("")?;
+    let prvk = master_private_key(&mnemonic, "")?;
+    let pubk = extended_public_from_private(&prvk);
+    println!("master_private_key = {}", pubk.to_string());
     Ok(())
 }
