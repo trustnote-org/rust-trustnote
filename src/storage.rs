@@ -15,12 +15,11 @@ use utils::FifoCache;
 lazy_static! {
     static ref MIN_RETRIEVABLE_MCI: RwLock<u32> = RwLock::new({
         let db = db::DB_POOL.get_connection();
-        let mut stmt =
-            db.prepare_cached(
-                "SELECT MAX(lb_units.main_chain_index) AS min_retrievable_mci \
-                 FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
-                 WHERE units.is_on_main_chain=1 AND units.is_stable=1",
-            ).expect("Initialzing MIN_RETRIEVABLE_MCI failed");
+        let mut stmt = db.prepare_cached(
+            "SELECT MAX(lb_units.main_chain_index) AS min_retrievable_mci \
+             FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
+             WHERE units.is_on_main_chain=1 AND units.is_stable=1",
+        ).expect("Initialzing MIN_RETRIEVABLE_MCI failed");
 
         stmt.query_row(&[], |row| row.get::<_, Option<u32>>(0))
             .unwrap_or(None)
@@ -196,8 +195,7 @@ pub fn read_unit_authors(db: &Connection, unit_hash: &String) -> Result<Vec<Stri
         return Ok(g);
     }
     let mut stmt = db.prepare_cached("SELECT address FROM unit_authors WHERE unit=?")?;
-    let mut names = stmt
-        .query_map(&[unit_hash], |row| row.get(0))?
+    let mut names = stmt.query_map(&[unit_hash], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     ensure!(!names.is_empty(), "no authors");
     names.sort();
@@ -217,13 +215,12 @@ pub fn read_last_stable_mc_unit_props(db: &Connection) -> Result<Option<LastStab
         "SELECT units.*, ball FROM units LEFT JOIN balls USING(unit) \
          WHERE is_on_main_chain=1 AND is_stable=1 ORDER BY main_chain_index DESC LIMIT 1",
     )?;
-    let mut props = stmt
-        .query_map(&[], |row| LastStableMcUnitProps {
-            unit: row.get::<_, String>("unit"),
-            // FIXME: here ball may be empty
-            ball: row.get::<_, String>("ball"),
-            main_chain_index: row.get::<_, u32>("main_chain_index"),
-        })?
+    let mut props = stmt.query_map(&[], |row| LastStableMcUnitProps {
+        unit: row.get::<_, String>("unit"),
+        // FIXME: here ball may be empty
+        ball: row.get::<_, String>("ball"),
+        main_chain_index: row.get::<_, u32>("main_chain_index"),
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     if props.is_empty() {
@@ -346,8 +343,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
         "SELECT parent_unit FROM parenthoods \
          WHERE child_unit=? ORDER BY parent_unit",
     )?;
-    let parent_units = stmt
-        .query_map(&[unit_hash], |row| row.get(0))?
+    let parent_units = stmt.query_map(&[unit_hash], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     //Ball
@@ -366,16 +362,14 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
             "SELECT skiplist_unit FROM skiplist_units \
              WHERE unit=? ORDER BY skiplist_unit",
         )?;
-        skiplist_units = stmt
-            .query_map(&[unit_hash], |row| row.get(0))?
+        skiplist_units = stmt.query_map(&[unit_hash], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
     }
 
     //Witness
     let mut stmt =
         db.prepare_cached("SELECT address FROM unit_witnesses WHERE unit=? ORDER BY address")?;
-    let witnesses = stmt
-        .query_map(&[unit_hash], |row| row.get(0))?
+    let witnesses = stmt.query_map(&[unit_hash], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     //Earned_headers_commission_recipients
@@ -386,12 +380,12 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
              FROM earned_headers_commission_recipients \
              WHERE unit=? ORDER BY address",
         )?;
-        earned_headers_commission_recipients = stmt
-            .query_map(&[unit_hash], |row| HeaderCommissionShare {
+        earned_headers_commission_recipients =
+            stmt.query_map(&[unit_hash], |row| HeaderCommissionShare {
                 address: row.get(0),
                 earned_headers_commission_share: row.get(1),
             })?
-            .collect::<::std::result::Result<Vec<HeaderCommissionShare>, _>>()?;
+                .collect::<::std::result::Result<Vec<HeaderCommissionShare>, _>>()?;
     }
 
     //Authors
@@ -510,13 +504,13 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             "SELECT feed_name, `value`, int_value FROM data_feeds \
                              WHERE unit=? AND message_index=?",
                         )?;
-                        let df_rows = stmt
-                            .query_map(&[unit_hash, &message_index], |row| DataFeed {
+                        let df_rows =
+                            stmt.query_map(&[unit_hash, &message_index], |row| DataFeed {
                                 feed_name: row.get(0),
                                 value: row.get(1),
                                 int_value: row.get(2),
                             })?
-                            .collect::<::std::result::Result<Vec<_>, _>>()?;
+                                .collect::<::std::result::Result<Vec<_>, _>>()?;
 
                         ensure!(!df_rows.is_empty(), "no data feed");
                         use serde_json::Map;
@@ -561,8 +555,8 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                             asset: Option<String>,
                         }
 
-                        let mut rows = stmt
-                            .query_map(&[unit_hash, &message_index], |row| InputTemp {
+                        let mut rows =
+                            stmt.query_map(&[unit_hash, &message_index], |row| InputTemp {
                                 kind: row.get(0),
                                 denomination: row.get(1),
                                 fixed_denominations: row.get(2),
@@ -576,7 +570,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                 address: row.get(10),
                                 asset: row.get(11),
                             })?
-                            .collect::<::std::result::Result<Vec<InputTemp>, _>>()?;
+                                .collect::<::std::result::Result<Vec<InputTemp>, _>>()?;
 
                         if !rows.is_empty() {
                             //Record the first one for later ones to check against
@@ -778,13 +772,12 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
         content_hash: Option<String>,
     }
 
-    let unit_rows = stmt
-        .query_map(&[&min_retrievable_mci, &prev_min_retrievable_mci], |row| {
-            TempUnitProp {
-                unit: row.get(0),
-                content_hash: row.get(1),
-            }
-        })?
+    let unit_rows = stmt.query_map(&[&min_retrievable_mci, &prev_min_retrievable_mci], |row| {
+        TempUnitProp {
+            unit: row.get(0),
+            content_hash: row.get(1),
+        }
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     let mut queries = db::DbQueries::new();
@@ -999,12 +992,11 @@ fn generate_queries_to_unspend_transfer_outputs_spent_in_archived_unit(
         src_message_index: u32,
         src_output_index: u32,
     }
-    let unit_rows = stmt
-        .query_map(&[&*unit], |row| TempUnitProp {
-            src_unit: row.get(0),
-            src_message_index: row.get(1),
-            src_output_index: row.get(2),
-        })?
+    let unit_rows = stmt.query_map(&[&*unit], |row| TempUnitProp {
+        src_unit: row.get(0),
+        src_message_index: row.get(1),
+        src_output_index: row.get(2),
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     queries.add_query(move |db| {
@@ -1051,11 +1043,10 @@ fn generate_queries_to_unspend_headers_commission_outputs_spent_in_archived_unit
         address: String,
         main_chain_index: u32,
     }
-    let unit_rows = stmt
-        .query_map(&[&*unit], |row| TempUnitProp {
-            address: row.get(0),
-            main_chain_index: row.get(1),
-        })?
+    let unit_rows = stmt.query_map(&[&*unit], |row| TempUnitProp {
+        address: row.get(0),
+        main_chain_index: row.get(1),
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     queries.add_query(move |db| {
@@ -1098,11 +1089,10 @@ fn generate_queries_to_unspend_witnessing_outputs_spent_in_archived_unit(
         address: String,
         main_chain_index: u32,
     }
-    let unit_rows = stmt
-        .query_map(&[&*unit], |row| TempUnitProp {
-            address: row.get(0),
-            main_chain_index: row.get(1),
-        })?
+    let unit_rows = stmt.query_map(&[&*unit], |row| TempUnitProp {
+        address: row.get(0),
+        main_chain_index: row.get(1),
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     queries.add_query(move |db| {
@@ -1131,11 +1121,10 @@ pub fn find_last_ball_mci_of_mci(db: &Connection, mci: u32) -> Result<u32> {
         is_on_main_chain: u32,
     }
 
-    let rows = stmt
-        .query_map(&[&mci], |row| LbUnitProp {
-            main_chain_index: row.get(0),
-            is_on_main_chain: row.get(1),
-        })?
+    let rows = stmt.query_map(&[&mci], |row| LbUnitProp {
+        main_chain_index: row.get(0),
+        is_on_main_chain: row.get(1),
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(
@@ -1155,8 +1144,7 @@ pub fn read_free_joints(db: &Connection) -> Result<Vec<Joint>> {
         "SELECT units.unit FROM units LEFT JOIN archived_joints USING(unit) WHERE is_free=1 AND archived_joints.unit IS NULL",
     )?;
 
-    let units = stmt
-        .query_map(&[], |row| row.get::<_, String>(0))?
+    let units = stmt.query_map(&[], |row| row.get::<_, String>(0))?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
     let mut joints = Vec::new();
     for unit in units {
@@ -1185,8 +1173,7 @@ pub fn read_definition_by_address(
          WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
          ORDER BY level DESC LIMIT 1",
     )?;
-    let rows = stmt
-        .query_map(&[address, &max_mci], |row| row.get(0))?
+    let rows = stmt.query_map(&[address, &max_mci], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     let definition_chash = if rows.is_empty() { address } else { &rows[0] };
     let ret = read_definition_at_mci(db, definition_chash, max_mci)?;
@@ -1203,8 +1190,7 @@ fn read_definition_at_mci(
          CROSS JOIN unit_authors USING(definition_chash) CROSS JOIN units USING(unit) \
          WHERE definition_chash=? AND is_stable=1 AND sequence='good' AND main_chain_index<=?",
     )?;
-    let definition = stmt
-        .query_map(&[definition_chash, &max_mci], |row| row.get(0))?
+    let definition = stmt.query_map(&[definition_chash, &max_mci], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()
         .context(format!(
             "failed to read definition at mci: definition_chash={}, max_mci={}",
@@ -1224,8 +1210,7 @@ pub fn determine_best_parents(
     unit: &Unit,
     witnesses: &[String],
 ) -> Result<Option<String>> {
-    let parent_units = unit
-        .parent_units
+    let parent_units = unit.parent_units
         .iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
@@ -1253,8 +1238,7 @@ pub fn determine_best_parents(
     );
 
     let mut stmt = db.prepare(&sql)?;
-    let rows = stmt
-        .query_map(&[], |row| row.get(0))?
+    let rows = stmt.query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     if rows.is_empty() {
@@ -1413,8 +1397,7 @@ pub fn find_witness_list_unit(
          WHERE witness_list_hash=? AND sequence='good' AND is_stable=1 AND main_chain_index<=?",
     )?;
     let witness_list_hash = ::object_hash::get_base64_hash(witnesses)?;
-    let rows = stmt
-        .query_map(&[&witness_list_hash, &last_ball_mci], |row| row.get(0))?
+    let rows = stmt.query_map(&[&witness_list_hash, &last_ball_mci], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     Ok(rows.into_iter().nth(0))

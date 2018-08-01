@@ -49,4 +49,5 @@ lto = true
 [workspace]
 members = [
     "hub",
+    "cli",
 ]

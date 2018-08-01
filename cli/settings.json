@@ -1,0 +1,6 @@
+{
+    "remote_hub": [
+        "119.28.86.54:6616"
+    ],
+    "initial_db_path": "../db/initial.trustnote.sqlite"
+}

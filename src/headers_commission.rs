@@ -17,8 +17,7 @@ fn get_max_spendable_mci(db: &Connection) -> Result<u32> {
     let mut stmt = db.prepare_cached(
         "SELECT MAX(main_chain_index) AS max_spendable_mci FROM headers_commission_outputs",
     )?;
-    let mci = stmt
-        .query_row(&[], |row| row.get::<_, Option<u32>>(0))
+    let mci = stmt.query_row(&[], |row| row.get::<_, Option<u32>>(0))
         .unwrap_or(None)
         .unwrap_or(0);
     Ok(mci)

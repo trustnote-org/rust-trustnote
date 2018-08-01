@@ -18,14 +18,13 @@ pub fn calc_witness_earnings(
          AND main_chain_index>=? AND main_chain_index<=?",
     )?;
 
-    let count =
-        stmt.query_row(
-            &[
-                &to_main_chain_index,
-                &(to_main_chain_index + config::COUNT_MC_BALLS_FOR_PAID_WITNESSING + 1),
-            ],
-            |row| row.get(0),
-        ).unwrap_or(0);
+    let count = stmt.query_row(
+        &[
+            &to_main_chain_index,
+            &(to_main_chain_index + config::COUNT_MC_BALLS_FOR_PAID_WITNESSING + 1),
+        ],
+        |row| row.get(0),
+    ).unwrap_or(0);
 
     ensure!(
         count == config::COUNT_MC_BALLS_FOR_PAID_WITNESSING + 2,
@@ -211,8 +210,7 @@ fn build_paid_witnesses_for_main_chain_index(db: &Connection, main_chain_index: 
     }
     impl<'a> Drop for TablePaidWitnessEventsTmp<'a> {
         fn drop(&mut self) {
-            let _ = self
-                .db
+            let _ = self.db
                 .prepare_cached("DROP TABLE IF EXISTS paid_witness_events_tmp")
                 .and_then(|mut stmt| stmt.execute(&[]));
         }

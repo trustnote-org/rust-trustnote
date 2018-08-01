@@ -236,8 +236,7 @@ impl Unit {
 
         let mut stripped_unit = StrippedUnit {
             alt: self.alt.clone(),
-            authors: self
-                .authors
+            authors: self.authors
                 .iter()
                 .map(|a| Address {
                     address: a.address.clone(),

@@ -24,8 +24,7 @@ impl AtomicLock {
     }
 
     pub fn try_lock(&self) -> Option<AtomicLockGuard> {
-        if self
-            .is_locked
+        if self.is_locked
             .compare_and_swap(false, true, Ordering::SeqCst)
         {
             return None;

@@ -52,24 +52,21 @@ pub fn determin_if_stable_in_laster_units(
         is_on_main_chain: u32,
     };
 
-    let rows = stmt
-        .query_map(&[&best_parent_unit], |row| TempUnitProp {
-            unit: row.get(0),
-            is_on_main_chain: row.get(1),
-            main_chain_index: row.get(2),
-            level: row.get(3),
-        })?
+    let rows = stmt.query_map(&[&best_parent_unit], |row| TempUnitProp {
+        unit: row.get(0),
+        is_on_main_chain: row.get(1),
+        main_chain_index: row.get(2),
+        level: row.get(3),
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(!rows.is_empty(), "no best children of {}", best_parent_unit);
 
-    let mc_rows: Vec<TempUnitProp> = rows
-        .iter()
+    let mc_rows: Vec<TempUnitProp> = rows.iter()
         .filter(|r| r.is_on_main_chain == 1)
         .cloned()
         .collect();
-    let alt_rows: Vec<TempUnitProp> = rows
-        .into_iter()
+    let alt_rows: Vec<TempUnitProp> = rows.into_iter()
         .filter(|r| r.is_on_main_chain == 0)
         .collect();
 
@@ -115,8 +112,7 @@ pub fn determin_if_stable_in_laster_units(
     );
 
     let mut stmt = db.prepare(&sql)?;
-    let rows: Vec<u32> = stmt
-        .query_map(&[], |row| row.get(0))?
+    let rows: Vec<u32> = stmt.query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(rows.len() == 1, "not a single max alt level");
@@ -168,8 +164,7 @@ pub fn read_best_parent_and_its_witnesses(
     unit_hash: &String,
 ) -> Result<(String, Vec<String>)> {
     let prop = storage::read_static_unit_property(db, unit_hash)?;
-    let best_parent_unit = prop
-        .best_parent_unit
+    let best_parent_unit = prop.best_parent_unit
         .ok_or_else(|| format_err!("no best parent set for unit {}", unit_hash))?;
     let arr_witnesses = storage::read_witnesses(db, &best_parent_unit)?;
 
@@ -204,12 +199,11 @@ fn find_min_mc_witnessed_level(
          LIMIT 1", witnesses_set, later_units_set);
 
     let mut stmt = db.prepare(&sql)?;
-    let rows = stmt
-        .query_map(&[], |row| OutputTemp {
-            witnessed_level: row.get(0),
-            best_parent_unit: row.get(1),
-            count: row.get(2),
-        })?
+    let rows = stmt.query_map(&[], |row| OutputTemp {
+        witnessed_level: row.get(0),
+        best_parent_unit: row.get(1),
+        count: row.get(2),
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(!rows.is_empty(), "find_min_mc_witnessed_level: not 1 row");
@@ -223,12 +217,11 @@ fn find_min_mc_witnessed_level(
              (SELECT COUNT(*) FROM unit_authors WHERE unit_authors.unit=units.unit AND address IN({})) AS count \
              FROM units WHERE unit=?", witnesses_set);
         let mut stmt = db.prepare(&sql)?;
-        let rows = stmt
-            .query_map(&[&start_unit], |row| OutputTemp {
-                best_parent_unit: row.get(0),
-                witnessed_level: row.get(1),
-                count: row.get(2),
-            })?
+        let rows = stmt.query_map(&[&start_unit], |row| OutputTemp {
+            best_parent_unit: row.get(0),
+            witnessed_level: row.get(1),
+            count: row.get(2),
+        })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         ensure!(rows.len() == 1, "findMinMcWitnessedLevel: not 1 row");
@@ -294,12 +287,11 @@ fn create_list_of_best_children_included_by_later_units(
         main_chain_index: Option<u32>,
     }
 
-    let rows = stmt
-        .query_map(&[], |row| TempUnitProp {
-            unit: row.get(0),
-            is_free: row.get(1),
-            main_chain_index: row.get(2),
-        })?
+    let rows = stmt.query_map(&[], |row| TempUnitProp {
+        unit: row.get(0),
+        is_free: row.get(1),
+        main_chain_index: row.get(2),
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(!rows.is_empty(), "no alt branch root units?");
@@ -333,12 +325,11 @@ fn create_list_of_best_children_included_by_later_units(
 
         let mut stmt = db.prepare(&sql)?;
 
-        let rows = stmt
-            .query_map(&[], |row| TempUnitProp {
-                unit: row.get(0),
-                is_free: row.get(1),
-                main_chain_index: row.get(2),
-            })?
+        let rows = stmt.query_map(&[], |row| TempUnitProp {
+            unit: row.get(0),
+            is_free: row.get(1),
+            main_chain_index: row.get(2),
+        })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         if rows.is_empty() {
@@ -679,11 +670,10 @@ fn create_list_of_best_children(db: &Connection, parent_units: Vec<String>) -> R
                 is_free: u32,
             };
 
-            let rows = stmt
-                .query_map(&[], |row| UnitTemp {
-                    unit: row.get(0),
-                    is_free: row.get(1),
-                })?
+            let rows = stmt.query_map(&[], |row| UnitTemp {
+                unit: row.get(0),
+                is_free: row.get(1),
+            })?
                 .collect::<::std::result::Result<Vec<_>, _>>()?;
 
             let mut next_units = Vec::new();
@@ -767,8 +757,7 @@ fn update_latest_included_mc_index(
          AND (chunits.main_chain_index > ? OR chunits.main_chain_index IS NULL) \
          AND chunits.latest_included_mc_index IS NULL",
     )?;
-    let rows = stmt
-        .query_map(&[&last_main_chain_index], |row| (row.get(0), row.get(1)))?
+    let rows = stmt.query_map(&[&last_main_chain_index], |row| (row.get(0), row.get(1)))?
         .collect::<::std::result::Result<Vec<(String, u32)>, _>>()?;
 
     info!("{} rows", rows.len());
@@ -800,8 +789,7 @@ fn update_latest_included_mc_index(
             WHERE (chunits.main_chain_index > ? OR chunits.main_chain_index IS NULL) \
                 AND (chunits.latest_included_mc_index IS NULL OR chunits.latest_included_mc_index < punits.latest_included_mc_index)",
         )?;
-        let rows = stmt
-            .query_map(&[&last_main_chain_index], |row| (row.get(0), row.get(1)))?
+        let rows = stmt.query_map(&[&last_main_chain_index], |row| (row.get(0), row.get(1)))?
             .collect::<::std::result::Result<Vec<(u32, String)>, _>>()?;
 
         if rows.is_empty() {
@@ -820,8 +808,7 @@ fn update_latest_included_mc_index(
         "SELECT unit FROM units \
          WHERE latest_included_mc_index IS NULL AND level!=0",
     )?;
-    let rows = stmt
-        .query_map(&[], |row| row.get(0))?
+    let rows = stmt.query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     ensure!(
@@ -862,13 +849,12 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
             is_on_main_chain: u32,
         };
 
-        let best_children = stmt
-            .query_map(&[&last_stable_mc_unit], |row| TempUnitProp {
-                unit: row.get(0),
-                is_on_main_chain: row.get(1),
-                main_chain_index: row.get(2),
-                level: row.get(3),
-            })?
+        let best_children = stmt.query_map(&[&last_stable_mc_unit], |row| TempUnitProp {
+            unit: row.get(0),
+            is_on_main_chain: row.get(1),
+            main_chain_index: row.get(2),
+            level: row.get(3),
+        })?
             .collect::<::std::result::Result<Vec<TempUnitProp>, _>>()?;
 
         ensure!(
@@ -904,8 +890,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
                 let mut stmt = db.prepare_cached(
                     "SELECT witnessed_level FROM units WHERE is_free=1 AND is_on_main_chain=1",
                 )?;
-                let rows = stmt
-                    .query_map(&[], |row| row.get(0))?
+                let rows = stmt.query_map(&[], |row| row.get(0))?
                     .collect::<::std::result::Result<Vec<u32>, _>>()?;
 
                 ensure!(rows.len() == 1, "not a single mc wl");
@@ -920,8 +905,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
                 mc_end_witnessed_level, witness_list
             );
             let mut stmt = db.prepare(&sql)?;
-            let rows = stmt
-                .query_map(&[], |row| row.get(0))?
+            let rows = stmt.query_map(&[], |row| row.get(0))?
                 .collect::<::std::result::Result<Vec<u32>, _>>()?;
 
             ensure!(rows.len() == 1, "not a single min mc wl");
@@ -962,8 +946,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
                     config::COUNT_WITNESSES - config::MAX_WITNESS_LIST_MUTATIONS
                 );
                 let mut stmt = db.prepare(&sql)?;
-                let rows = stmt
-                    .query_map(&[], |row| row.get(0))?
+                let rows = stmt.query_map(&[], |row| row.get(0))?
                     .collect::<::std::result::Result<Vec<u32>, _>>()?;
 
                 ensure!(rows.len() == 1, "not a single max alt level");
@@ -1000,8 +983,7 @@ fn go_down_and_update_main_chain_index(db: &Connection, last_main_chain_index: u
         "SELECT unit FROM units \
          WHERE is_on_main_chain=1 AND main_chain_index IS NULL ORDER BY level",
     )?;
-    let rows = stmt
-        .query_map(&[], |row| row.get(0))?
+    let rows = stmt.query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     ensure!(!rows.is_empty(), "no unindexed MC units?");
@@ -1026,8 +1008,7 @@ fn go_down_and_update_main_chain_index(db: &Connection, last_main_chain_index: u
                 children_units_list
             );
             let mut stmt = db.prepare(&sql)?;
-            let mut children_rows = stmt
-                .query_map(&[], |row| row.get(0))?
+            let mut children_rows = stmt.query_map(&[], |row| row.get(0))?
                 .collect::<::std::result::Result<Vec<String>, _>>()?;
 
             if children_rows.is_empty() {

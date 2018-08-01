@@ -334,14 +334,12 @@ impl WsConnections {
     }
 
     fn contains(&self, addr: &str) -> bool {
-        let out_contains = self
-            .outbound
+        let out_contains = self.outbound
             .read()
             .unwrap()
             .iter()
             .any(|v| v.get_peer() == addr);
-        let in_contains = self
-            .inbound
+        let in_contains = self.inbound
             .read()
             .unwrap()
             .iter()
@@ -361,15 +359,13 @@ fn get_unconnected_peers_in_config() -> Result<Vec<String>> {
 fn get_unconnected_peers_in_db() -> Result<Vec<String>> {
     let max_new_outbound_peers = WSS.get_needed_outbound_peers();
 
-    let sql_out = WSS
-        .get_outbound_peers()
+    let sql_out = WSS.get_outbound_peers()
         .into_iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
         .join(", ");
 
-    let sql_in = WSS
-        .get_inbound_peers()
+    let sql_in = WSS.get_inbound_peers()
         .into_iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
@@ -389,8 +385,7 @@ fn get_unconnected_peers_in_db() -> Result<Vec<String>> {
     );
 
     let mut stmt = db.prepare_cached(&sql)?;
-    let peers = stmt
-        .query_map(&[&(max_new_outbound_peers as u32)], |v| v.get(0))?
+    let peers = stmt.query_map(&[&(max_new_outbound_peers as u32)], |v| v.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     Ok(peers)
 }
@@ -717,11 +712,10 @@ impl HubConn {
             is_stable: u32,
         }
 
-        let rows = stmt
-            .query_map(&[&address, &address], |row| TempUnit {
-                unit: row.get(0),
-                is_stable: row.get(1),
-            })?
+        let rows = stmt.query_map(&[&address, &address], |row| TempUnit {
+            unit: row.get(0),
+            is_stable: row.get(1),
+        })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         if rows.is_empty() {
@@ -758,13 +752,12 @@ impl HubConn {
             description: String,
         };
 
-        let bots = stmt
-            .query_map(&[], |row| Bot {
-                id: row.get(0),
-                name: row.get(1),
-                pairing_cod: row.get(2),
-                description: row.get(3),
-            })?
+        let bots = stmt.query_map(&[], |row| Bot {
+            id: row.get(0),
+            name: row.get(1),
+            pairing_cod: row.get(2),
+            description: row.get(3),
+        })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
         Ok(serde_json::to_value(bots)?)
     }
@@ -1317,8 +1310,7 @@ impl HubConn {
                 |row| row.get(0),
             )?;
             if !rows.is_empty() {
-                let rows = rows
-                    .into_iter()
+                let rows = rows.into_iter()
                     .map(|s: String| format!("('{}','{}')", self.get_peer(), s))
                     .collect::<Vec<_>>()
                     .join(", ");
@@ -1679,8 +1671,7 @@ pub fn start_catchup() -> Result<()> {
             let mut stmt = db.prepare_cached(
                 "SELECT ball FROM catchup_chain_balls ORDER BY member_index LIMIT 2",
             )?;
-            let mut balls = stmt
-                .query_map(&[], |row| row.get(0))?
+            let mut balls = stmt.query_map(&[], |row| row.get(0))?
                 .collect::<::std::result::Result<Vec<String>, _>>()?;
 
             if balls.len() == 1 {
@@ -1834,8 +1825,7 @@ fn notify_watchers(db: &Connection, joint: &Joint, cur_ws: &HubConn) -> Result<(
     );
 
     let mut stmt = db.prepare(&sql)?;
-    let rows = stmt
-        .query_map(&[], |row| row.get(0))?
+    let rows = stmt.query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     if rows.is_empty() {
@@ -1872,11 +1862,10 @@ fn notify_light_clients_about_stable_joints(
 		SELECT peer FROM units JOIN watched_light_units USING(unit) \
 		WHERE main_chain_index>? AND main_chain_index<=?")?;
 
-    let rows = stmt
-        .query_map(
-            &[&from_mci, &to_mci, &from_mci, &to_mci, &from_mci, &to_mci],
-            |row| row.get(0),
-        )?
+    let rows = stmt.query_map(
+        &[&from_mci, &to_mci, &from_mci, &to_mci, &from_mci, &to_mci],
+        |row| row.get(0),
+    )?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     for peer in rows {
         if let Some(ws) = WSS.get_connection_by_name(&peer) {

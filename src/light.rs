@@ -110,12 +110,11 @@ pub fn prepare_history(
         level: u32,
     }
     let mut stmt = db.prepare_cached(&sql)?;
-    let tmp_rows = stmt
-        .query_map(&[], |row| TempProps {
-            unit: row.get(0),
-            main_chain_index: row.get(1),
-            level: row.get(2),
-        })?
+    let tmp_rows = stmt.query_map(&[], |row| TempProps {
+        unit: row.get(0),
+        main_chain_index: row.get(1),
+        level: row.get(2),
+    })?
         .collect::<::std::result::Result<Vec<_>, _>>()?;
     let rows = tmp_rows
         .into_iter()
@@ -186,8 +185,7 @@ fn add_shared_addresses_of_wallet(db: &Connection, addresses: &Vec<String>) -> R
         let mut stmt = db.prepare_cached(
             "SELECT DISTINCT shared_address FROM shared_address_signing_paths WHERE address IN(?)",
         )?;
-        let rows = stmt
-            .query_map(&[&str_addresses], |row| row.get(0))?
+        let rows = stmt.query_map(&[&str_addresses], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
 
         if rows.is_empty() {
@@ -296,10 +294,10 @@ fn build_last_mile_of_proof_chain(
     unit: String,
     balls: &mut Vec<ProofBalls>,
 ) -> Result<()> {
-    let mut stmt = db
-        .prepare_cached("SELECT unit FROM units WHERE main_chain_index=? AND is_on_main_chain=1")?;
-    let rows = stmt
-        .query_map(&[&earlier_mci], |row| row.get(0))?
+    let mut stmt = db.prepare_cached(
+        "SELECT unit FROM units WHERE main_chain_index=? AND is_on_main_chain=1",
+    )?;
+    let rows = stmt.query_map(&[&earlier_mci], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if rows.len() != 1 {
         bail!("no mc unit?");
@@ -328,11 +326,10 @@ fn find_parent_and_add_ball(
             "SELECT unit, ball FROM units JOIN balls USING(unit) \
              WHERE unit=?",
         )?;
-        let rows = stmt
-            .query_map(&[&cur_unit], |row| TempUnit {
-                unit: row.get(0),
-                ball: row.get(1),
-            })?
+        let rows = stmt.query_map(&[&cur_unit], |row| TempUnit {
+            unit: row.get(0),
+            ball: row.get(1),
+        })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         if rows.len() != 1 {
@@ -372,8 +369,7 @@ fn find_parent_and_add_ball(
             "SELECT parent_unit FROM parenthoods JOIN units ON parent_unit=unit \
              WHERE child_unit=? AND main_chain_index=?",
         )?;
-        let parents = stmt
-            .query_map(&[&interim_unit, &mci], |row| row.get(0))?
+        let parents = stmt.query_map(&[&interim_unit, &mci], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
         if parents.contains(&dest_unit) {
             add_ball(dest_unit)?;
@@ -429,11 +425,10 @@ fn build_path(
                 loop_joint.unit.unit.as_ref().map_or_else(|| "", |v| v)
             );
             let mut stmt = db.prepare_cached(&sql)?;
-            let rows = stmt
-                .query_map(&[], |v| Tmp {
-                    main_chain_index: v.get(1),
-                    unit: v.get(0),
-                })?
+            let rows = stmt.query_map(&[], |v| Tmp {
+                main_chain_index: v.get(1),
+                unit: v.get(0),
+            })?
                 .collect::<::std::result::Result<Vec<_>, _>>()?;
             if rows[0].main_chain_index < earlier_joint.unit.main_chain_index {
                 return build_path_to_earlier_unit(db, &loop_joint, &earlier_joint, chains);
@@ -469,9 +464,9 @@ fn build_path(
             );
 
             let mut stmt = db.prepare_cached(&sql)?;
-            let loop_parent_units = stmt
-                .query_map(&[&tmp_joint.unit.main_chain_index], |v| v.get(0))?
-                .collect::<::std::result::Result<Vec<String>, _>>()?;
+            let loop_parent_units =
+                stmt.query_map(&[&tmp_joint.unit.main_chain_index], |v| v.get(0))?
+                    .collect::<::std::result::Result<Vec<String>, _>>()?;
             if loop_parent_units.is_empty() {
                 bail!("no parents with same mci?");
             }
@@ -582,15 +577,14 @@ fn build_proof_chain_on_mc(
             "SELECT unit, ball, content_hash FROM units JOIN balls USING(unit) \
              WHERE main_chain_index=? AND is_on_main_chain=1",
         )?;
-        let tmp_balls = stmt
-            .query_map(&[&tmp_mci], |v| ProofBalls {
-                unit: v.get(0),
-                ball: v.get(1),
-                content_hash: v.get(2),
-                is_nonserial: None,
-                parent_balls: Vec::new(),
-                skiplist_balls: Vec::new(),
-            })?
+        let tmp_balls = stmt.query_map(&[&tmp_mci], |v| ProofBalls {
+            unit: v.get(0),
+            ball: v.get(1),
+            content_hash: v.get(2),
+            is_nonserial: None,
+            parent_balls: Vec::new(),
+            skiplist_balls: Vec::new(),
+        })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
         if tmp_balls.len() != 1 {
             bail!(
@@ -612,8 +606,7 @@ fn build_proof_chain_on_mc(
              WHERE child_unit=? ORDER BY ball",
         )?;
 
-        let parent_rows = stmt
-            .query_map(&[&ball.unit], |v| v.get(0))?
+        let parent_rows = stmt.query_map(&[&ball.unit], |v| v.get(0))?
             .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
         if parent_rows.iter().any(|row| row.is_none()) {
             bail!("some parents have no balls");
@@ -634,11 +627,10 @@ fn build_proof_chain_on_mc(
              ON units.unit=balls.unit WHERE skiplist_units.unit=? ORDER BY ball",
         )?;
 
-        let srows = stmt
-            .query_map(&[&ball.unit], |v| TmpScrow {
-                ball: v.get(0),
-                main_chain_index: v.get(1),
-            })?
+        let srows = stmt.query_map(&[&ball.unit], |v| TmpScrow {
+            ball: v.get(0),
+            main_chain_index: v.get(1),
+        })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         if srows.iter().any(|s| s.ball.is_none()) {

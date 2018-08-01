@@ -126,8 +126,7 @@ pub fn read_joints_since_mci(db: &Connection, mci: u32) -> Result<Vec<Joint>> {
 		WHERE (is_stable=0 AND main_chain_index>=? OR main_chain_index IS NULL OR is_free=1) AND archived_joints.unit IS NULL \
 		ORDER BY +level")?;
 
-    let ret = stmt
-        .query_map(&[&mci], |row| row.get(0))?
+    let ret = stmt.query_map(&[&mci], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     let mut joints = Vec::new();
@@ -176,8 +175,7 @@ pub fn read_dependent_joints_that_are_ready(
 
     let mut ret = Vec::new();
     let mut stmt = db.prepare(&sql)?;
-    let rows = stmt
-        .query_map(&[], |row| row.get(1))?
+    let rows = stmt.query_map(&[], |row| row.get(1))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
     for row in rows {
@@ -185,13 +183,12 @@ pub fn read_dependent_joints_that_are_ready(
         let mut stmt = db.prepare_cached(
             "SELECT json, peer, strftime('%s', creation_date) AS creation_ts FROM unhandled_joints WHERE unit=?")?;
 
-        let mut rows_inner = stmt
-            .query_map(&[&unit], |row_inner| ReadyJoint {
-                joint: serde_json::from_str(&row_inner.get::<_, String>(0))
-                    .expect("failed to parse json"),
-                create_ts: row_inner.get::<_, String>(2).parse::<usize>().unwrap() * 1000,
-                peer: row_inner.get(1),
-            })?
+        let mut rows_inner = stmt.query_map(&[&unit], |row_inner| ReadyJoint {
+            joint: serde_json::from_str(&row_inner.get::<_, String>(0))
+                .expect("failed to parse json"),
+            create_ts: row_inner.get::<_, String>(2).parse::<usize>().unwrap() * 1000,
+            peer: row_inner.get(1),
+        })?
             .collect::<::std::result::Result<Vec<ReadyJoint>, _>>()?;
 
         ret.append(rows_inner.as_mut());
@@ -259,11 +256,10 @@ where
     while let Some(new_unit) = deque.pop_front() {
         let mut stmt = db.prepare_cached("SELECT unit, peer FROM dependencies JOIN unhandled_joints USING(unit) WHERE depends_on_unit=?",)?;
 
-        let unit_rows = stmt
-            .query_map(&[&new_unit.unit], |row| TempUnitProp {
-                unit: row.get(0),
-                peer: row.get(1),
-            })?
+        let unit_rows = stmt.query_map(&[&new_unit.unit], |row| TempUnitProp {
+            unit: row.get(0),
+            peer: row.get(1),
+        })?
             .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         let units_str = unit_rows
