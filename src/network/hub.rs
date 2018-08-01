@@ -650,7 +650,7 @@ impl HubConn {
                 "SELECT 1 FROM archived_joints WHERE unit=? AND reason='uncovered'",
             )?;
 
-            if stmt.exists(&[joint.unit.unit.as_ref().unwrap()])? {
+            if stmt.exists(&[joint.get_unit_hash()])? {
                 return self.send_error(Value::from("this unit is already known and archived"));
             }
         }

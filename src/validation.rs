@@ -164,7 +164,7 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
     // already checked in earlier network processing
     // ensure_with_validation_err!(unit.unit.is_some(), "no unit");
 
-    let unit_hash = unit.unit.as_ref().unwrap();
+    let unit_hash = joint.get_unit_hash();
     info!("validating joint identified by unit {}", unit_hash);
 
     if unit_hash.len() != config::HASH_LENGTH {
@@ -304,7 +304,6 @@ pub fn validate(db: &mut Connection, joint: &Joint) -> Result<ValidationOk> {
         return Ok(ValidationOk::Unsigned(validate_state.sequence == "good"));
     }
 
-    // TODO: add more checks
     Ok(ValidationOk::Signed(validate_state, lock))
 }
 
@@ -476,17 +475,17 @@ fn validate_parents(
     validate_state: &mut ValidationState,
 ) -> Result<()> {
     let unit = &joint.unit;
-    let unit_hash = unit.unit.as_ref().unwrap();
+    if unit.parent_units.len() > config::MAX_PARENT_PER_UNIT {
+        bail_with_validation_err!(UnitError, "too many parents: {}", unit.parent_units.len());
+    }
+
+    let unit_hash = joint.get_unit_hash();
     let parent_units = unit
         .parent_units
         .iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
         .join(", ");
-
-    if unit.parent_units.len() > config::MAX_PARENT_PER_UNIT {
-        bail_with_validation_err!(UnitError, "too many parents: {}", unit.parent_units.len());
-    }
 
     let mut prev = "".to_owned();
 
@@ -695,7 +694,6 @@ fn validate_parents(
     }
 
     // Last ball is not stable yet in our view. Check if it is stable in view of the parents
-    // TODO: implment main_chain
     let is_stable = main_chain::determin_if_stable_in_laster_units_and_update_stable_mc_flag(
         tx,
         last_ball_unit,
@@ -1303,7 +1301,6 @@ fn is_valid_base64(b64: &String, len: usize) -> bool {
         return false;
     }
     match base64::decode(b64) {
-        // FIXME: how is this possible
         Ok(v) => b64 == &base64::encode(&v),
         _ => false,
     }

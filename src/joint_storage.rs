@@ -45,7 +45,7 @@ pub fn check_new_unit(db: &Connection, unit: &String) -> Result<CheckNewResult> 
 }
 
 pub fn check_new_joint(db: &Connection, joint: &Joint) -> Result<CheckNewResult> {
-    let unit = joint.unit.unit.as_ref().expect("miss unit hash in joint");
+    let unit = joint.get_unit_hash();
     let ret = check_new_unit(db, unit)?;
     if let CheckNewResult::New = ret {
         let mut stmt = db.prepare_cached("SELECT error FROM known_bad_joints WHERE joint=?")?;
