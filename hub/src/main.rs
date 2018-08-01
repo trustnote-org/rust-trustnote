@@ -1,15 +1,15 @@
 #[macro_use]
 extern crate log;
-extern crate base64;
 extern crate chrono;
 extern crate fern;
-extern crate serde_json;
 #[macro_use]
 extern crate trustnote;
 #[macro_use]
 extern crate may;
 extern crate may_signal;
+extern crate serde_json;
 
+mod timer;
 use trustnote::*;
 
 fn log_init() {
@@ -53,16 +53,15 @@ fn start_ws_server() -> Result<::may::coroutine::JoinHandle<()>> {
 }
 
 fn connect_to_remote() -> Result<()> {
-    use network::hub;
     let peers = config::get_remote_hub_url();
 
     for peer in peers {
-        if let Err(e) = hub::create_outbound_conn(&peer) {
+        if let Err(e) = network::hub::create_outbound_conn(&peer) {
             error!(" fail to connected: {}, err={}", peer, e);
         }
     }
 
-    go!(move || if let Err(e) = hub::start_catchup() {
+    go!(move || if let Err(e) = network::hub::start_catchup() {
         error!("catchup error: {}", e);
         error!("back_trace={}", e.backtrace());
         ::std::process::abort();
@@ -79,7 +78,7 @@ fn register_event_handlers() {
     use main_chain::MciStableEvent;
     use utils::event::Event;
 
-    MciStableEvent::add_handler(|v| t!(::network::hub::notify_watchers_about_stable_joints(v.mci)));
+    MciStableEvent::add_handler(|v| t!(network::hub::notify_watchers_about_stable_joints(v.mci)));
 }
 
 // the hub server logic that run in coroutine context
@@ -87,7 +86,7 @@ fn run_hub_server() -> Result<()> {
     register_event_handlers();
     let _server = start_ws_server();
     connect_to_remote()?;
-    time::start_global_timers();
+    timer::start_global_timers();
     Ok(())
 }
 

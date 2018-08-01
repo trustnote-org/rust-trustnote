@@ -2,14 +2,15 @@
 extern crate log;
 #[macro_use]
 extern crate may;
-extern crate crossbeam;
-extern crate may_signal;
 extern crate may_thread;
+extern crate may_waiter;
 extern crate num_cpus;
 extern crate rusqlite;
 extern crate serde;
 #[macro_use]
 extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
 extern crate tungstenite;
 extern crate url;
 
@@ -17,13 +18,11 @@ extern crate url;
 extern crate failure;
 #[macro_use]
 extern crate lazy_static;
-#[macro_use]
-extern crate serde_derive;
 extern crate app_dirs;
 extern crate base32;
 extern crate base64;
 extern crate bit_vec;
-extern crate may_waiter;
+extern crate crossbeam;
 extern crate rand;
 extern crate ripemd160;
 extern crate secp256k1;
