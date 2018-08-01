@@ -1,12 +1,15 @@
 #[macro_use]
 extern crate log;
 extern crate chrono;
+#[macro_use]
+extern crate clap;
 extern crate fern;
 extern crate may;
 extern crate serde_json;
 extern crate trustnote;
 extern crate trustnote_cli;
 
+use clap::App;
 use trustnote::*;
 
 fn log_init() {
@@ -45,6 +48,43 @@ fn main() -> Result<()> {
 
     log_init();
     // config::show_config();
-    info!("ttt cli!\n\n");
+
+    let yml = load_yaml!("ttt.yml");
+    let m = App::from_yaml(yml).get_matches();
+
+    //Init
+    if let Some(init) = m.subcommand_matches("init") {
+        if let Some(mnemonic) = init.value_of("mnemonic") {
+            println!("Init wallet with mnemonic {}", mnemonic);
+        } else {
+            println!("Init wallet with random mnemonic");
+        }
+    }
+
+    //Pay
+    if let Some(pay) = m.subcommand_matches("pay") {
+        if let Some(address) = pay.value_of("address") {
+            if let Some(amount) = pay.value_of("amount") {
+                println!("Pay to address {} amount {}", address, amount);
+            }
+        }
+    }
+
+    //Info
+    if let Some(_info) = m.subcommand_matches("info") {
+        println!("Info for this wallet");
+    }
+
+    //Balance
+    if let Some(_balance) = m.subcommand_matches("balance") {
+        let balance = 0;
+        println!("Wallet Balance : {}", balance);
+    }
+
+    //History
+    if let Some(_history) = m.subcommand_matches("history") {
+        println!("Wallet History");
+    }
+
     Ok(())
 }

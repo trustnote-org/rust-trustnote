@@ -1,5 +1,5 @@
 [package]
-description = "trustnote hub rust implmentation"
+description = "trustnote wallet cli rust implmentation"
 name = "trustnote_cli"
 version = "0.1.0"
 authors = ["Xudong Huang <huangxu008@hotmail.com>"]
@@ -13,4 +13,4 @@ log = "0.4"
 fern = "0.5"
 chrono = "0.4"
 serde_json = "1"
-
+clap = {version = "2", features = ["yaml"]}
