@@ -9,4 +9,5 @@ license = "MIT"
 log = "0.4"
 rand = "0.5"
 bitcoin = "0.13"
+lazy_static = "1"
 wallet = { git = "https://github.com/rust-bitcoin/rust-wallet.git" }
