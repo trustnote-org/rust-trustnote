@@ -1,7 +1,7 @@
 [package]
 description = "trustnote rust implmentation"
 name = "trustnote"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Xudong Huang <huangxu008@hotmail.com>"]
 license = "MIT"
 
@@ -9,7 +9,7 @@ license = "MIT"
 may = "0.3"
 log = "0.4"
 url = "1.7"
-rand = "0.4"
+rand = "0.5"
 chrono = "0.4"
 config = "0.8"
 failure = "0.1"
@@ -39,8 +39,6 @@ may_thread = { git = "https://github.com/Xudong-Huang/may_thread.git" }
 version = "0.13"
 features = ["bundled"]
 
-[patch.crates-io]
-rand = { git = "https://github.com/Xudong-Huang/rand.git" }
 
 [profile.release]
 lto = true
