@@ -7,7 +7,7 @@ extern crate fern;
 extern crate may;
 extern crate serde_json;
 extern crate trustnote;
-extern crate trustnote_cli;
+extern crate trustnote_client;
 
 use clap::App;
 use trustnote::*;
