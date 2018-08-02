@@ -7,12 +7,13 @@ extern crate base64;
 extern crate bitcoin;
 extern crate rand;
 extern crate secp256k1;
+extern crate trustnote;
 extern crate wallet;
 
 use bitcoin::network::constants::Network;
 use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
 use rand::{OsRng, RngCore};
-use secp256k1::{/*key, Message,*/ Secp256k1, Signature};
+use trustnote::object_hash;
 use wallet::keyfactory::{KeyFactory, Seed};
 use wallet::mnemonic::Mnemonic;
 
@@ -20,8 +21,11 @@ pub type Result<T> = ::std::result::Result<T, failure::Error>;
 
 lazy_static! {
     // initialize consume too much memory, init it in thread context
-    static ref KEY_FACTORY: KeyFactory = ::std::thread::spawn(|| KeyFactory::new()).join().unwrap();
-    static ref SECP256K1: Secp256k1 = ::std::thread::spawn(|| Secp256k1::new()).join().unwrap();
+    static ref KEY_FACTORY: KeyFactory =
+        ::std::thread::spawn(|| KeyFactory::new()).join().unwrap();
+
+    static ref SECP256K1: secp256k1::Secp256k1 =
+        ::std::thread::spawn(|| secp256k1::Secp256k1::new()).join().unwrap();
 }
 
 pub trait Base64KeyExt: Sized {
@@ -48,15 +52,13 @@ pub fn mnemonic(passphrase: &str) -> Result<Mnemonic> {
 /// generator master private key from mnemonic
 pub fn master_private_key(mnemonic: &Mnemonic, salt: &str) -> Result<ExtendedPrivKey> {
     let seed = Seed::new(&mnemonic, salt);
-    // Ok(ExtendedPrivKey::new_master(&SECP256K1, Network::Bitcoin, &seed.0)?)
     Ok(KEY_FACTORY.master_private_key(Network::Bitcoin, &seed)?)
 }
 
 /// get extended public key for a known private key
-/// TODO: this should be useless
-// pub fn extended_public_from_private(extended_private_key: &ExtendedPrivKey) -> ExtendedPubKey {
-//     KEY_FACTORY.extended_public_from_private(extended_private_key)
-// }
+pub fn extended_public_from_private(extended_private_key: &ExtendedPrivKey) -> ExtendedPubKey {
+    KEY_FACTORY.extended_public_from_private(extended_private_key)
+}
 
 /// get wallet pubkey for a index
 pub fn wallet_pubkey(master_prvk: &ExtendedPrivKey, wallet: u32) -> Result<ExtendedPubKey> {
@@ -92,21 +94,28 @@ pub fn wallet_address_pubkey(
 }
 
 /// get device address
-pub fn device_address(_master_prvk: &ExtendedPrivKey) -> Result<String> {
-    unimplemented!()
+pub fn device_address(master_prvk: &ExtendedPrivKey) -> Result<String> {
+    use secp256k1::key::PublicKey;
+    let prvk = KEY_FACTORY.private_child(master_prvk, ChildNumber::Hardened(1))?;
+    let pubk = PublicKey::from_secret_key(&SECP256K1, &prvk.secret_key)?;
+    let pub_b64 = base64::encode(&pubk.serialize()[..]);
+    let mut device_address = object_hash::get_chash(&pub_b64)?;
+    device_address.insert(0, '0');
+    Ok(device_address)
 }
 
 /// get wallet address
 /// the wallet_pubk should be the return value of `wallet_pubkey`
 pub fn wallet_address(wallet_pubk: &ExtendedPubKey, is_change: bool, index: u32) -> Result<String> {
-    let _pubk = wallet_address_pubkey(wallet_pubk, is_change, index)?;
-    unimplemented!()
+    let pubk = wallet_address_pubkey(wallet_pubk, is_change, index)?;
+    let pub_b64 = base64::encode(&pubk.public_key.serialize()[..]);
+    Ok(object_hash::get_chash(&pub_b64)?)
 }
 
 /// get wallet address
 /// the wallet_pubk should be the return value of `wallet_pubkey`
-pub fn wallet_id(_wallet_pubk: &ExtendedPubKey) -> String {
-    unimplemented!()
+pub fn wallet_id(wallet_pubk: &ExtendedPubKey) -> Result<String> {
+    object_hash::get_base64_hash(&wallet_pubk.to_string())
 }
 
 /// sign for hash, return base64 string
@@ -127,7 +136,7 @@ pub fn verify(hash: &str, b64_sig: &str, b64_pub_key: &str) -> Result<()> {
     let pub_key = secp256k1::key::PublicKey::from_slice(&SECP256K1, &base64::decode(b64_pub_key)?)?;
 
     // verify the signature
-    let signature = Signature::from_compact(&SECP256K1, &sig)?;
+    let signature = secp256k1::Signature::from_compact(&SECP256K1, &sig)?;
     SECP256K1.verify(&msg, &signature, &pub_key)?;
     Ok(())
 }
@@ -147,14 +156,14 @@ fn test_master_private_key() -> Result<()> {
     Ok(())
 }
 
-// #[test]
-// fn test_extended_public_from_private() -> Result<()> {
-//     let mnemonic = mnemonic("")?;
-//     let prvk = master_private_key(&mnemonic, "")?;
-//     let pubk = extended_public_from_private(&prvk);
-//     println!("master_private_key = {}", pubk.to_string());
-//     Ok(())
-// }
+#[test]
+fn test_extended_public_from_private() -> Result<()> {
+    let mnemonic = mnemonic("")?;
+    let prvk = master_private_key(&mnemonic, "")?;
+    let pubk = extended_public_from_private(&prvk);
+    println!("master_private_key = {}", pubk.to_string());
+    Ok(())
+}
 
 #[test]
 fn test_wallet_pubkey() -> Result<()> {
@@ -183,4 +192,25 @@ fn test_sign_and_verify() -> Result<()> {
 
     let sig = sign(&hash, &prvk)?;
     verify(&hash, &sig, &pubk.to_base64_key())
+}
+
+#[test]
+fn test_device_address() -> Result<()> {
+    let mnemonic = mnemonic("")?;
+    let prvk = master_private_key(&mnemonic, "")?;
+    let wallet = 0;
+
+    let wallet_pubk = wallet_pubkey(&prvk, wallet)?;
+    println!("wallet_public_key = {}", wallet_pubk.to_string());
+
+    let wallet_id = wallet_id(&wallet_pubk)?;
+    println!("wallet_id= {}", wallet_id);
+
+    let wallet_address = wallet_address(&wallet_pubk, false, 0)?;
+    println!("wallet_0/0_address = {}", wallet_address);
+
+    let device_address = device_address(&prvk)?;
+    println!("device_address = {}", device_address);
+    assert_eq!(object_hash::is_chash_valid(&device_address[1..]), true);
+    Ok(())
 }
