@@ -12,4 +12,4 @@ evn:
   - RUST_BACKTRACE=1
 
 script:
-  - cargo test
+  - cargo test --all
