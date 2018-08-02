@@ -4,6 +4,7 @@ use error::Result;
 use failure::ResultExt;
 use graph;
 use joint::Joint;
+use object_hash;
 use parent_composer;
 use rusqlite::Connection;
 use std::collections::HashSet;
@@ -115,7 +116,8 @@ pub fn prepare_history(
             unit: row.get(0),
             main_chain_index: row.get(1),
             level: row.get(2),
-        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
     let rows = tmp_rows
         .into_iter()
         .filter(|s| !known_stable_units.contains(&s.unit))
@@ -168,6 +170,65 @@ pub fn prepare_history(
         joints,
         proofchain_balls,
     })
+}
+
+
+pub fn process_history(db: &Connection, resp_history: &mut HistoryResponse) -> Result<()> {
+    if resp_history.joints.is_empty() {
+        bail!("no joints");
+    }
+    if resp_history.unstable_mc_joints.is_empty() {
+        bail!("no unstable_mc_joints");
+    }
+    // if resp_history.witness_change_and_definition_joints.is_empty() {
+    //     resp_history.witness_change_and_definition_joints = vec![];
+    // }
+    // if resp_history.proofchain_balls.is_empty() {
+    //     resp_history.proofchain_balls = vec![];
+    // }
+    let witness_proof = witness_proof::process_witness_proof(
+        db,
+        &resp_history.unstable_mc_joints,
+        resp_history.witness_change_and_definition_joints.clone(),
+        false,
+    ).context("gprocess_witness_proof failed")?;
+
+    // let last_ball_units = witness_proof.last_ball_units;
+    // let assoc_last_ball_by_last_ball_unit = witness_proof.assoc_last_ball_by_last_ball_unit;
+    let mut proven_units_non_serialness: Vec<String> = vec![];
+    let rr = witness_proof
+        .assoc_last_ball_by_last_ball_unit
+        .iter()
+        .map(|s| s.1)
+        .collect::<Vec<_>>();
+    for ball in &resp_history.proofchain_balls {
+        let obj_ball = ball;
+        if obj_ball.ball
+            != object_hash::get_ball_hash(
+                &obj_ball.unit,
+                &obj_ball.parent_balls,
+                &obj_ball.skiplist_balls,
+                obj_ball.is_nonserial.unwrap(),
+            ) {
+            bail!("wrong ball hash");
+        }
+        let a = rr.iter().find(|&&x| x.to_owned() == obj_ball.ball);
+        if a.is_none() {
+            bail!("ball not known");
+        }
+        proven_units_non_serialness.push(obj_ball.ball.clone());
+    }
+    let joints = &resp_history.joints;
+    for joint in joints {
+        let unit = &joint.unit;
+        if Some(joint.get_unit_hash().to_owned()) != unit.unit {
+            bail!("invalid hash");
+        }
+        if unit.timestamp.is_none() || unit.timestamp.unwrap() == 0 {
+            bail!("no timestamp");
+        }
+    }
+    Ok(())
 }
 
 fn add_shared_addresses_of_wallet(db: &Connection, addresses: &Vec<String>) -> Result<Vec<String>> {
@@ -331,7 +392,8 @@ fn find_parent_and_add_ball(
             .query_map(&[&cur_unit], |row| TempUnit {
                 unit: row.get(0),
                 ball: row.get(1),
-            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         if rows.len() != 1 {
             bail!("no unit?");
@@ -344,8 +406,7 @@ fn find_parent_and_add_ball(
         )?;
 
         let mut parent_balls = Vec::new();
-        let parent_rows =
-            stmt.query_map(&[&cur_unit.unit], |row| row.get::<_, Option<String>>(0))?;
+        let parent_rows = stmt.query_map(&[&cur_unit.unit], |row| row.get::<_, Option<String>>(0))?;
 
         for row in parent_rows {
             if let Some(ball) = row? {
@@ -432,7 +493,8 @@ fn build_path(
                 .query_map(&[], |v| Tmp {
                     main_chain_index: v.get(1),
                     unit: v.get(0),
-                })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+                })?
+                .collect::<::std::result::Result<Vec<_>, _>>()?;
             if rows[0].main_chain_index < earlier_joint.unit.main_chain_index {
                 return build_path_to_earlier_unit(db, &loop_joint, &earlier_joint, chains);
             }
@@ -588,7 +650,8 @@ fn build_proof_chain_on_mc(
                 is_nonserial: None,
                 parent_balls: Vec::new(),
                 skiplist_balls: Vec::new(),
-            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
         if tmp_balls.len() != 1 {
             bail!(
                 "no prev chain element? mci={}, later_mci={}, earlier_mci={}",
@@ -635,7 +698,8 @@ fn build_proof_chain_on_mc(
             .query_map(&[&ball.unit], |v| TmpScrow {
                 ball: v.get(0),
                 main_chain_index: v.get(1),
-            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         if srows.iter().any(|s| s.ball.is_none()) {
             bail!("some skiplist units have no balls");
