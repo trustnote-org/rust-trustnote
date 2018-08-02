@@ -12,3 +12,4 @@ Cargo.lock
 **/*.rs.bk
 trustnote.sqlite-shm
 trustnote.sqlite-wal
+preferences.json
