@@ -721,7 +721,8 @@ impl HubConn {
             .query_map(&[&address, &address], |row| TempUnit {
                 unit: row.get(0),
                 is_stable: row.get(1),
-            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         if rows.is_empty() {
             return Ok(());
@@ -763,7 +764,8 @@ impl HubConn {
                 name: row.get(1),
                 pairing_cod: row.get(2),
                 description: row.get(3),
-            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
         Ok(serde_json::to_value(bots)?)
     }
 
@@ -1875,7 +1877,8 @@ fn notify_light_clients_about_stable_joints(
         .query_map(
             &[&from_mci, &to_mci, &from_mci, &to_mci, &from_mci, &to_mci],
             |row| row.get(0),
-        )?.collect::<::std::result::Result<Vec<String>, _>>()?;
+        )?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
     for peer in rows {
         if let Some(ws) = WSS.get_connection_by_name(&peer) {
             ws.send_just_saying("light/have_updates", Value::Null)?;
