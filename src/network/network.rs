@@ -156,7 +156,7 @@ impl<T> WsConnection<T> {
         let req_map = Arc::new(WaiterMap::new());
 
         let req_map_1 = req_map.clone();
-        let mut reader = WebSocket::from_raw_socket(ws.get_ref().try_clone()?, role);
+        let mut reader = WebSocket::from_raw_socket(ws.get_ref().try_clone()?, role, None);
         let ws = Arc::new(WsConnection {
             ws: RwLock::new(WsInner {
                 ws,

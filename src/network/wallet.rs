@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use super::network::{Sender, Server, WsConnection};
+use super::network::{/*Sender,*/ Server, WsConnection};
 use error::Result;
-use may::{self, net::TcpStream};
-use serde_json::{self, Value};
+use may::net::TcpStream;
+use serde_json::Value;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
@@ -32,7 +32,7 @@ pub fn connect_to_hub(hub: &str) -> Result<()> {
 }
 
 impl Server<WalletData> for WalletData {
-    fn on_message(ws: Arc<WsConnection<WalletData>>, subject: String, body: Value) -> Result<()> {
+    fn on_message(_ws: Arc<WsConnection<WalletData>>, subject: String, body: Value) -> Result<()> {
         match subject.as_str() {
             subject => info!(
                 "on_message unknown subject: {} body {}",
@@ -44,18 +44,18 @@ impl Server<WalletData> for WalletData {
     }
 
     fn on_request(
-        ws: Arc<WsConnection<WalletData>>,
+        _ws: Arc<WsConnection<WalletData>>,
         command: String,
         params: Value,
     ) -> Result<Value> {
-        let response = match command.as_str() {
+        let _response = match command.as_str() {
             command => bail!(
                 "on_request unknown command: {} {}",
                 command,
                 params.to_string()
             ),
         };
-        Ok(response)
+        // Ok(response)
     }
 }
 
