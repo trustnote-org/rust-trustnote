@@ -1,6 +1,6 @@
 [package]
-description = "trustnote wallet core rust implmentation"
-name = "trustnote_cli_core"
+description = "trustnote wallet basic rust implmentation"
+name = "trustnote_wallet"
 version = "0.1.0"
 authors = ["Xudong Huang <huangxu008@hotmail.com>"]
 license = "MIT"
@@ -11,3 +11,4 @@ rand = "0.5"
 bitcoin = "0.13"
 lazy_static = "1"
 wallet = { git = "https://github.com/rust-bitcoin/rust-wallet.git" }
+
