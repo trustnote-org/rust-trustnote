@@ -1,28 +1,30 @@
 use std::collections::HashMap;
 
-use failure::*;
+use db;
+use error::Result;
+use my_witness;
+use parent_composer::LastStableBallAndParentUnits;
 use rusqlite::Connection;
 use serde_json::Value;
-use trustnote::parent_composer::LastStableBallAndParentUnits;
-use trustnote::spec::{Message, Payload, Payment};
-use trustnote::*;
+use spec::*;
+use storage;
 
 struct Param {
     signing_addresses: Vec<String>,
     paying_addresses: Vec<String>,
-    outputs: Vec<spec::Output>,
-    messages: Vec<spec::Message>,
+    outputs: Vec<Output>,
+    messages: Vec<Message>,
     signer: String,
     light_props: Option<LastStableBallAndParentUnits>,
-    unit: spec::Unit,
+    witnesses: Vec<String>,
 }
 
 // TODO: params name
 #[allow(dead_code)]
 fn compose_joint(mut params: Param) -> Result<()> {
-    let witnesses = params.unit.witnesses.clone();
+    let witnesses = params.witnesses.clone();
     if witnesses.is_empty() {
-        params.unit.witnesses = my_witness::read_my_witnesses()?;
+        params.witnesses = my_witness::read_my_witnesses()?;
         return compose_joint(params);
     }
 
@@ -82,11 +84,11 @@ fn compose_joint(mut params: Param) -> Result<()> {
         signing_addresses.sort();
         signing_addresses
     };
-    let hash_placeholder = "--------------------------------------------".to_string();
+
     let payment_message = Message {
         app: "payment".to_string(),
         payload_location: "inline".to_string(),
-        payload_hash: hash_placeholder,
+        payload_hash: String::new(),
         payload: Some(Payload::Payment(Payment {
             address: None,
             asset: None,
@@ -113,31 +115,29 @@ fn compose_joint(mut params: Param) -> Result<()> {
     messages.push(payment_message);
 
     let is_multi_authored = from_addresses.len() > 1;
-    let mut unit = spec::Unit::default();
-    unit.messages = messages.clone();
+    // let mut unit = Unit::default();
+    let _unit_messages = messages.clone(); //part of unit
+    let mut unit_earned_headers_commission_recipients = Vec::new(); //part of unit
     if is_multi_authored {
-        unit.earned_headers_commission_recipients
-            .push(spec::HeaderCommissionShare {
-                address: change_outputs.into_iter().nth(0).unwrap().address.unwrap(),
-                earned_headers_commission_share: 100,
-            });
+        unit_earned_headers_commission_recipients.push(HeaderCommissionShare {
+            address: change_outputs.into_iter().nth(0).unwrap().address.unwrap(),
+            earned_headers_commission_share: 100,
+        });
     }
-
-    let db = db::DB_POOL.get_connection();
 
     // TODO: lock
 
-    // parent units
-    unit.parent_units = light_props.clone().unwrap().parent_units;
-    unit.last_ball = light_props.clone().unwrap().last_stable_mc_ball;
-    unit.last_ball_unit = light_props.clone().unwrap().last_stable_mc_ball_unit;
-    let last_ball_mci = light_props.clone().unwrap().last_stable_mc_ball_mci;
+    // unit.parent_units = light_props.clone().unwrap().parent_units; //part of unit
+    // unit.last_ball = light_props.clone().unwrap().last_stable_mc_ball;
+    // unit.last_ball_unit = light_props.clone().unwrap().last_stable_mc_ball_unit;
+    let last_ball_mci = light_props.unwrap().last_stable_mc_ball_mci;
 
     check_for_unstable_predecessors()?;
 
     //authors
+    let db = db::DB_POOL.get_connection();
     for from_address in from_addresses {
-        let _author = spec::Author {
+        let _author = Author {
             address: from_address.clone(),
             authentifiers: HashMap::new(),
             definition: Value::Null,
@@ -147,12 +147,15 @@ fn compose_joint(mut params: Param) -> Result<()> {
     }
 
     // witnesses
+
     if storage::determine_if_witness_and_address_definition_have_refs(&db, &witnesses)? {
         bail!("some witnesses have references in their addresses");
     }
+    let mut _unit_witness_list_unit = Some(String::new()); //part of unit
+    let mut _unit_witnesses = Vec::new(); //part of unit
     match storage::find_witness_list_unit(&db, &witnesses, last_ball_mci)? {
-        Some(witness_list_unit) => unit.witness_list_unit = Some(witness_list_unit),
-        None => unit.witnesses = witnesses,
+        Some(witness_list_unit) => _unit_witness_list_unit = Some(witness_list_unit),
+        None => _unit_witnesses = witnesses,
     }
 
     // messages retrieved via callback
@@ -176,7 +179,7 @@ fn compose_joint(mut params: Param) -> Result<()> {
 
 #[allow(dead_code)]
 // move this to network
-fn request_from_light_vendor(
+pub fn request_from_light_vendor(
     _request: &str,
     _witnesses: Vec<String>,
 ) -> Result<LastStableBallAndParentUnits> {

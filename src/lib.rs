@@ -94,6 +94,7 @@ pub mod paid_witnessing;
 pub mod spec;
 
 pub mod catchup;
+pub mod composer;
 mod definition;
 pub mod joint;
 pub mod joint_storage;
