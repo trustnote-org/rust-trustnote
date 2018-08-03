@@ -18,8 +18,8 @@ pub fn calc_witness_earnings(
          AND main_chain_index>=? AND main_chain_index<=?",
     )?;
 
-    let count = stmt
-        .query_row(
+    let count =
+        stmt.query_row(
             &[
                 &to_main_chain_index,
                 &(to_main_chain_index + config::COUNT_MC_BALLS_FOR_PAID_WITNESSING + 1),

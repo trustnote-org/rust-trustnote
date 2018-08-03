@@ -981,10 +981,9 @@ fn validate_author(
                                                address_definition: Value,
                                                nonserial: bool|
      -> Result<()> {
-        if !nonserial
-            || !validate_state
-                .addresses_with_forked_path
-                .contains(&author.address)
+        if !nonserial || !validate_state
+            .addresses_with_forked_path
+            .contains(&author.address)
         {
             bail_with_validation_err!(
                 UnitError,
@@ -1061,10 +1060,9 @@ fn validate_author(
             validate_definition(validate_state, nonserial)?;
             return Ok(());
         }
-        if !nonserial
-            || !validate_state
-                .addresses_with_forked_path
-                .contains(&author.address)
+        if !nonserial || !validate_state
+            .addresses_with_forked_path
+            .contains(&author.address)
         {
             bail_with_validation_err!(UnitError, "you can't send anything before your last definition is stable and before last ball");
         }
@@ -1097,10 +1095,9 @@ fn validate_author(
             return Ok(());
         }
 
-        if !nonserial
-            || !validate_state
-                .addresses_with_forked_path
-                .contains(&author.address)
+        if !nonserial || !validate_state
+            .addresses_with_forked_path
+            .contains(&author.address)
         {
             bail_with_validation_err!(
                 UnitError,

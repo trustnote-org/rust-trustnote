@@ -191,7 +191,8 @@ pub fn read_dependent_joints_that_are_ready(
                     .expect("failed to parse json"),
                 create_ts: row_inner.get::<_, String>(2).parse::<usize>().unwrap() * 1000,
                 peer: row_inner.get(1),
-            })?.collect::<::std::result::Result<Vec<ReadyJoint>, _>>()?;
+            })?
+            .collect::<::std::result::Result<Vec<ReadyJoint>, _>>()?;
 
         ret.append(rows_inner.as_mut());
     }
@@ -262,7 +263,8 @@ where
             .query_map(&[&new_unit.unit], |row| TempUnitProp {
                 unit: row.get(0),
                 peer: row.get(1),
-            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+            })?
+            .collect::<::std::result::Result<Vec<_>, _>>()?;
 
         let units_str = unit_rows
             .iter()

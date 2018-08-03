@@ -3,7 +3,7 @@
 use failure::ResultExt;
 
 use rusqlite::Connection;
-use serde::ser::Serialize;
+use serde_json::{self, Value};
 use trustnote::error::Result;
 use trustnote::my_witness;
 use trustnote::*;
@@ -14,6 +14,7 @@ struct ws {
 }
 
 fn find_outbound_peer_or_connect(_: String) -> Result<ws> {
+    //get connect to hub
     unimplemented!();
 }
 fn refresh_light_client_history() -> Result<()> {
@@ -30,36 +31,33 @@ fn refresh_light_client_history() -> Result<()> {
 
     let mut ws = find_outbound_peer_or_connect(light_vendor_url)?; //FIXME: need to impl
 
-    if ws.b_refreshing_history {
-        info!("previous refresh not finished yet");
-        return Ok(());
-    }
-    ws.b_refreshing_history = true;
     let req_get_history =
         prepare_request_for_history().context("prepare_request_for_history failed")?;
-    let response_history = network::send_request(ws, "light/get_history", req_get_history)
+    let response_history = ws
+        .send_request("light/get_history", &req_get_history)
         .context("send get_history_request failed")?;
 
     let ret = light::process_history(response_history).context("process_history failed")?;
 
-    //unimplemented!();
     Ok(())
 }
 
+#[derive(Serialize, Deserialize)]
 struct Req_History {
-    //#[serde(skip_serializing_if = "is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     witnesses: Vec<String>,
-    //#[serde(skip_serializing_if = "is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     addresses: Vec<String>,
-    //#[serde(skip_serializing_if = "is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     unstable_units: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     known_stable_units: Vec<String>,
-    //#[serde(skip_serializing_if = "Option::is_none")]
     last_stable_mci: u32,
-    unit: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unit: Option<String>,
 }
 
-fn prepare_request_for_history() -> Result<Req_History> {
+fn prepare_request_for_history() -> Result<Value> {
     let witnesses = my_witness::read_my_witnesses()?;
     if witnesses.is_empty() {
         bail!("witnesses not found");
@@ -77,10 +75,10 @@ fn prepare_request_for_history() -> Result<Req_History> {
         unstable_units,
         known_stable_units: vec![],
         last_stable_mci: 0,
-        unit: "".to_string(),
+        unit: None,
     };
     if req_history.addresses.is_empty() {
-        return Ok(req_history);
+        return Ok(serde_json::to_value(req_history)?);
     }
     req_history.last_stable_mci = 0;
 
@@ -101,7 +99,7 @@ fn prepare_request_for_history() -> Result<Req_History> {
     if !known_stable_units.is_empty() {
         req_history.known_stable_units = known_stable_units;
     }
-    Ok(req_history)
+    Ok(serde_json::to_value(req_history)?)
 }
 
 fn read_my_addresses(db: &Connection) -> Result<Vec<String>> {

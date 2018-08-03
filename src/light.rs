@@ -172,8 +172,7 @@ pub fn prepare_history(
     })
 }
 
-
-pub fn process_history(db: &Connection, resp_history: &mut HistoryResponse) -> Result<()> {
+pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
     if resp_history.joints.is_empty() {
         bail!("no joints");
     }
@@ -186,8 +185,9 @@ pub fn process_history(db: &Connection, resp_history: &mut HistoryResponse) -> R
     // if resp_history.proofchain_balls.is_empty() {
     //     resp_history.proofchain_balls = vec![];
     // }
+    let db = db::DB_POOL.get_connection();
     let witness_proof = witness_proof::process_witness_proof(
-        db,
+        &db,
         &resp_history.unstable_mc_joints,
         resp_history.witness_change_and_definition_joints.clone(),
         false,
