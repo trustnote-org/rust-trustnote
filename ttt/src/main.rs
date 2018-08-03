@@ -1,13 +1,18 @@
 #[macro_use]
 extern crate log;
-extern crate chrono;
 #[macro_use]
 extern crate clap;
+#[macro_use]
+extern crate lazy_static;
+
+extern crate chrono;
 extern crate fern;
 extern crate may;
 extern crate serde_json;
 extern crate trustnote;
-extern crate trustnote_client;
+extern crate trustnote_wallet_base;
+
+mod config;
 
 use clap::App;
 use trustnote::*;
@@ -29,8 +34,7 @@ fn log_init() {
                 record.target(),
                 message
             ))
-        })
-        .level(log_lvl)
+        }).level(log_lvl)
         .chain(std::io::stdout())
         .apply()
         .unwrap();
