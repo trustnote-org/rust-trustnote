@@ -23,9 +23,9 @@ use trustnote::Result;
 fn log_init() {
     // TODO: need to implement async logs
     let log_lvl = if cfg!(debug_assertions) {
-        log::LevelFilter::Debug
+        log::LevelFilter::Info
     } else {
-        log::LevelFilter::Warn
+        log::LevelFilter::Error
     };
 
     fern::Dispatch::new()
@@ -42,7 +42,7 @@ fn log_init() {
         .apply()
         .unwrap();
 
-    info!("log init done!");
+    debug!("log init done!");
 }
 
 fn main() -> Result<()> {
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
     may::config().set_stack_size(stack_size);
 
     log_init();
-    config::show_config();
+    let _settings = config::get_settings();
 
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();

@@ -1,7 +1,5 @@
 use std::fs::File;
-// use std::path::Path;
 
-use may::sync::RwLock;
 use serde_json;
 use trustnote::Result;
 use trustnote_wallet_base::*;
@@ -9,17 +7,18 @@ use trustnote_wallet_base::*;
 const SETTINGS_FILE: &str = "settings.json";
 
 lazy_static! {
-    static ref SETTINGS: RwLock<Settings> = RwLock::new({
+    static ref SETTINGS: Settings = {
         match open_settings() {
             Ok(s) => s,
             Err(_) => {
                 warn!("can't open settings.json, will use default settings");
                 let settings = Settings::default();
+                settings.show_config();
                 save_settings(&settings).expect("failed to save settings");
                 settings
             }
         }
-    });
+    };
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -42,19 +41,21 @@ impl Default for Settings {
     }
 }
 
+impl Settings {
+    pub fn show_config(&self) {
+        use std::io::stdout;
+        println!("settings:");
+        serde_json::to_writer_pretty(stdout(), self).unwrap();
+        println!("\n");
+    }
+}
+
 fn open_settings() -> Result<Settings> {
     let mut settings_path = ::std::env::current_dir()?;
     settings_path.push(SETTINGS_FILE);
     let file = File::open(settings_path)?;
     let settings = serde_json::from_reader(file)?;
     Ok(settings)
-}
-
-pub fn show_config() {
-    use std::io::stdout;
-    println!("config:");
-    serde_json::to_writer_pretty(stdout(), &*SETTINGS.read().unwrap()).unwrap();
-    println!("\n");
 }
 
 fn save_settings(settings: &Settings) -> Result<()> {
@@ -65,4 +66,8 @@ fn save_settings(settings: &Settings) -> Result<()> {
 
     serde_json::to_writer_pretty(file, settings)?;
     Ok(())
+}
+
+pub fn get_settings() -> &'static Settings {
+    &SETTINGS
 }
