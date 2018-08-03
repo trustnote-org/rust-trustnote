@@ -12,7 +12,7 @@ extern crate serde_json;
 extern crate trustnote;
 extern crate trustnote_wallet_base;
 
-mod config;
+// mod config;
 
 use clap::App;
 use trustnote::*;
