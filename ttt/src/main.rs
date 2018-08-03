@@ -63,19 +63,19 @@ fn main() -> Result<()> {
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();
 
-    //Init
-    if let Some(init) = m.subcommand_matches("init") {
-        if let Some(mnemonic) = init.value_of("mnemonic") {
+    //Sync
+    if let Some(sync) = m.subcommand_matches("sync") {
+        if let Some(mnemonic) = sync.value_of("mnemonic") {
             println!("Init wallet with mnemonic {}", mnemonic);
         } else {
             println!("Init wallet with random mnemonic");
         }
     }
 
-    //Pay
-    if let Some(pay) = m.subcommand_matches("pay") {
-        if let Some(address) = pay.value_of("address") {
-            if let Some(amount) = pay.value_of("amount") {
+    //Send
+    if let Some(send) = m.subcommand_matches("send") {
+        if let Some(address) = send.value_of("address") {
+            if let Some(amount) = send.value_of("amount") {
                 println!("Pay to address {} amount {}", address, amount);
             }
         }
@@ -86,14 +86,8 @@ fn main() -> Result<()> {
         println!("Info for this wallet");
     }
 
-    //Balance
-    if let Some(_balance) = m.subcommand_matches("balance") {
-        let balance = 0;
-        println!("Wallet Balance : {}", balance);
-    }
-
-    //History
-    if let Some(_history) = m.subcommand_matches("history") {
+    //Log
+    if let Some(_log) = m.subcommand_matches("log") {
         println!("Wallet History");
     }
 

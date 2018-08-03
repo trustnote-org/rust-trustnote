@@ -1,7 +1,6 @@
 name: ttt
 version: "0.1"
 about: A ttt wallet command line tool
-author: Hui Min HE <joyioushe@gmail.com>
 
 # AppSettings can be defined as a list and are **not** ascii case sensitive
 settings:
@@ -13,19 +12,17 @@ settings:
 subcommands:
     # The name of this subcommand will be 'subcmd' which can be accessed in your
     # Rust code later
-    - init:
-        about: Init a ttt wallet
+    - sync:
+        about: Sync a ttt wallet
         version: "0.1"
-        author: Hui Min HE <joyioushe@gmail.com>
         args:
             - mnemonic:
                 index: 1
                 help: init the wallet with the mnemonic
                 takes_value: true
-    - pay:
+    - send:
         about: Pay the amount of TTT to the address
         version: "0.1"
-        author: Hui Min HE <joyioushe@gmail.com>
         args:
             - address:
                 help: example subcommand option
@@ -37,17 +34,12 @@ subcommands:
                 index: 2
                 takes_value: true
                 required: true
-    - history:
+    - log:
         about: Show the history of this wallet account
         version: "0.1"
-        author: Hui Min HE <joyioushe@gmail.com>
     - info:
         about: Show the wallet info
         version: "0.1"
-        author: Hui Min HE <joyioushe@gmail.com>
-    - balance:
-        about: Show the balance of this wallet account
-        version: "0.1"
-        author: Hui Min HE <joyioushe@gmail.com>
+
 
 
