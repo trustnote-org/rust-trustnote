@@ -4,7 +4,7 @@ use failure::*;
 use rusqlite::Connection;
 use serde_json::Value;
 use trustnote::parent_composer::LastStableBallAndParentUnits;
-use trustnote::spec::Payload;
+use trustnote::spec::{Message, Payload, Payment};
 use trustnote::*;
 
 struct Param {
@@ -17,7 +17,7 @@ struct Param {
     unit: spec::Unit,
 }
 
-// //TODO: params
+// TODO: params name
 #[allow(dead_code)]
 fn compose_joint(mut params: Param) -> Result<()> {
     let witnesses = params.unit.witnesses.clone();
@@ -32,7 +32,6 @@ fn compose_joint(mut params: Param) -> Result<()> {
             witnesses,
         ) {
             Ok(res) => {
-                //TODO: some conditions
                 if res.parent_units.is_empty()
                     || res.last_stable_mc_ball.is_none()
                     || res.last_stable_mc_ball_unit.is_none()
@@ -84,17 +83,17 @@ fn compose_joint(mut params: Param) -> Result<()> {
         signing_addresses
     };
     let hash_placeholder = "--------------------------------------------".to_string();
-    let payment_message = spec::Message {
+    let payment_message = Message {
         app: "payment".to_string(),
         payload_location: "inline".to_string(),
         payload_hash: hash_placeholder,
-        payload: Some(spec::Payload::Payment(spec::Payment {
+        payload: Some(Payload::Payment(Payment {
             address: None,
             asset: None,
             definition_chash: None,
             denomination: None,
             inputs: Vec::new(),
-            outputs: change_outputs,
+            outputs: change_outputs.clone(),
         })),
         payload_uri: None,
         payload_uri_hash: None,
@@ -116,8 +115,17 @@ fn compose_joint(mut params: Param) -> Result<()> {
     let is_multi_authored = from_addresses.len() > 1;
     let mut unit = spec::Unit::default();
     unit.messages = messages.clone();
+    if is_multi_authored {
+        unit.earned_headers_commission_recipients
+            .push(spec::HeaderCommissionShare {
+                address: change_outputs.into_iter().nth(0).unwrap().address.unwrap(),
+                earned_headers_commission_share: 100,
+            });
+    }
 
     let db = db::DB_POOL.get_connection();
+
+    // TODO: lock
 
     // parent units
     unit.parent_units = light_props.clone().unwrap().parent_units;
@@ -134,7 +142,7 @@ fn compose_joint(mut params: Param) -> Result<()> {
             authentifiers: HashMap::new(),
             definition: Value::Null,
         };
-        read_signing_paths(&db, from_address)?;
+        read_signing_paths(&db, from_address, &signer)?;
         //TODO: something undone
     }
 
@@ -161,10 +169,13 @@ fn compose_joint(mut params: Param) -> Result<()> {
         is_multi_authored,
     )?;
 
+    // TODO: handle err and return true value
+
     Ok(())
 }
 
 #[allow(dead_code)]
+// move this to network
 fn request_from_light_vendor(
     _request: &str,
     _witnesses: Vec<String>,
@@ -182,9 +193,9 @@ fn check_for_unstable_predecessors() -> Result<()> {
 fn read_definition(_db: Connection, _from_address: String) -> Result<()> {
     unimplemented!()
 }
-//signer.
+
 #[allow(dead_code)]
-fn read_signing_paths(_db: &Connection, _from_address: String) -> Result<()> {
+fn read_signing_paths(_db: &Connection, _from_address: String, _signer: &String) -> Result<()> {
     unimplemented!()
 }
 
