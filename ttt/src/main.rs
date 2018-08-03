@@ -18,7 +18,7 @@ extern crate trustnote_wallet_base;
 mod config;
 
 use clap::App;
-use trustnote::Result;
+use trustnote::*;
 
 fn log_init() {
     // TODO: need to implement async logs
@@ -53,6 +53,9 @@ fn main() -> Result<()> {
         0x2000
     };
     may::config().set_stack_size(stack_size);
+    let mut db_path = ::std::env::current_dir()?;
+    db_path.push(config::DB_PATH);
+    db::set_db_path(db_path);
 
     log_init();
     let _settings = config::get_settings();

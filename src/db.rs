@@ -1,30 +1,38 @@
+use std::fmt;
 use std::ops::{Deref, DerefMut};
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use config;
+use crossbeam::atomic::ArcCell;
 use error::Result;
 use may;
 use may::sync::mpmc::{self, Receiver, Sender};
 use num_cpus;
 use rusqlite::{Connection, OpenFlags};
-use std::fmt;
 
 lazy_static! {
+    static ref DB_PATH: ArcCell<PathBuf> = { ArcCell::new(Arc::new(config::get_database_path())) };
     pub static ref DB_POOL: DatabasePool = DatabasePool::new();
 }
 
-pub fn create_database_if_necessary() -> Result<::std::path::PathBuf> {
+pub fn set_db_path(path: PathBuf) {
+    DB_PATH.set(Arc::new(path));
+}
+
+pub fn create_database_if_necessary() -> Result<PathBuf> {
     use std::fs;
-    let db_path = config::get_database_path();
+    let db_path = &*DB_PATH.get();
     if !db_path.exists() {
         let initial_db_path = config::get_initial_db_path();
-        fs::copy(&initial_db_path, &db_path)?;
+        fs::copy(&initial_db_path, db_path)?;
         info!(
             "create_database_if_necessary done: db_path: {:?}, initial db path: {}",
             db_path, initial_db_path
         );
     }
 
-    Ok(db_path)
+    Ok(db_path.clone())
 }
 
 pub struct DatabasePool {
