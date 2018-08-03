@@ -12,7 +12,6 @@ struct SpendProof {
 }
 
 #[derive(Debug, Clone)]
-// #![feature(type_ascription)]
 struct Input {
     amount: Option<u32>,
     address: Option<String>,
@@ -60,7 +59,6 @@ struct InputsAndAmount {
 }
 
 #[derive(Debug, Clone)]
-
 struct Asset {
     asset: Option<String>,
     issued_by_definer_only: Option<u32>,
@@ -257,7 +255,6 @@ fn finish(inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
     Ok(inputs_and_amount)
 }
 
-//FIXME:
 fn add_mc_inputs(
     db: &Connection,
     input_info: &mut InputInfo,
