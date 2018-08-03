@@ -58,8 +58,7 @@ pub fn determin_if_stable_in_laster_units(
             is_on_main_chain: row.get(1),
             main_chain_index: row.get(2),
             level: row.get(3),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(!rows.is_empty(), "no best children of {}", best_parent_unit);
 
@@ -96,9 +95,9 @@ pub fn determin_if_stable_in_laster_units(
         &alt_branch_root_units,
         max_later_limci.unwrap_or(0),
     )?.into_iter()
-        .map(|s| format!("'{}'", s))
-        .collect::<Vec<_>>()
-        .join(",");
+    .map(|s| format!("'{}'", s))
+    .collect::<Vec<_>>()
+    .join(",");
 
     let sql = format!(
         "SELECT MAX(units.level) AS max_alt_level FROM units \
@@ -209,8 +208,7 @@ fn find_min_mc_witnessed_level(
             witnessed_level: row.get(0),
             best_parent_unit: row.get(1),
             count: row.get(2),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(!rows.is_empty(), "find_min_mc_witnessed_level: not 1 row");
     let mut count = rows[0].count as usize;
@@ -228,8 +226,7 @@ fn find_min_mc_witnessed_level(
                 best_parent_unit: row.get(0),
                 witnessed_level: row.get(1),
                 count: row.get(2),
-            })?
-            .collect::<::std::result::Result<Vec<_>, _>>()?;
+            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
         ensure!(rows.len() == 1, "findMinMcWitnessedLevel: not 1 row");
         let row = rows.into_iter().nth(0).unwrap();
@@ -299,8 +296,7 @@ fn create_list_of_best_children_included_by_later_units(
             unit: row.get(0),
             is_free: row.get(1),
             main_chain_index: row.get(2),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(!rows.is_empty(), "no alt branch root units?");
 
@@ -338,8 +334,7 @@ fn create_list_of_best_children_included_by_later_units(
                 unit: row.get(0),
                 is_free: row.get(1),
                 main_chain_index: row.get(2),
-            })?
-            .collect::<::std::result::Result<Vec<_>, _>>()?;
+            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
         if rows.is_empty() {
             break;
@@ -683,8 +678,7 @@ fn create_list_of_best_children(db: &Connection, parent_units: Vec<String>) -> R
                 .query_map(&[], |row| UnitTemp {
                     unit: row.get(0),
                     is_free: row.get(1),
-                })?
-                .collect::<::std::result::Result<Vec<_>, _>>()?;
+                })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
             let mut next_units = Vec::new();
             for row in rows {
@@ -868,8 +862,7 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
                 is_on_main_chain: row.get(1),
                 main_chain_index: row.get(2),
                 level: row.get(3),
-            })?
-            .collect::<::std::result::Result<Vec<TempUnitProp>, _>>()?;
+            })?.collect::<::std::result::Result<Vec<TempUnitProp>, _>>()?;
 
         ensure!(
             !best_children.is_empty(),

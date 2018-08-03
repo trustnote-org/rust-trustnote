@@ -90,8 +90,9 @@ impl Joint {
         let unit_hash = self.get_unit_hash();
 
         for parent in &unit.parent_units {
-            let mut stmt = tx
-                .prepare_cached("INSERT INTO parenthoods (child_unit, parent_unit) VALUES (?, ?)")?;
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO parenthoods (child_unit, parent_unit) VALUES (?, ?)",
+            )?;
             stmt.execute(&[unit_hash, parent])?;
         }
 
@@ -128,7 +129,8 @@ impl Joint {
         }
 
         let unit_hash = self.get_unit_hash();
-        let mut stmt = tx.prepare_cached("INSERT INTO unit_witnesses (unit, address) VALUES(?,?)")?;
+        let mut stmt =
+            tx.prepare_cached("INSERT INTO unit_witnesses (unit, address) VALUES(?,?)")?;
         for address in &unit.witnesses {
             stmt.execute(&[unit_hash, address])?;
         }

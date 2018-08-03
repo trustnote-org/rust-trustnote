@@ -90,8 +90,7 @@ fn pick_parent_units(db: &Connection, witnesses_list: &str) -> Result<Vec<String
             version: row.get(1),
             alt: row.get(2),
             count_matching_witnesses: row.get(3),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     if rows
         .iter()
@@ -106,8 +105,8 @@ fn pick_parent_units(db: &Connection, witnesses_list: &str) -> Result<Vec<String
         .collect::<Vec<_>>();
 
     if tmp_units.is_empty() {
-        let parent_units =
-            pick_deep_parent_units(db, witnesses_list).context("failed to pick deep parent units")?;
+        let parent_units = pick_deep_parent_units(db, witnesses_list)
+            .context("failed to pick deep parent units")?;
         Ok(parent_units)
     } else {
         Ok(tmp_units.into_iter().map(|x| x.unit).collect::<Vec<_>>())
@@ -188,8 +187,7 @@ fn adjust_last_stable_mc_ball_and_parents(
                 .query_map(&[&last_stable_mc_ball_unit], |row| TempBallMci {
                     ball: row.get(0),
                     main_chain_index: row.get(1),
-                })?
-                .collect::<::std::result::Result<Vec<_>, _>>()?;
+                })?.collect::<::std::result::Result<Vec<_>, _>>()?;
             if rows.len() != 1 {
                 bail!("not 1 ball by unit {}", last_stable_mc_ball_unit);
             }
