@@ -59,23 +59,14 @@ struct InputsAndAmount {
     amount: u32,
 }
 
-impl InputsAndAmount {
-    fn new() -> InputsAndAmount {
-        InputsAndAmount {
-            input_with_proofs: Vec::new(),
-            amount: 0,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
-//TODO: when Asset is null
+
 struct Asset {
     asset: Option<String>,
     issued_by_definer_only: Option<u32>,
     definer_address: String,
     cap: bool,
-    auto_destroy: Option<u32>,
+    auto_destroy: u32,
     is_private: bool,
 }
 
@@ -92,14 +83,15 @@ fn issue_asset(
     db: &Connection,
     mut input_info: InputInfo,
     asset: Option<Asset>,
-
     is_base: bool,
 ) -> Result<InputsAndAmount> {
     //TODO: mount === Infinity && !objAsset.cap
     if asset.is_none() || asset.as_ref().unwrap().asset.is_none() {
         return finish(input_info.inputs_and_amount);
     }
+
     let asset = asset.as_ref().unwrap();
+
     if asset.issued_by_definer_only.is_some()
         && !input_info.paying_addresses.contains(&asset.definer_address)
     {
@@ -113,8 +105,6 @@ fn issue_asset(
     };
 
     let add_issue_input = |serial_number: u32, closer_input_info: &mut InputInfo| -> Result<bool> {
-        closer_input_info.inputs_and_amount.amount += 1;
-
         #[derive(Serialize)]
         struct TmpSpendProof {
             asset: Option<String>,
@@ -123,12 +113,11 @@ fn issue_asset(
             c: u32,
             serial_number: u32,
         }
+        closer_input_info.inputs_and_amount.amount += 1;
 
         let mut input = Input {
             amount: Some(1),
-
             input_type: Some(String::from("issue")),
-            denomination: None,
             serial_number: Some(serial_number),
             ..Default::default()
         };
@@ -214,8 +203,6 @@ fn add_input(
     asset: &Option<Asset>,
     multi_authored: bool,
 ) -> Result<InputsAndAmount> {
-    inputs_and_amount.amount += input.amount.map_or(0, |v| v);
-
     #[derive(Serialize)]
     struct TmpSpendProof {
         asset: Option<String>,
@@ -226,6 +213,8 @@ fn add_input(
         output_index: Option<u32>,
         blinding: Option<String>,
     }
+
+    inputs_and_amount.amount += input.amount.map_or(0, |v| v);
 
     let mut input_with_proof = InputWithProof {
         spend_proof: None,
@@ -325,7 +314,7 @@ fn add_mc_inputs(
             }
         }
     }
-    bail!("found")
+    bail!("not found")
 }
 
 fn add_headers_commission_inputs(
@@ -342,7 +331,7 @@ fn add_headers_commission_inputs(
             "headers_commission",
             config::HEADERS_COMMISSION_INPUT_SIZE,
             max_mci,
-        ).is_ok()
+        ).is_err()
         {
             if add_mc_inputs(
                 db,
@@ -350,7 +339,7 @@ fn add_headers_commission_inputs(
                 "witnessing",
                 config::WITNESSING_INPUT_SIZE,
                 max_mci,
-            ).is_ok()
+            ).is_err()
             {
                 return issue_asset(db, input_info, asset, is_base);
             }
@@ -367,7 +356,7 @@ fn pick_multiple_coins_and_continue(
     is_base: bool,
     last_ball_mci: u32,
 ) -> Result<InputsAndAmount> {
-    let tmp_sql = if asset.is_none() {
+    let tmp_sql = if asset.is_none() || asset.as_ref().unwrap().asset.is_none() {
         " IS NULL".to_string()
     } else {
         "=".to_string() + asset.as_ref().unwrap().asset.as_ref().unwrap()
@@ -488,7 +477,7 @@ fn pick_divisible_coins_for_amount(
     amount: u32,
     multi_authored: bool,
 ) -> Result<InputsAndAmount> {
-    let is_base = if asset.is_none() { false } else { true };
+    let is_base = if asset.is_none() { true } else { false };
 
     let mut spendable = String::new();
 
@@ -502,19 +491,17 @@ fn pick_divisible_coins_for_amount(
         required_amount: amount,
     };
 
-    if let Some(asset) = &asset {
-        if asset.auto_destroy.is_some() {
-            let mut spendable_addresses = input_info
-                .paying_addresses
-                .iter()
-                .filter(|v| v != &&asset.definer_address)
-                .collect::<Vec<_>>();
-            spendable = spendable_addresses
-                .iter()
-                .map(|v| format!("'{}'", v))
-                .collect::<Vec<_>>()
-                .join(",");
-        };
+    if let Some(tmp) = &asset {
+        let mut spendable_addresses = input_info
+            .paying_addresses
+            .iter()
+            .filter(|&v| v != &tmp.definer_address)
+            .collect::<Vec<_>>();
+        spendable = spendable_addresses
+            .iter()
+            .map(|v| format!("'{}'", v))
+            .collect::<Vec<_>>()
+            .join(",")
     }
 
     if spendable.len() > 0 {
