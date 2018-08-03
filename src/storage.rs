@@ -15,8 +15,8 @@ use utils::FifoCache;
 lazy_static! {
     static ref MIN_RETRIEVABLE_MCI: RwLock<u32> = RwLock::new({
         let db = db::DB_POOL.get_connection();
-        let mut stmt =
-            db.prepare_cached(
+        let mut stmt = db
+            .prepare_cached(
                 "SELECT MAX(lb_units.main_chain_index) AS min_retrievable_mci \
                  FROM units JOIN units AS lb_units ON units.last_ball_unit=lb_units.unit \
                  WHERE units.is_on_main_chain=1 AND units.is_stable=1",
@@ -223,8 +223,7 @@ pub fn read_last_stable_mc_unit_props(db: &Connection) -> Result<Option<LastStab
             // FIXME: here ball may be empty
             ball: row.get::<_, String>("ball"),
             main_chain_index: row.get::<_, u32>("main_chain_index"),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     if props.is_empty() {
         return Ok(None);
@@ -390,8 +389,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
             .query_map(&[unit_hash], |row| HeaderCommissionShare {
                 address: row.get(0),
                 earned_headers_commission_share: row.get(1),
-            })?
-            .collect::<::std::result::Result<Vec<HeaderCommissionShare>, _>>()?;
+            })?.collect::<::std::result::Result<Vec<HeaderCommissionShare>, _>>()?;
     }
 
     //Authors
@@ -515,8 +513,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                 feed_name: row.get(0),
                                 value: row.get(1),
                                 int_value: row.get(2),
-                            })?
-                            .collect::<::std::result::Result<Vec<_>, _>>()?;
+                            })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
                         ensure!(!df_rows.is_empty(), "no data feed");
                         use serde_json::Map;
@@ -575,8 +572,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                 amount: row.get(9),
                                 address: row.get(10),
                                 asset: row.get(11),
-                            })?
-                            .collect::<::std::result::Result<Vec<InputTemp>, _>>()?;
+                            })?.collect::<::std::result::Result<Vec<InputTemp>, _>>()?;
 
                         if !rows.is_empty() {
                             //Record the first one for later ones to check against
@@ -784,8 +780,7 @@ pub fn update_min_retrievable_mci_after_stabilizing_mci(
                 unit: row.get(0),
                 content_hash: row.get(1),
             }
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     let mut queries = db::DbQueries::new();
 
@@ -1004,8 +999,7 @@ fn generate_queries_to_unspend_transfer_outputs_spent_in_archived_unit(
             src_unit: row.get(0),
             src_message_index: row.get(1),
             src_output_index: row.get(2),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     queries.add_query(move |db| {
         for unit_row in unit_rows {
@@ -1055,8 +1049,7 @@ fn generate_queries_to_unspend_headers_commission_outputs_spent_in_archived_unit
         .query_map(&[&*unit], |row| TempUnitProp {
             address: row.get(0),
             main_chain_index: row.get(1),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     queries.add_query(move |db| {
         for unit_row in unit_rows {
@@ -1102,8 +1095,7 @@ fn generate_queries_to_unspend_witnessing_outputs_spent_in_archived_unit(
         .query_map(&[&*unit], |row| TempUnitProp {
             address: row.get(0),
             main_chain_index: row.get(1),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     queries.add_query(move |db| {
         for unit_row in unit_rows {
@@ -1135,8 +1127,7 @@ pub fn find_last_ball_mci_of_mci(db: &Connection, mci: u32) -> Result<u32> {
         .query_map(&[&mci], |row| LbUnitProp {
             main_chain_index: row.get(0),
             is_on_main_chain: row.get(1),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     ensure!(
         rows.len() == 1,
@@ -1280,13 +1271,12 @@ pub fn determine_if_has_witness_list_mutations_along_mc(
         .collect::<Vec<_>>()
         .join(",");
 
-    let mc_units =
-        build_list_of_mc_units_with_potentially_different_witness_lists(
-            db,
-            unit,
-            last_ball_unit,
-            witnesses,
-        ).context("failed to build list of mc units with potentially different witness lists")?;
+    let mc_units = build_list_of_mc_units_with_potentially_different_witness_lists(
+        db,
+        unit,
+        last_ball_unit,
+        witnesses,
+    ).context("failed to build list of mc units with potentially different witness lists")?;
 
     info!("###### MC units {:?}", mc_units);
 
