@@ -11,11 +11,13 @@ extern crate trustnote;
 extern crate wallet;
 
 use bitcoin::network::constants::Network;
-use bitcoin::util::bip32::{ChildNumber, ExtendedPrivKey, ExtendedPubKey};
+use bitcoin::util::bip32::ChildNumber;
 use rand::{OsRng, RngCore};
 use trustnote::object_hash;
 use wallet::keyfactory::{KeyFactory, Seed};
-use wallet::mnemonic::Mnemonic;
+
+pub use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
+pub use wallet::mnemonic::Mnemonic;
 
 pub type Result<T> = ::std::result::Result<T, failure::Error>;
 
@@ -40,7 +42,7 @@ impl Base64KeyExt for ExtendedPubKey {
 
 /// generate random mnemonic
 pub fn mnemonic(passphrase: &str) -> Result<Mnemonic> {
-    let mut encrypted = vec![0u8; 32];
+    let mut encrypted = vec![0u8; 16];
     if let Ok(mut rng) = OsRng::new() {
         rng.fill_bytes(encrypted.as_mut_slice());
         let mnemonic = Mnemonic::new(&encrypted, passphrase)?;

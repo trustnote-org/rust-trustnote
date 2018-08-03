@@ -1,6 +1,6 @@
 [package]
 description = "trustnote wallet cli rust implmentation"
-name = "trustnote_client"
+name = "ttt"
 version = "0.1.0"
 authors = ["Xudong Huang <huangxu008@hotmail.com>"]
 license = "MIT"
@@ -8,10 +8,14 @@ license = "MIT"
 [dependencies]
 trustnote = { path = ".."}
 trustnote_wallet_base = { path = "../wallet_base" }
+clap = {version = "2", features = ["yaml"]}
+
 may = "0.3"
 log = "0.4"
 fern = "0.5"
 chrono = "0.4"
-serde_json = "1"
 lazy_static = "1"
-clap = {version = "2", features = ["yaml"]}
+
+serde = "1"
+serde_json = "1"
+serde_derive = "1"

@@ -4,18 +4,21 @@ extern crate log;
 extern crate clap;
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate serde_derive;
 
 extern crate chrono;
 extern crate fern;
 extern crate may;
+extern crate serde;
 extern crate serde_json;
 extern crate trustnote;
 extern crate trustnote_wallet_base;
 
-// mod config;
+mod config;
 
 use clap::App;
-use trustnote::*;
+use trustnote::Result;
 
 fn log_init() {
     // TODO: need to implement async logs
@@ -47,12 +50,12 @@ fn main() -> Result<()> {
     let stack_size = if cfg!(debug_assertions) {
         0x4000
     } else {
-        0x1000
+        0x2000
     };
     may::config().set_stack_size(stack_size);
 
     log_init();
-    // config::show_config();
+    config::show_config();
 
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();
