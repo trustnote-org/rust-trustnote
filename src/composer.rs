@@ -17,6 +17,9 @@ struct Param {
     signer: String,
     light_props: Option<LastStableBallAndParentUnits>,
     witnesses: Vec<String>,
+    inputs: Vec<Input>,
+    input_amount: Option<u32>,
+    send_all: bool,
 }
 
 // TODO: params name
@@ -112,24 +115,25 @@ fn compose_joint(mut params: Param) -> Result<()> {
         total_amount += output.amount.unwrap();
     }
 
-    messages.push(payment_message);
+    messages.push(payment_message.clone());
 
     let is_multi_authored = from_addresses.len() > 1;
-    // let mut unit = Unit::default();
-    let _unit_messages = messages.clone(); //part of unit
-    let mut unit_earned_headers_commission_recipients = Vec::new(); //part of unit
+    let mut unit = Unit::default();
+    unit.messages = messages.clone(); //part of unit
+    unit.earned_headers_commission_recipients = Vec::new(); //part of unit
     if is_multi_authored {
-        unit_earned_headers_commission_recipients.push(HeaderCommissionShare {
-            address: change_outputs.into_iter().nth(0).unwrap().address.unwrap(),
-            earned_headers_commission_share: 100,
-        });
+        unit.earned_headers_commission_recipients
+            .push(HeaderCommissionShare {
+                address: change_outputs.into_iter().nth(0).unwrap().address.unwrap(),
+                earned_headers_commission_share: 100,
+            });
     }
 
     // TODO: lock
 
-    // unit.parent_units = light_props.clone().unwrap().parent_units; //part of unit
-    // unit.last_ball = light_props.clone().unwrap().last_stable_mc_ball;
-    // unit.last_ball_unit = light_props.clone().unwrap().last_stable_mc_ball_unit;
+    unit.parent_units = light_props.clone().unwrap().parent_units; //part of unit
+    unit.last_ball = light_props.clone().unwrap().last_stable_mc_ball;
+    unit.last_ball_unit = light_props.clone().unwrap().last_stable_mc_ball_unit;
     let last_ball_mci = light_props.unwrap().last_stable_mc_ball_mci;
 
     check_for_unstable_predecessors()?;
@@ -151,26 +155,68 @@ fn compose_joint(mut params: Param) -> Result<()> {
     if storage::determine_if_witness_and_address_definition_have_refs(&db, &witnesses)? {
         bail!("some witnesses have references in their addresses");
     }
-    let mut _unit_witness_list_unit = Some(String::new()); //part of unit
-    let mut _unit_witnesses = Vec::new(); //part of unit
+    unit.witness_list_unit = Some(String::new()); //part of unit
+    unit.witnesses = Vec::new(); //part of unit
     match storage::find_witness_list_unit(&db, &witnesses, last_ball_mci)? {
-        Some(witness_list_unit) => _unit_witness_list_unit = Some(witness_list_unit),
-        None => _unit_witnesses = witnesses,
+        Some(witness_list_unit) => unit.witness_list_unit = Some(witness_list_unit),
+        None => unit.witnesses = witnesses,
     }
 
     // messages retrieved via callback
 
     // input coins
-    //some conditions
-    let target_amount = total_amount;
-    pick_divisible_coins_for_amount(
-        &db,
-        None,
-        &mut paying_addresses,
-        last_ball_mci,
-        target_amount,
-        is_multi_authored,
-    )?;
+    let mut total_input;
+    unit.headers_commission = Some(unit.get_header_size());
+    let naked_payload_commission = unit.get_payload_size();
+
+    if params.inputs.is_empty() {
+        if params.input_amount.is_none() {
+            bail!("inputs but no input_amount");
+        }
+        total_input = params.input_amount.unwrap();
+        match payment_message.payload.unwrap() {
+            Payload::Payment(mut x) => x.inputs = params.inputs,
+            _ => {}
+        }
+        unit.payload_commission = Some(unit.get_payload_size());
+    } else {
+        let target_amount = if params.send_all {
+            ::std::i64::MAX
+        } else {
+            total_amount + unit.headers_commission.unwrap() as i64 + naked_payload_commission as i64
+        };
+        let input_and_amount = pick_divisible_coins_for_amount(
+            &db,
+            None,
+            &mut paying_addresses,
+            last_ball_mci,
+            target_amount,
+            is_multi_authored,
+        )?;
+        if input_and_amount.input_with_proofs.is_empty() {
+            bail!(
+                "NOT_ENOUGH_FUNDS, not enough spendable funds from {:?} for {}",
+                paying_addresses,
+                target_amount
+            );
+        }
+        total_input = input_and_amount.amount;
+        match payment_message.payload.unwrap() {
+            Payload::Payment(mut x) => {
+                x.inputs = input_and_amount
+                    .input_with_proofs
+                    .iter()
+                    .map(|s| s.input.clone().unwrap())
+                    .collect::<Vec<_>>()
+            }
+            _ => {}
+        }
+        unit.payload_commission = Some(unit.get_payload_size());
+        info!(
+            "inputs increased payload by {}",
+            unit.payload_commission.unwrap() - naked_payload_commission
+        );
+    }
 
     // TODO: handle err and return true value
 
@@ -209,6 +255,14 @@ fn pick_divisible_coins_for_amount(
     _last_ball_mci: u32,
     _amount: i64,
     _multi_authored: bool,
-) -> Result<()> {
+) -> Result<InputsAndAmount> {
     unimplemented!()
+}
+struct InputsAndAmount {
+    input_with_proofs: Vec<InputWithProof>,
+    amount: u32,
+}
+struct InputWithProof {
+    spend_proof: Option<SpendProof>,
+    input: Option<Input>,
 }
