@@ -7,21 +7,6 @@ use trustnote_wallet_base::*;
 pub const DB_PATH: &str = "trustnote_light.sqlite";
 const SETTINGS_FILE: &str = "settings.json";
 
-lazy_static! {
-    static ref SETTINGS: Settings = {
-        match open_settings() {
-            Ok(s) => s,
-            Err(_) => {
-                warn!("can't open settings.json, will use default settings");
-                let settings = Settings::default();
-                settings.show_config();
-                save_settings(&settings).expect("failed to save settings");
-                settings
-            }
-        }
-    };
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub hub_url: Vec<String>,
@@ -68,6 +53,25 @@ fn save_settings(settings: &Settings) -> Result<()> {
     Ok(())
 }
 
-pub fn get_settings() -> &'static Settings {
-    &SETTINGS
+pub fn update_mnemonic(mnemonic: &str) -> Result<()> {
+    let mnemonic = Mnemonic::from(mnemonic)?.to_string();
+    let mut settings = get_settings();
+    if settings.mnemonic != mnemonic {
+        println!("will update mnemonic to: {}", mnemonic);
+        settings.mnemonic = mnemonic;
+    }
+    save_settings(&settings)
+}
+
+pub fn get_settings() -> Settings {
+    match open_settings() {
+        Ok(s) => s,
+        Err(_) => {
+            warn!("can't open settings.json, will use default settings");
+            let settings = Settings::default();
+            settings.show_config();
+            save_settings(&settings).expect("failed to save settings");
+            settings
+        }
+    }
 }

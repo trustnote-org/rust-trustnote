@@ -5,8 +5,6 @@ extern crate clap;
 #[macro_use]
 extern crate failure;
 #[macro_use]
-extern crate lazy_static;
-#[macro_use]
 extern crate serde_derive;
 
 extern crate chrono;
@@ -22,6 +20,7 @@ mod config;
 use std::sync::Arc;
 
 use clap::App;
+use trustnote::network::wallet::WalletConn;
 use trustnote::*;
 use trustnote_wallet_base::Mnemonic;
 
@@ -41,8 +40,7 @@ fn init_log() {
                 record.target(),
                 message
             ))
-        })
-        .level(log_lvl)
+        }).level(log_lvl)
         .chain(std::io::stdout())
         .apply()
         .unwrap();
@@ -75,7 +73,7 @@ fn init() -> Result<()> {
     Ok(())
 }
 
-fn connect_to_remote(peers: &[String]) -> Result<Arc<network::wallet::WalletConn>> {
+fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
     for peer in peers {
         match network::wallet::create_outbound_conn(&peer) {
             Err(e) => {
@@ -124,6 +122,12 @@ fn info() -> Result<()> {
     Ok(())
 }
 
+fn sync(ws: &WalletConn) -> Result<()> {
+    ws.get_history()?;
+    // TODO: print get history statistics
+    Ok(())
+}
+
 fn pause() {
     use std::io::Read;
     ::std::io::stdin().read(&mut [0; 1]).unwrap();
@@ -151,15 +155,14 @@ fn main() -> Result<()> {
     }
 
     let settings = config::get_settings();
-    let _conn = connect_to_remote(&settings.hub_url)?;
+    let ws = connect_to_remote(&settings.hub_url)?;
 
     //Sync
-    if let Some(sync) = m.subcommand_matches("sync") {
-        if let Some(mnemonic) = sync.value_of("MNEMONIC") {
-            println!("Init wallet with mnemonic {}", mnemonic);
-        } else {
-            println!("Init wallet with random mnemonic");
+    if let Some(sync_arg) = m.subcommand_matches("sync") {
+        if let Some(mnemonic) = sync_arg.value_of("MNEMONIC") {
+            config::update_mnemonic(mnemonic)?;
         }
+        return sync(&ws);
     }
 
     //Send

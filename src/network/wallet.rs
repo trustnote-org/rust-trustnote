@@ -87,6 +87,10 @@ impl WalletConn {
         self.send_request("heartbeat", &Value::Null)?;
         Ok(())
     }
+
+    pub fn get_history(&self) -> Result<()> {
+        unimplemented!()
+    }
 }
 
 // the server side impl
