@@ -25,7 +25,7 @@ use clap::App;
 use trustnote::*;
 use trustnote_wallet_base::Mnemonic;
 
-fn log_init() {
+fn init_log() {
     let log_lvl = if cfg!(debug_assertions) {
         log::LevelFilter::Debug
     } else {
@@ -47,6 +47,17 @@ fn log_init() {
         .unwrap();
 
     debug!("log init done!");
+}
+
+fn init_database() -> Result<()> {
+    // TODO: here also init the settings, but the src database is get from trustnote config
+    // which is not clear
+    let _settings = config::get_settings();
+    let mut db_path = ::std::env::current_dir()?;
+    db_path.push(config::DB_PATH);
+    db::set_db_path(db_path);
+    let _db = db::DB_POOL.get_connection();
+    Ok(())
 }
 
 fn connect_to_remote(peers: &[String]) -> Result<Arc<network::wallet::WalletConn>> {
@@ -106,14 +117,13 @@ fn main() -> Result<()> {
         0x2000
     };
     may::config().set_stack_size(stack_size);
-    let mut db_path = ::std::env::current_dir()?;
-    db_path.push(config::DB_PATH);
-    db::set_db_path(db_path);
 
-    log_init();
+    init_log();
 
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();
+
+    init_database()?;
 
     //Info
     if let Some(_info) = m.subcommand_matches("info") {

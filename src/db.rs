@@ -20,7 +20,7 @@ pub fn set_db_path(path: PathBuf) {
     DB_PATH.set(Arc::new(path));
 }
 
-pub fn create_database_if_necessary() -> Result<PathBuf> {
+fn create_database_if_necessary() -> Result<PathBuf> {
     use std::fs;
     let db_path = &*DB_PATH.get();
     if !db_path.exists() {

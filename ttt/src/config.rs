@@ -36,7 +36,7 @@ impl Default for Settings {
             mnemonic: mnemonic("")
                 .expect("failed to generate mnemonic")
                 .to_string(),
-            initial_db_path: String::from("db/initial.trustnote.sqlite"),
+            initial_db_path: String::from("../db/initial.trustnote.sqlite"),
         }
     }
 }
