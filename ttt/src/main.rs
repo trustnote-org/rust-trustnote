@@ -50,13 +50,27 @@ fn init_log() {
 }
 
 fn init_database() -> Result<()> {
-    // TODO: here also init the settings, but the src database is get from trustnote config
-    // which is not clear
+    // TODO: src database is get from trustnote config which is not clear
+    // init the settings first
     let _settings = config::get_settings();
     let mut db_path = ::std::env::current_dir()?;
     db_path.push(config::DB_PATH);
     db::set_db_path(db_path);
     let _db = db::DB_POOL.get_connection();
+    Ok(())
+}
+
+fn init() -> Result<()> {
+    // init default coroutine settings
+    let stack_size = if cfg!(debug_assertions) {
+        0x4000
+    } else {
+        0x2000
+    };
+    may::config().set_stack_size(stack_size);
+
+    init_log();
+    init_database()?;
     Ok(())
 }
 
@@ -109,21 +123,16 @@ fn info() -> Result<()> {
     Ok(())
 }
 
+fn pause() {
+    use std::io::Read;
+    ::std::io::stdin().read(&mut [0; 1]).unwrap();
+}
+
 fn main() -> Result<()> {
-    // init default coroutine settings
-    let stack_size = if cfg!(debug_assertions) {
-        0x4000
-    } else {
-        0x2000
-    };
-    may::config().set_stack_size(stack_size);
-
-    init_log();
-
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();
 
-    init_database()?;
+    init()?;
 
     //Info
     if let Some(_info) = m.subcommand_matches("info") {
@@ -157,8 +166,6 @@ fn main() -> Result<()> {
         }
     }
 
-    use std::io::Read;
-    ::std::io::stdin().read(&mut [0; 1]).unwrap();
-
+    pause();
     Ok(())
 }
