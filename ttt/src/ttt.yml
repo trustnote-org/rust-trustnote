@@ -1,6 +1,6 @@
 name: ttt
 version: "0.1"
-about: A ttt wallet command line tool
+about: ttt wallet command line tool
 
 # AppSettings can be defined as a list and are **not** ascii case sensitive
 settings:
@@ -14,32 +14,42 @@ subcommands:
     # Rust code later
     - sync:
         about: Sync a ttt wallet
-        version: "0.1"
         args:
-            - mnemonic:
-                index: 1
+            - MNEMONIC:
                 help: init the wallet with the mnemonic
                 takes_value: true
+                required: false
     - send:
-        about: Pay the amount of TTT to the address
-        version: "0.1"
+        about: Pay TTT to an address
         args:
-            - address:
-                help: example subcommand option
-                index: 1
+            - pay:
+                help: pay <AMOUNT> TTT to <ADDRESS>
+                short: p
+                long: pay
+                multiple: true
+                value_names:
+                    - ADDRESS
+                    - AMOUNT
                 takes_value: true
-                required: true
-            - amount:
-                help: example subcommand positional
-                index: 2
+                required: false
+            - text:
+                help: encode a text message in the unit to send
+                short: t
+                long: text
                 takes_value: true
-                required: true
+                required: false
+                
     - log:
         about: Show the history of this wallet account
-        version: "0.1"
+        args:
+            - v:
+                help: show details of specified history transaction
+                short: v
+                takes_value: true
+                required: false
+                value_name: INDEX
     - info:
         about: Show the wallet info
-        version: "0.1"
 
 
 
