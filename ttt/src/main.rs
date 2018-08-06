@@ -106,7 +106,7 @@ fn info() -> Result<()> {
     let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&prvk, wallet)?;
     println!("wallet_public_key: {}", wallet_pubk.to_string());
 
-    let wallet_id = trustnote_wallet_base::wallet_id(&wallet_pubk)?;
+    let wallet_id = trustnote_wallet_base::wallet_id(&wallet_pubk);
     println!("└──wallet_id(0): {}", wallet_id);
 
     let wallet_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;

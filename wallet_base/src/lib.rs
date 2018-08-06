@@ -1,12 +1,15 @@
 #[macro_use]
-extern crate lazy_static;
-#[macro_use]
 extern crate failure;
+#[macro_use]
+extern crate serde_json;
+#[macro_use]
+extern crate lazy_static;
 
 extern crate base64;
 extern crate bitcoin;
 extern crate rand;
 extern crate secp256k1;
+extern crate sha2;
 extern crate trustnote;
 extern crate wallet;
 
@@ -111,13 +114,15 @@ pub fn device_address(master_prvk: &ExtendedPrivKey) -> Result<String> {
 pub fn wallet_address(wallet_pubk: &ExtendedPubKey, is_change: bool, index: u32) -> Result<String> {
     let pubk = wallet_address_pubkey(wallet_pubk, is_change, index)?;
     let pub_b64 = base64::encode(&pubk.public_key.serialize()[..]);
-    Ok(object_hash::get_chash(&pub_b64)?)
+    let json = json!(["sig", { "pubkey": pub_b64 }]);
+    Ok(object_hash::get_chash(&json)?)
 }
 
 /// get wallet address
 /// the wallet_pubk should be the return value of `wallet_pubkey`
-pub fn wallet_id(wallet_pubk: &ExtendedPubKey) -> Result<String> {
-    object_hash::get_base64_hash(&wallet_pubk.to_string())
+pub fn wallet_id(wallet_pubk: &ExtendedPubKey) -> String {
+    use sha2::Digest;
+    base64::encode(&sha2::Sha256::digest(wallet_pubk.to_string().as_bytes()))
 }
 
 /// sign for hash, return base64 string
@@ -208,7 +213,7 @@ fn test_device_address() -> Result<()> {
     let wallet_pubk = wallet_pubkey(&prvk, wallet)?;
     println!("wallet_public_key = {}", wallet_pubk.to_string());
 
-    let wallet_id = wallet_id(&wallet_pubk)?;
+    let wallet_id = wallet_id(&wallet_pubk);
     println!("wallet_id= {}", wallet_id);
 
     let wallet_address = wallet_address(&wallet_pubk, false, 0)?;

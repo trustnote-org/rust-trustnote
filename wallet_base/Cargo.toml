@@ -8,10 +8,12 @@ license = "MIT"
 [dependencies]
 log = "0.4"
 rand = "0.5"
+sha2 = "0.7"
 base64 = "0.9"
 bitcoin = "0.13"
 failure = "0.1"
 secp256k1 = "0.9"
+serde_json = "1"
 lazy_static = "1"
 trustnote = { path = ".."}
 wallet = { git = "https://github.com/rust-bitcoin/rust-wallet.git" }
