@@ -41,7 +41,8 @@ fn init_log() {
                 record.target(),
                 message
             ))
-        }).level(log_lvl)
+        })
+        .level(log_lvl)
         .chain(std::io::stdout())
         .apply()
         .unwrap();
@@ -140,8 +141,12 @@ fn main() -> Result<()> {
     }
 
     //Log
-    if let Some(_log) = m.subcommand_matches("log") {
+    if let Some(log) = m.subcommand_matches("log") {
+        if let Some(v) = log.value_of("v") {
+            println!("Wallet History of {}", v);
+        }
         println!("Wallet History");
+
         return Ok(());
     }
 
@@ -150,7 +155,7 @@ fn main() -> Result<()> {
 
     //Sync
     if let Some(sync) = m.subcommand_matches("sync") {
-        if let Some(mnemonic) = sync.value_of("mnemonic") {
+        if let Some(mnemonic) = sync.value_of("MNEMONIC") {
             println!("Init wallet with mnemonic {}", mnemonic);
         } else {
             println!("Init wallet with random mnemonic");
@@ -159,10 +164,16 @@ fn main() -> Result<()> {
 
     //Send
     if let Some(send) = m.subcommand_matches("send") {
-        if let Some(address) = send.value_of("address") {
-            if let Some(amount) = send.value_of("amount") {
-                println!("Pay to address {} amount {}", address, amount);
-            }
+        if let Some(pay) = send.values_of("pay") {
+            //TODO: Some syntax check for address and amount
+            let v = pay.collect::<Vec<_>>();
+            let amount = v[0];
+            let address = v[1];
+            println!("Pay {} TTT to address {}", amount, address);
+        }
+
+        if let Some(text) = send.value_of("text") {
+            println!("Text message: '{}'", text);
         }
     }
 
