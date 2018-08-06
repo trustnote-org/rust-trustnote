@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use storage;
 use witness_proof;
+use writer;
 
 const MAX_HISTORY_ITEMS: usize = 1000;
 
@@ -267,9 +268,21 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
                 db.prepare_cached("UPDATE units SET main_chain_index=?, sequence=? WHERE unit=?")?;
             stmt.execute(&[&joint_r.unit.main_chain_index.unwrap(), &sequence, unit])?;
         } else {
-            writer::save_joint(joint_r, sequence)
+            writer::save_joint(joint_r, sequence).context("save_joint failed")?;
+            //TODO: save_joint need to be impl
         }
     }
+    fix_is_spent_flag_and_input_address().context("fix_is_spent_flag_and_input_address failed")?;
+    if provent_units.is_empty() {
+        return Ok(());
+    }
+    let provent_units_list = provent_units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut stmt = db.prepare_cached("UPDATE units SET is_stable=1, is_free=0 WHERE unit IN(?)")?;
+    stmt.execute(&[&provent_units_list])?;
 
     Ok(())
 }
@@ -765,4 +778,82 @@ fn build_proof_chain_on_mc(
             }
         }
     }
+}
+
+fn fix_is_spent_flag_and_input_address() -> Result<()> {
+    let db = db::DB_POOL.get_connection();
+    fix_is_spent_flag(&db).context("")?;
+    fix_input_address(&db).context("")?;
+    Ok(())
+}
+
+struct TempOutput {
+    unit: String,
+    message_index: u32,
+    output_index: u32,
+}
+fn fix_is_spent_flag(db: &Connection) -> Result<()> {
+    let mut stmt = db.prepare_cached(
+        "SELECT outputs.unit, outputs.message_index, outputs.output_index \
+		FROM outputs \
+		JOIN inputs ON outputs.unit=inputs.src_unit AND outputs.message_index=inputs.src_message_index \
+        AND outputs.output_index=inputs.src_output_index \
+		WHERE is_spent=0 AND type='transfer'",
+    )?;
+
+    let rows = stmt
+        .query_map(&[], |row| TempOutput {
+            unit: row.get(0),
+            message_index: row.get(1),
+            output_index: row.get(2),
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    if rows.is_empty() {
+        bail!("no output need update in fix_is_spent_flag");
+    }
+    for row in rows {
+        let mut stmt = db.prepare_cached(
+            "UPDATE outputs SET is_spent=1 WHERE unit=? AND message_index=? AND output_index=?",
+        )?;
+        stmt.execute(&[&row.unit, &row.message_index, &row.output_index])?;
+    }
+
+    Ok(())
+}
+
+struct TempOutput2 {
+    unit: String,
+    message_index: u32,
+    output_index: u32,
+    addr: String,
+}
+fn fix_input_address(db: &Connection) -> Result<()> {
+    let mut stmt = db.prepare_cached(
+        "SELECT outputs.unit, outputs.message_index, outputs.output_index, outputs.address \
+         FROM outputs \
+         JOIN inputs ON outputs.unit=inputs.src_unit AND outp \
+         uts.message_index=inputs.src_message_index \
+         AND outputs.output_index=inputs.src_output_index \
+         WHERE inputs.address IS NULL AND type='transfer'",
+    )?;
+
+    let rows = stmt
+        .query_map(&[], |row| TempOutput2 {
+            unit: row.get(0),
+            message_index: row.get(1),
+            output_index: row.get(2),
+            addr: row.get(3),
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    if rows.is_empty() {
+        bail!("no output need update in fix_input_address");
+    }
+    for row in rows {
+        let mut stmt = db.prepare_cached(
+            "UPDATE inputs SET address=? WHERE src_unit=? AND src_message_index=? AND src_output_index=?",
+        )?;
+        stmt.execute(&[&row.addr, &row.unit, &row.message_index, &row.output_index])?;
+    }
+
+    Ok(())
 }
