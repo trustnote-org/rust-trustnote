@@ -62,26 +62,39 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<network::wallet::WalletConn
     bail!("failed to connect remote hub");
 }
 
+fn get_banlance(_address: &str) -> Result<u32> {
+    Ok(0)
+}
+
 fn info() -> Result<()> {
     let settings = config::get_settings();
     let mnemonic = Mnemonic::from(&settings.mnemonic)?;
     let prvk = trustnote_wallet_base::master_private_key(&mnemonic, "")?;
     let wallet = 0;
 
-    println!("mnemonic = {}", mnemonic.to_string());
-    println!("wallet_private_key = {}", prvk.to_string());
-
-    let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&prvk, wallet)?;
-    println!("wallet_public_key = {}", wallet_pubk.to_string());
-
-    let wallet_id = trustnote_wallet_base::wallet_id(&wallet_pubk)?;
-    println!("wallet_id= {}", wallet_id);
-
-    let wallet_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;
-    println!("wallet_0/0_address = {}", wallet_address);
+    println!("\ncurrent wallet info:\n");
+    // println!("mnemonic = {}", mnemonic.to_string());
+    // println!("wallet_private_key = {}", prvk.to_string());
 
     let device_address = trustnote_wallet_base::device_address(&prvk)?;
-    println!("device_address = {}", device_address);
+    println!("device_address: {}", device_address);
+
+    let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&prvk, wallet)?;
+    println!("wallet_public_key: {}", wallet_pubk.to_string());
+
+    let wallet_id = trustnote_wallet_base::wallet_id(&wallet_pubk)?;
+    println!("└──wallet_id(0): {}", wallet_id);
+
+    let wallet_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;
+    println!("   └──address(0/0): {}", wallet_address);
+    println!("      ├── path: /m/44'/0'/0'/0/0");
+
+    let balance = get_banlance(&wallet_address)?;
+    println!(
+        "      └── balance: {:.3}MN",
+        balance as f32 / 1000_000.0
+    );
+
     Ok(())
 }
 
