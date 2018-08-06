@@ -551,9 +551,9 @@ pub fn prepare_parents_and_last_ball_and_witness_list_unit(
         storage::find_witness_list_unit(&db, witnesses, last_stable_mc_ball_mci)?;
 
     Ok(LastStableBallAndParentUnitsAndWitnessListUnit {
-        last_stable_mc_ball,
+        last_stable_mc_ball: last_stable_mc_ball.unwrap(),
         last_stable_mc_ball_mci,
-        last_stable_mc_ball_unit,
+        last_stable_mc_ball_unit: last_stable_mc_ball_unit.unwrap(),
         parent_units,
         witness_list_unit,
     })
