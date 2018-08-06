@@ -23,9 +23,9 @@ use std::sync::Arc;
 
 use clap::App;
 use trustnote::*;
+use trustnote_wallet_base::Mnemonic;
 
 fn log_init() {
-    // TODO: need to implement async logs
     let log_lvl = if cfg!(debug_assertions) {
         log::LevelFilter::Debug
     } else {
@@ -62,6 +62,29 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<network::wallet::WalletConn
     bail!("failed to connect remote hub");
 }
 
+fn info() -> Result<()> {
+    let settings = config::get_settings();
+    let mnemonic = Mnemonic::from(&settings.mnemonic)?;
+    let prvk = trustnote_wallet_base::master_private_key(&mnemonic, "")?;
+    let wallet = 0;
+
+    println!("mnemonic = {}", mnemonic.to_string());
+    println!("wallet_private_key = {}", prvk.to_string());
+
+    let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&prvk, wallet)?;
+    println!("wallet_public_key = {}", wallet_pubk.to_string());
+
+    let wallet_id = trustnote_wallet_base::wallet_id(&wallet_pubk)?;
+    println!("wallet_id= {}", wallet_id);
+
+    let wallet_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;
+    println!("wallet_0/0_address = {}", wallet_address);
+
+    let device_address = trustnote_wallet_base::device_address(&prvk)?;
+    println!("device_address = {}", device_address);
+    Ok(())
+}
+
 fn main() -> Result<()> {
     // init default coroutine settings
     let stack_size = if cfg!(debug_assertions) {
@@ -75,11 +98,22 @@ fn main() -> Result<()> {
     db::set_db_path(db_path);
 
     log_init();
-    let settings = config::get_settings();
 
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();
 
+    //Info
+    if let Some(_info) = m.subcommand_matches("info") {
+        return info();
+    }
+
+    //Log
+    if let Some(_log) = m.subcommand_matches("log") {
+        println!("Wallet History");
+        return Ok(());
+    }
+
+    let settings = config::get_settings();
     let _conn = connect_to_remote(&settings.hub_url)?;
 
     //Sync
@@ -98,16 +132,6 @@ fn main() -> Result<()> {
                 println!("Pay to address {} amount {}", address, amount);
             }
         }
-    }
-
-    //Info
-    if let Some(_info) = m.subcommand_matches("info") {
-        println!("Info for this wallet");
-    }
-
-    //Log
-    if let Some(_log) = m.subcommand_matches("log") {
-        println!("Wallet History");
     }
 
     use std::io::Read;
