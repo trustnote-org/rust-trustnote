@@ -136,14 +136,55 @@ fn compose_joint(mut params: Param) -> Result<()> {
 
     //authors
     let db = db::DB_POOL.get_connection();
+    let mut unit_authors = Vec::new();
+    let mut assoc_signing_paths: HashMap<String, Vec<String>> = HashMap::new();
     for from_address in from_addresses {
-        let _author = Author {
+        let mut author = ::spec::Author {
             address: from_address.clone(),
             authentifiers: HashMap::new(),
             definition: Value::Null,
         };
-        read_signing_paths(&db, from_address, &signer)?;
-        //TODO: something undone
+        let lengths_by_signing_paths = read_signing_paths(&db, from_address.clone(), &signer)?;
+        let signing_paths = lengths_by_signing_paths
+            .keys()
+            .map(|x| x.clone())
+            .collect::<Vec<_>>();
+        assoc_signing_paths.insert(from_address.clone(), signing_paths.clone());
+        for signing_path in signing_paths {
+            let x = &lengths_by_signing_paths[&signing_path]
+                .iter()
+                .map(|s| s.clone())
+                .collect::<Vec<_>>()
+                .join("-");
+            author.authentifiers.insert(signing_path, x.to_string());
+        }
+        unit_authors.push(author);
+
+        let mut stmt = db.prepare_cached(
+            "SELECT 1 FROM unit_authors CROSS JOIN units USING(unit) \
+             WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
+             LIMIT 1",
+        )?;
+        let rows = stmt
+            .query_map(&[&from_address, &last_ball_mci], |row| row.get(0))?
+            .collect::<::std::result::Result<Vec<String>, _>>()?;
+        if rows.is_empty() {
+            author.definition = read_definition(&db, from_address)?;
+            continue;
+        }
+
+        let mut stmt = db.prepare_cached("SELECT definition \
+								FROM address_definition_changes CROSS JOIN units USING(unit) LEFT JOIN definitions USING(definition_chash) \
+								WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
+								ORDER BY level DESC LIMIT 1")?;
+        let rows = stmt
+            .query_map(&[&from_address, &last_ball_mci], |row| row.get(0))?
+            .collect::<::std::result::Result<Vec<String>, _>>()?;
+        use serde_json;
+        let def: Value = serde_json::from_str(&rows[0])?;
+        if !rows.is_empty() && def.is_null() {
+            author.definition = read_definition(&db, from_address)?;
+        }
     }
 
     // witnesses
@@ -193,12 +234,16 @@ fn check_for_unstable_predecessors() -> Result<()> {
 
 //signer.
 #[allow(dead_code)]
-fn read_definition(_db: Connection, _from_address: String) -> Result<()> {
+fn read_definition(_db: &Connection, _from_address: String) -> Result<Value> {
     unimplemented!()
 }
 
 #[allow(dead_code)]
-fn read_signing_paths(_db: &Connection, _from_address: String, _signer: &String) -> Result<()> {
+fn read_signing_paths(
+    _db: &Connection,
+    _from_address: String,
+    _signer: &String,
+) -> Result<HashMap<String, Vec<String>>> {
     unimplemented!()
 }
 
