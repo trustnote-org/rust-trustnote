@@ -14,6 +14,7 @@ may = "0.3"
 log = "0.4"
 fern = "0.5"
 chrono = "0.4"
+failure = "0.1"
 lazy_static = "1"
 
 serde = "1"

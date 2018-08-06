@@ -202,6 +202,9 @@ fn test_device_address() -> Result<()> {
     let prvk = master_private_key(&mnemonic, "")?;
     let wallet = 0;
 
+    println!("mnemonic = {}", mnemonic.to_string());
+    println!("wallet_private_key = {}", prvk.to_string());
+
     let wallet_pubk = wallet_pubkey(&prvk, wallet)?;
     println!("wallet_public_key = {}", wallet_pubk.to_string());
 

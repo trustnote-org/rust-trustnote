@@ -14,9 +14,8 @@ pub const MAJORITY_OF_WITNESSES: usize = 7;
 pub const VERSION: &str = "1.0";
 pub const ALT: &str = "1";
 pub const LIBRARY: &str = "rust-trustnote";
+// TODO: how to read version from Cargo.toml?
 pub const LIBRARY_VERSION: &str = "0.1.0";
-pub const PROGRAM: &str = "rust-trustnote-hub";
-pub const PROGRAM_VESION: &str = "0.1.0";
 pub const STALLED_TIMEOUT: usize = 10;
 pub const MAX_MESSAGES_PER_UNIT: usize = 128;
 pub const MAX_PARENT_PER_UNIT: usize = 16;

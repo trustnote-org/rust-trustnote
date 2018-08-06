@@ -3,6 +3,8 @@ extern crate log;
 #[macro_use]
 extern crate clap;
 #[macro_use]
+extern crate failure;
+#[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
@@ -17,13 +19,15 @@ extern crate trustnote_wallet_base;
 
 mod config;
 
+use std::sync::Arc;
+
 use clap::App;
 use trustnote::*;
 
 fn log_init() {
     // TODO: need to implement async logs
     let log_lvl = if cfg!(debug_assertions) {
-        log::LevelFilter::Info
+        log::LevelFilter::Debug
     } else {
         log::LevelFilter::Error
     };
@@ -45,6 +49,19 @@ fn log_init() {
     debug!("log init done!");
 }
 
+fn connect_to_remote(peers: &[String]) -> Result<Arc<network::wallet::WalletConn>> {
+    for peer in peers {
+        match network::wallet::create_outbound_conn(&peer) {
+            Err(e) => {
+                error!(" fail to connected: {}, err={}", peer, e);
+                continue;
+            }
+            Ok(c) => return Ok(c),
+        }
+    }
+    bail!("failed to connect remote hub");
+}
+
 fn main() -> Result<()> {
     // init default coroutine settings
     let stack_size = if cfg!(debug_assertions) {
@@ -58,10 +75,12 @@ fn main() -> Result<()> {
     db::set_db_path(db_path);
 
     log_init();
-    let _settings = config::get_settings();
+    let settings = config::get_settings();
 
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();
+
+    let _conn = connect_to_remote(&settings.hub_url)?;
 
     //Sync
     if let Some(sync) = m.subcommand_matches("sync") {
@@ -90,6 +109,9 @@ fn main() -> Result<()> {
     if let Some(_log) = m.subcommand_matches("log") {
         println!("Wallet History");
     }
+
+    use std::io::Read;
+    ::std::io::stdin().read(&mut [0; 1]).unwrap();
 
     Ok(())
 }

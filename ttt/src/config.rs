@@ -24,10 +24,9 @@ lazy_static! {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Settings {
-    hub_url: Vec<String>,
-    mnemonic: String,
-    // TODO: create db with code
-    initial_db_path: String,
+    pub hub_url: Vec<String>,
+    pub mnemonic: String,
+    pub initial_db_path: String,
 }
 
 impl Default for Settings {
