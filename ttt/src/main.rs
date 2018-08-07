@@ -20,6 +20,7 @@ mod config;
 use std::sync::Arc;
 
 use clap::App;
+use trustnote::network::wallet::WalletConn;
 use trustnote::*;
 use trustnote_wallet_base::Mnemonic;
 
@@ -72,7 +73,7 @@ fn init() -> Result<()> {
     Ok(())
 }
 
-fn connect_to_remote(peers: &[String]) -> Result<Arc<network::wallet::WalletConn>> {
+fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
     for peer in peers {
         match network::wallet::create_outbound_conn(&peer) {
             Err(e) => {
@@ -121,12 +122,13 @@ fn info() -> Result<()> {
     Ok(())
 }
 
-fn sync(ws: &Arc<network::wallet::WalletConn>) -> Result<()> {
+fn sync(ws: &WalletConn) -> Result<()> {
+    ws.get_history()?;
     // TODO: print get history statistics
     let refresh_history = ws.get_history();
     match refresh_history {
-        Ok(_) => info!("refresh history done"),
-        _ => info!("refresh history failed, please 'sync' again"),
+        Ok(_) => println!("refresh history done"),
+        Err(e) => eprintln!("refresh history failed, please 'sync' again\n err={}", e),
     }
     Ok(())
 }
