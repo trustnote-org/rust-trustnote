@@ -3,26 +3,32 @@ extern crate log;
 #[macro_use]
 extern crate clap;
 #[macro_use]
-extern crate lazy_static;
+extern crate failure;
+#[macro_use]
+extern crate serde_derive;
 
 extern crate chrono;
 extern crate fern;
 extern crate may;
+extern crate serde;
 extern crate serde_json;
 extern crate trustnote;
 extern crate trustnote_wallet_base;
 
-// mod config;
+mod config;
+
+use std::sync::Arc;
 
 use clap::App;
+use trustnote::network::wallet::WalletConn;
 use trustnote::*;
+use trustnote_wallet_base::Mnemonic;
 
-fn log_init() {
-    // TODO: need to implement async logs
+fn init_log() {
     let log_lvl = if cfg!(debug_assertions) {
         log::LevelFilter::Debug
     } else {
-        log::LevelFilter::Warn
+        log::LevelFilter::Error
     };
 
     fern::Dispatch::new()
@@ -39,57 +45,141 @@ fn log_init() {
         .apply()
         .unwrap();
 
-    info!("log init done!");
+    debug!("log init done!");
 }
 
-fn main() -> Result<()> {
+fn init_database() -> Result<()> {
+    // TODO: src database is get from trustnote config which is not clear
+    // init the settings first
+    let _settings = config::get_settings();
+    let mut db_path = ::std::env::current_dir()?;
+    db_path.push(config::DB_PATH);
+    db::set_db_path(db_path);
+    let _db = db::DB_POOL.get_connection();
+    Ok(())
+}
+
+fn init() -> Result<()> {
     // init default coroutine settings
     let stack_size = if cfg!(debug_assertions) {
         0x4000
     } else {
-        0x1000
+        0x2000
     };
     may::config().set_stack_size(stack_size);
 
-    log_init();
-    // config::show_config();
+    init_log();
+    init_database()?;
+    Ok(())
+}
 
+fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
+    for peer in peers {
+        match network::wallet::create_outbound_conn(&peer) {
+            Err(e) => {
+                error!(" fail to connected: {}, err={}", peer, e);
+                continue;
+            }
+            Ok(c) => return Ok(c),
+        }
+    }
+    bail!("failed to connect remote hub");
+}
+
+fn get_banlance(_address: &str) -> Result<u32> {
+    Ok(0)
+}
+
+fn info() -> Result<()> {
+    let settings = config::get_settings();
+    let mnemonic = Mnemonic::from(&settings.mnemonic)?;
+    let prvk = trustnote_wallet_base::master_private_key(&mnemonic, "")?;
+    let wallet = 0;
+
+    println!("\ncurrent wallet info:\n");
+    // println!("mnemonic = {}", mnemonic.to_string());
+    // println!("wallet_private_key = {}", prvk.to_string());
+
+    let device_address = trustnote_wallet_base::device_address(&prvk)?;
+    println!("device_address: {}", device_address);
+
+    let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&prvk, wallet)?;
+    println!("wallet_public_key: {}", wallet_pubk.to_string());
+
+    let wallet_id = trustnote_wallet_base::wallet_id(&wallet_pubk);
+    println!("└──wallet_id(0): {}", wallet_id);
+
+    let wallet_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;
+    println!("   └──address(0/0): {}", wallet_address);
+    println!("      ├── path: /m/44'/0'/0'/0/0");
+
+    let balance = get_banlance(&wallet_address)?;
+    println!(
+        "      └── balance: {:.3}MN",
+        balance as f32 / 1000_000.0
+    );
+
+    Ok(())
+}
+
+fn sync(ws: &WalletConn) -> Result<()> {
+    ws.get_history()?;
+    // TODO: print get history statistics
+    Ok(())
+}
+
+fn pause() {
+    use std::io::Read;
+    ::std::io::stdin().read(&mut [0; 1]).unwrap();
+}
+
+fn main() -> Result<()> {
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();
 
-    //Init
-    if let Some(init) = m.subcommand_matches("init") {
-        if let Some(mnemonic) = init.value_of("mnemonic") {
-            println!("Init wallet with mnemonic {}", mnemonic);
-        } else {
-            println!("Init wallet with random mnemonic");
-        }
-    }
-
-    //Pay
-    if let Some(pay) = m.subcommand_matches("pay") {
-        if let Some(address) = pay.value_of("address") {
-            if let Some(amount) = pay.value_of("amount") {
-                println!("Pay to address {} amount {}", address, amount);
-            }
-        }
-    }
+    init()?;
 
     //Info
     if let Some(_info) = m.subcommand_matches("info") {
-        println!("Info for this wallet");
+        return info();
     }
 
-    //Balance
-    if let Some(_balance) = m.subcommand_matches("balance") {
-        let balance = 0;
-        println!("Wallet Balance : {}", balance);
-    }
-
-    //History
-    if let Some(_history) = m.subcommand_matches("history") {
+    //Log
+    if let Some(log) = m.subcommand_matches("log") {
+        if let Some(v) = log.value_of("v") {
+            println!("Wallet History of {}", v);
+        }
         println!("Wallet History");
+
+        return Ok(());
     }
 
+    let settings = config::get_settings();
+    let ws = connect_to_remote(&settings.hub_url)?;
+
+    //Sync
+    if let Some(sync_arg) = m.subcommand_matches("sync") {
+        if let Some(mnemonic) = sync_arg.value_of("MNEMONIC") {
+            config::update_mnemonic(mnemonic)?;
+        }
+        return sync(&ws);
+    }
+
+    //Send
+    if let Some(send) = m.subcommand_matches("send") {
+        if let Some(pay) = send.values_of("pay") {
+            //TODO: Some syntax check for address and amount
+            let v = pay.collect::<Vec<_>>();
+            let amount = v[0];
+            let address = v[1];
+            println!("Pay {} TTT to address {}", amount, address);
+        }
+
+        if let Some(text) = send.value_of("text") {
+            println!("Text message: '{}'", text);
+        }
+    }
+
+    pause();
     Ok(())
 }

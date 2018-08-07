@@ -1503,8 +1503,9 @@ impl HubConn {
                 "alt": config::ALT,
                 "library": config::LIBRARY,
                 "library_version": config::LIBRARY_VERSION,
-                "program": config::PROGRAM,
-                "program_version": config::PROGRAM_VESION
+                "program": "rust-trustnote-hub",
+                // TODO: read from Cargo.toml
+                "program_version": "0.1.0"
             }),
         )
     }
