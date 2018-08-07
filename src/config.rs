@@ -29,6 +29,10 @@ pub const MAX_DATA_FEED_NAME_LENGTH: usize = 64;
 pub const MAX_DATA_FEED_VALUE_LENGTH: usize = 64;
 pub const MAX_ITEMS_IN_CACHE: usize = 1000;
 pub const MAX_OUTBOUND_CONNECTIONS: usize = 5;
+pub const TRANSFER_INPUT_SIZE: u32 = 60;
+pub const ADDRESS_SIZE: u32 = 32;
+pub const HEADERS_COMMISSION_INPUT_SIZE: u32 = 18;
+pub const WITNESSING_INPUT_SIZE: u32 = 26;
 
 lazy_static! {
     static ref CONFIG: RwLock<Config> = RwLock::new({
