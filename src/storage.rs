@@ -620,6 +620,7 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                                     amount: input.amount,
                                     address: input.address.clone(),
                                     serial_number: input.serial_number,
+                                    blinding: None,
                                 });
                             }
                         }

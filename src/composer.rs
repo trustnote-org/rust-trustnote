@@ -4,52 +4,12 @@ use mc_outputs;
 use object_hash;
 use paid_witnessing;
 use rusqlite::Connection;
-
-#[derive(Debug, Clone)]
-struct SpendProof {
-    spend_proof: String,
-    address: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-struct Input {
-    amount: Option<u32>,
-    address: Option<String>,
-    unit: Option<String>,
-    message_index: Option<u32>,
-    output_index: Option<u32>,
-    blinding: Option<String>,
-
-    input_type: Option<String>,
-    denomination: Option<u32>,
-    serial_number: Option<u32>,
-
-    from_main_chain_index: Option<u32>,
-    to_main_chain_index: Option<u32>,
-}
-
-impl Default for Input {
-    fn default() -> Input {
-        Input {
-            unit: None,
-            message_index: None,
-            output_index: None,
-            amount: None,
-            address: None,
-            blinding: None,
-            input_type: None,
-            denomination: None,
-            serial_number: None,
-            from_main_chain_index: None,
-            to_main_chain_index: None,
-        }
-    }
-}
+use spec;
 
 #[derive(Debug, Clone)]
 struct InputWithProof {
-    spend_proof: Option<SpendProof>,
-    input: Option<Input>,
+    spend_proof: Option<spec::SpendProof>,
+    input: Option<spec::Input>,
 }
 
 #[derive(Debug, Clone)]
@@ -71,7 +31,6 @@ struct Asset {
 #[derive(Debug, Clone)]
 struct InputInfo {
     multi_authored: bool,
-
     inputs_and_amount: InputsAndAmount,
     paying_addresses: Vec<String>,
     required_amount: u32,
@@ -113,9 +72,9 @@ fn issue_asset(
         }
         closer_input_info.inputs_and_amount.amount += 1;
 
-        let mut input = Input {
+        let mut input = spec::Input {
             amount: Some(1),
-            input_type: Some(String::from("issue")),
+            kind: Some(String::from("issue")),
             serial_number: Some(serial_number),
             ..Default::default()
         };
@@ -137,7 +96,7 @@ fn issue_asset(
                 address: issuer_address.clone(),
                 serial_number: serial_number,
             })?;
-            let mut spend_proof = SpendProof {
+            let mut spend_proof = spec::SpendProof {
                 spend_proof,
                 address: None,
             };
@@ -197,14 +156,14 @@ fn issue_asset(
 
 fn add_input(
     inputs_and_amount: &mut InputsAndAmount,
-    input: Input,
+    input: spec::Input,
     asset: &Option<Asset>,
     multi_authored: bool,
 ) -> Result<InputsAndAmount> {
     #[derive(Serialize)]
     struct TmpSpendProof {
         asset: Option<String>,
-        amount: Option<u32>,
+        amount: Option<i64>,
         address: Option<String>,
         unit: Option<String>,
         message_index: Option<u32>,
@@ -212,7 +171,7 @@ fn add_input(
         blinding: Option<String>,
     }
 
-    inputs_and_amount.amount += input.amount.map_or(0, |v| v);
+    inputs_and_amount.amount += input.amount.map_or(0, |v| v) as u32;
 
     let mut input_with_proof = InputWithProof {
         spend_proof: None,
@@ -230,7 +189,7 @@ fn add_input(
             output_index: tmp_input.output_index,
             blinding: tmp_input.blinding,
         })?;
-        let mut spend_proof = SpendProof {
+        let mut spend_proof = spec::SpendProof {
             spend_proof,
             address: None,
         };
@@ -284,8 +243,8 @@ fn add_mc_inputs(
 
             input_info.inputs_and_amount.amount += mc_index_interval.accumulated;
 
-            let mut input = Input {
-                input_type: Some(input_type.to_string()),
+            let mut input = spec::Input {
+                kind: Some(input_type.to_string()),
                 from_main_chain_index: Some(mc_index_interval.from_mci),
                 to_main_chain_index: Some(mc_index_interval.to_mci),
                 ..Default::default()
@@ -370,7 +329,7 @@ fn pick_multiple_coins_and_continue(
     let mut stmt = db.prepare_cached(&sql)?;
 
     let input_rows = stmt
-        .query_map(&[&last_ball_mci], |row| Input {
+        .query_map(&[&last_ball_mci], |row| spec::Input {
             unit: row.get(0),
             message_index: row.get(1),
             output_index: row.get(2),
@@ -436,7 +395,7 @@ fn pick_one_coin_just_bigger_and_continue(
                 &(input_info.required_amount + is_base as u32 * config::TRANSFER_INPUT_SIZE),
                 &last_ball_mci,
             ],
-            |row| Input {
+            |row| spec::Input {
                 unit: row.get(0),
                 message_index: row.get(1),
                 output_index: row.get(2),
