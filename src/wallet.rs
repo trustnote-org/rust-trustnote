@@ -9,7 +9,7 @@ pub struct TransactionHistory {
     pub timestamp: String,
 }
 
-pub fn read_transaction_history(address: &str, index: usize) -> Result<Vec<String>> {
+pub fn read_transaction_history(address: &str, index: Option<usize>) -> Result<Vec<String>> {
     let mut history_transactions = Vec::new();
 
     let db = db::DB_POOL.get_connection();
@@ -75,8 +75,10 @@ pub fn read_transaction_history(address: &str, index: usize) -> Result<Vec<Strin
         }
     }
 
-    if index > 0 && index <= history_transactions.len() {
-        return Ok(vec![history_transactions[index - 1].clone()]);
+    if let Some(id) = index {
+        if id <= history_transactions.len() {
+            return Ok(vec![history_transactions[id - 1].clone()]);
+        }
     }
 
     Ok(history_transactions)
