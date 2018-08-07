@@ -131,7 +131,7 @@ fn sync(ws: &Arc<network::wallet::WalletConn>) -> Result<()> {
     Ok(())
 }
 
-fn history_log(index: usize) -> Result<()> {
+fn history_log(index: Option<usize>) -> Result<()> {
     //TODO: get the address from mnemonic
     let address = "VEMG2D62YM6JW7EMHSYAXBCALG4B6HLD";
     let histories = wallet::read_transaction_history(&address, index)?;
@@ -161,16 +161,21 @@ fn main() -> Result<()> {
 
     //Log
     if let Some(log) = m.subcommand_matches("log") {
-        let index = if log.value_of("v").is_some() {
-            let v = log.value_of("v").unwrap().parse::<usize>()?;
-            println!("Wallet History of {}", v);
-            v
-        } else {
-            println!("Wallet History");
-            0
-        };
-
-        return history_log(index);
+        let v = value_t!(log.value_of("v"), usize);
+        match v {
+            Ok(v) => {
+                println!("Wallet History of {}", v);
+                return history_log(Some(v));
+            }
+            Err(clap::Error {
+                kind: clap::ErrorKind::ArgumentNotFound,
+                ..
+            }) => {
+                println!("Wallet History");
+                return history_log(None);
+            }
+            Err(e) => e.exit(),
+        }
     }
 
     let settings = config::get_settings();
