@@ -12,6 +12,8 @@ pub struct Settings {
     pub hub_url: Vec<String>,
     pub mnemonic: String,
     pub initial_db_path: String,
+    pub genesis_unit: String,
+    pub witnesses: Vec<String>,
 }
 
 impl Default for Settings {
@@ -22,6 +24,21 @@ impl Default for Settings {
                 .expect("failed to generate mnemonic")
                 .to_string(),
             initial_db_path: String::from("../db/initial.trustnote.sqlite"),
+            genesis_unit: String::from("V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU="),
+            witnesses: vec![
+                String::from("6LDM27ELDDAJBTNTVVQQYW7MWOK3F6WD"),
+                String::from("BP2NYKORMOB5SEUTFSVPF2CMSQSVEZOS"),
+                String::from("C6D4XKXDO4JAUT3BR27RM3UHKYGILR3X"),
+                String::from("CGCU5BBDWY2ZU3XKUXNGDTXDY7VXXJNJ"),
+                String::from("E45DPZHBPI7YX3CDG7HWTWBWRNGBV6C3"),
+                String::from("EPG47NW4DDKIBUFZBDVQU3KHYCCMXTDN"),
+                String::from("FF6X4KX3OOAAZUYWXDAHQJIJ5HDZLSXL"),
+                String::from("JVFHPXAA7FJEJU3TSTR5ETYVOXHOBR4H"),
+                String::from("MWJTSFCRBCV2CVT3SCDYZW2F2N3JKPIP"),
+                String::from("NJSDFSIRZT5I5YQONDNEMKXSFNJPSO6A"),
+                String::from("OALYXCMDI6ODRWMY6YO6WUPL6Q5ZBAO5"),
+                String::from("UABSDF77S6SU4FDAXWTYIODVODCAA22A"),
+            ],
         }
     }
 }
