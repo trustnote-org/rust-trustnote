@@ -40,7 +40,8 @@ fn init_log() {
                 record.target(),
                 message
             ))
-        }).level(log_lvl)
+        })
+        .level(log_lvl)
         .chain(std::io::stdout())
         .apply()
         .unwrap();
@@ -128,6 +129,18 @@ fn sync(ws: &WalletConn) -> Result<()> {
     Ok(())
 }
 
+fn history_log(index: usize) -> Result<()> {
+    //TODO: get the address from mnemonic
+    let address = "VEMG2D62YM6JW7EMHSYAXBCALG4B6HLD";
+    let histories = wallet::read_transaction_history(&address, index)?;
+
+    for history in histories {
+        println!("{}", history);
+    }
+
+    Ok(())
+}
+
 fn pause() {
     use std::io::Read;
     ::std::io::stdin().read(&mut [0; 1]).unwrap();
@@ -146,12 +159,16 @@ fn main() -> Result<()> {
 
     //Log
     if let Some(log) = m.subcommand_matches("log") {
-        if let Some(v) = log.value_of("v") {
+        let index = if log.value_of("v").is_some() {
+            let v = log.value_of("v").unwrap().parse::<usize>()?;
             println!("Wallet History of {}", v);
-        }
-        println!("Wallet History");
+            v
+        } else {
+            println!("Wallet History");
+            0
+        };
 
-        return Ok(());
+        return history_log(index);
     }
 
     let settings = config::get_settings();
