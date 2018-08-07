@@ -24,7 +24,7 @@ pub struct SpendProof {
 }
 
 // TODO: Input struct is from type
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Input {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub address: Option<String>,
@@ -46,23 +46,6 @@ pub struct Input {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
     pub blinding: Option<String>,
-}
-
-impl Default for Input {
-    fn default() -> Input {
-        Input {
-            unit: None,
-            message_index: None,
-            output_index: None,
-            amount: None,
-            address: None,
-            blinding: None,
-            kind: None,
-            serial_number: None,
-            from_main_chain_index: None,
-            to_main_chain_index: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
