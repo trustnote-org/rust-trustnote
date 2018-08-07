@@ -7,7 +7,7 @@ use main_chain;
 use spec::Unit;
 use storage;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LastStableBallAndParentUnits {
     pub parent_units: Vec<String>,
     pub last_stable_mc_ball: Option<String>,
