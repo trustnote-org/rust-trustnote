@@ -106,6 +106,7 @@ pub mod signature;
 pub mod storage;
 pub mod time;
 pub mod validation;
+pub mod wallet;
 pub mod witness_proof;
 
 pub use error::{Result, TrustnoteError};
