@@ -20,7 +20,6 @@ mod config;
 use std::sync::Arc;
 
 use clap::App;
-use trustnote::network::wallet::WalletConn;
 use trustnote::*;
 use trustnote_wallet_base::Mnemonic;
 
@@ -40,8 +39,7 @@ fn init_log() {
                 record.target(),
                 message
             ))
-        })
-        .level(log_lvl)
+        }).level(log_lvl)
         .chain(std::io::stdout())
         .apply()
         .unwrap();
@@ -74,7 +72,7 @@ fn init() -> Result<()> {
     Ok(())
 }
 
-fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
+fn connect_to_remote(peers: &[String]) -> Result<Arc<network::wallet::WalletConn>> {
     for peer in peers {
         match network::wallet::create_outbound_conn(&peer) {
             Err(e) => {
@@ -123,9 +121,13 @@ fn info() -> Result<()> {
     Ok(())
 }
 
-fn sync(ws: &WalletConn) -> Result<()> {
-    ws.get_history()?;
+fn sync(ws: &Arc<network::wallet::WalletConn>) -> Result<()> {
     // TODO: print get history statistics
+    let refresh_history = ws.get_history();
+    match refresh_history {
+        Ok(_) => info!("refresh history done"),
+        _ => info!("refresh history failed, please 'sync' again"),
+    }
     Ok(())
 }
 
@@ -179,6 +181,7 @@ fn main() -> Result<()> {
         if let Some(mnemonic) = sync_arg.value_of("MNEMONIC") {
             config::update_mnemonic(mnemonic)?;
         }
+        //TODO: regist an event to handle_just_saying from hub?
         return sync(&ws);
     }
 

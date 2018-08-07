@@ -5,6 +5,7 @@ use std::time::Duration;
 use super::network::{Sender, Server, WsConnection};
 use config;
 use error::Result;
+use light_wallet;
 use may::coroutine;
 use may::net::TcpStream;
 use serde_json::Value;
@@ -89,7 +90,8 @@ impl WalletConn {
     }
 
     pub fn get_history(&self) -> Result<()> {
-        unimplemented!()
+        light_wallet::refresh_light_client_history(&self)
+        //TODO: unimplemented!()
     }
 }
 

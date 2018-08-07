@@ -99,6 +99,7 @@ mod definition;
 pub mod joint;
 pub mod joint_storage;
 pub mod light;
+pub mod light_wallet;
 pub mod main_chain;
 mod obj_ser;
 pub mod object_hash;

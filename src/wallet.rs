@@ -58,8 +58,7 @@ pub fn read_transaction_history(address: &str, index: usize) -> Result<Vec<Strin
             to_address: row.get(8),
             from_address: row.get(9),
             mci: row.get(10),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     let mut id = 0;
     for row in rows {

@@ -4,15 +4,23 @@ use error::Result;
 use failure::ResultExt;
 use graph;
 use joint::Joint;
+use may::sync::Mutex;
+use object_hash;
 use parent_composer;
 use rusqlite::Connection;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use storage;
+use validation::ValidationState;
 use witness_proof;
 
 const MAX_HISTORY_ITEMS: usize = 1000;
 
-#[derive(Deserialize)]
+lazy_static! {
+    static ref LIGHT_JOINTS: Mutex<()> = Mutex::new(());
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct HistoryRequest {
     pub witnesses: Vec<String>,
     #[serde(default)]
@@ -23,7 +31,7 @@ pub struct HistoryRequest {
     pub requested_joints: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct HistoryResponse {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     unstable_mc_joints: Vec<Joint>,
@@ -35,7 +43,7 @@ pub struct HistoryResponse {
     proofchain_balls: Vec<ProofBalls>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct ProofBalls {
     ball: String,
     unit: String,
@@ -168,6 +176,120 @@ pub fn prepare_history(
         joints,
         proofchain_balls,
     })
+}
+
+pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
+    if resp_history.joints.is_empty() {
+        bail!("no joints");
+    }
+    if resp_history.unstable_mc_joints.is_empty() {
+        bail!("no unstable_mc_joints");
+    }
+    // if resp_history.witness_change_and_definition_joints.is_empty() {
+    //     resp_history.witness_change_and_definition_joints = vec![];
+    // }
+    // if resp_history.proofchain_balls.is_empty() {
+    //     resp_history.proofchain_balls = vec![];
+    // }
+    let db = db::DB_POOL.get_connection();
+    let witness_proof = witness_proof::process_witness_proof(
+        &db,
+        &resp_history.unstable_mc_joints,
+        resp_history.witness_change_and_definition_joints.clone(),
+        false,
+    ).context("gprocess_witness_proof failed")?;
+
+    // let last_ball_units = witness_proof.last_ball_units;
+    // let assoc_last_ball_by_last_ball_unit = witness_proof.assoc_last_ball_by_last_ball_unit;
+    let mut proven_units_non_serialness = HashMap::new();
+    let last_balls = witness_proof
+        .assoc_last_ball_by_last_ball_unit
+        .iter()
+        .map(|s| s.1)
+        .collect::<Vec<_>>();
+    for ball in &resp_history.proofchain_balls {
+        let obj_ball = ball;
+        if obj_ball.ball != object_hash::get_ball_hash(
+            &obj_ball.unit,
+            &obj_ball.parent_balls,
+            &obj_ball.skiplist_balls,
+            obj_ball.is_nonserial.unwrap(),
+        ) {
+            bail!("wrong ball hash");
+        }
+        let ret = last_balls.iter().find(|&&x| x.to_owned() == obj_ball.ball);
+        if ret.is_none() {
+            bail!("ball not known");
+        }
+        proven_units_non_serialness.insert(obj_ball.unit.clone(), obj_ball.is_nonserial.unwrap());
+    }
+    let joints = &resp_history.joints;
+    for joint in joints {
+        let unit = &joint.unit;
+        if Some(joint.get_unit_hash().to_owned()) != unit.unit {
+            bail!("invalid hash");
+        }
+        if unit.timestamp.is_none() || unit.timestamp.unwrap() == 0 {
+            bail!("no timestamp");
+        }
+    }
+    let _g = LIGHT_JOINTS.lock().unwrap();
+
+    let units = joints
+        .iter()
+        .map(|s| s.unit.unit.as_ref().unwrap())
+        .collect::<Vec<_>>();
+    let units_list = units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    //FIXME: delete "is_stable" is Ok?
+    let mut stmt = db.prepare_cached("SELECT unit, is_stable FROM units WHERE unit IN({})")?;
+    let existing_units = stmt
+        .query_map(&[&units_list], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+    let mut provent_units = vec![];
+    let joints_reverse = joints.iter().rev();
+    for joint_r in joints_reverse {
+        let unit = joint_r.unit.unit.as_ref().unwrap();
+        let sequence = if proven_units_non_serialness[unit] {
+            String::from("final-bad")
+        } else {
+            String::from("good")
+        };
+        //let _d = proven_units_non_serialness.get(unit);
+        if proven_units_non_serialness.get(unit).is_some() {
+            provent_units.push(unit);
+        }
+        if existing_units.contains(unit) {
+            let mut stmt =
+                db.prepare_cached("UPDATE units SET main_chain_index=?, sequence=? WHERE unit=?")?;
+            stmt.execute(&[&joint_r.unit.main_chain_index.unwrap(), &sequence, unit])?;
+        } else {
+            let mut validate_state = ValidationState::new();
+            validate_state.sequence = sequence;
+            joint_r
+                .to_owned()
+                .save(validate_state)
+                .context("save_joint failed")?;
+            //FIXME: need to check save()
+        }
+    }
+    fix_is_spent_flag_and_input_address().context("fix_is_spent_flag_and_input_address failed")?;
+    if provent_units.is_empty() {
+        return Ok(());
+    }
+    let provent_units_list = provent_units
+        .iter()
+        .map(|s| format!("'{}'", s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut stmt = db.prepare_cached("UPDATE units SET is_stable=1, is_free=0 WHERE unit IN(?)")?;
+    stmt.execute(&[&provent_units_list])?;
+
+    Ok(())
 }
 
 fn add_shared_addresses_of_wallet(db: &Connection, addresses: &Vec<String>) -> Result<Vec<String>> {
@@ -661,4 +783,82 @@ fn build_proof_chain_on_mc(
             }
         }
     }
+}
+
+fn fix_is_spent_flag_and_input_address() -> Result<()> {
+    let db = db::DB_POOL.get_connection();
+    fix_is_spent_flag(&db).context("")?;
+    fix_input_address(&db).context("")?;
+    Ok(())
+}
+
+struct TempOutput {
+    unit: String,
+    message_index: u32,
+    output_index: u32,
+}
+fn fix_is_spent_flag(db: &Connection) -> Result<()> {
+    let mut stmt = db.prepare_cached(
+        "SELECT outputs.unit, outputs.message_index, outputs.output_index \
+		FROM outputs \
+		JOIN inputs ON outputs.unit=inputs.src_unit AND outputs.message_index=inputs.src_message_index \
+        AND outputs.output_index=inputs.src_output_index \
+		WHERE is_spent=0 AND type='transfer'",
+    )?;
+
+    let rows = stmt
+        .query_map(&[], |row| TempOutput {
+            unit: row.get(0),
+            message_index: row.get(1),
+            output_index: row.get(2),
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    if rows.is_empty() {
+        bail!("no output need update in fix_is_spent_flag");
+    }
+    for row in rows {
+        let mut stmt = db.prepare_cached(
+            "UPDATE outputs SET is_spent=1 WHERE unit=? AND message_index=? AND output_index=?",
+        )?;
+        stmt.execute(&[&row.unit, &row.message_index, &row.output_index])?;
+    }
+
+    Ok(())
+}
+
+struct TempOutput2 {
+    unit: String,
+    message_index: u32,
+    output_index: u32,
+    addr: String,
+}
+fn fix_input_address(db: &Connection) -> Result<()> {
+    let mut stmt = db.prepare_cached(
+        "SELECT outputs.unit, outputs.message_index, outputs.output_index, outputs.address \
+         FROM outputs \
+         JOIN inputs ON outputs.unit=inputs.src_unit AND outp \
+         uts.message_index=inputs.src_message_index \
+         AND outputs.output_index=inputs.src_output_index \
+         WHERE inputs.address IS NULL AND type='transfer'",
+    )?;
+
+    let rows = stmt
+        .query_map(&[], |row| TempOutput2 {
+            unit: row.get(0),
+            message_index: row.get(1),
+            output_index: row.get(2),
+            addr: row.get(3),
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+
+    if rows.is_empty() {
+        bail!("no output need update in fix_input_address");
+    }
+    for row in rows {
+        let mut stmt = db.prepare_cached(
+            "UPDATE inputs SET address=? WHERE src_unit=? AND src_message_index=? AND src_output_index=?",
+        )?;
+        stmt.execute(&[&row.addr, &row.unit, &row.message_index, &row.output_index])?;
+    }
+
+    Ok(())
 }
