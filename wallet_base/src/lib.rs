@@ -15,10 +15,11 @@ extern crate wallet;
 
 use bitcoin::network::constants::Network;
 use bitcoin::util::bip32::ChildNumber;
-pub use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use rand::{OsRng, RngCore};
 use trustnote::object_hash;
 use wallet::keyfactory::{KeyFactory, Seed};
+
+pub use bitcoin::util::bip32::{ExtendedPrivKey, ExtendedPubKey};
 pub use wallet::mnemonic::Mnemonic;
 
 pub type Result<T> = ::std::result::Result<T, failure::Error>;

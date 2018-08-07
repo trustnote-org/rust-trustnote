@@ -4,7 +4,6 @@ extern crate log;
 extern crate clap;
 #[macro_use]
 extern crate failure;
-extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
 
