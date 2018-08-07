@@ -40,8 +40,7 @@ fn init_log() {
                 record.target(),
                 message
             ))
-        })
-        .level(log_lvl)
+        }).level(log_lvl)
         .chain(std::io::stdout())
         .apply()
         .unwrap();

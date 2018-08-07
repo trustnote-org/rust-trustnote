@@ -154,8 +154,8 @@ pub fn calc_earnings(
     );
 
     let mut stmt = db.prepare_cached(&sql)?;
-    let total =
-        stmt.query_row(
+    let total = stmt
+        .query_row(
             &[&from_main_chain_index, &to_main_chain_index, address],
             |row| row.get::<_, u32>(0),
         ).unwrap_or(0);
