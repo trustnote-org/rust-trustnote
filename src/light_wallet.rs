@@ -53,10 +53,11 @@ fn prepare_request_for_history() -> Result<Value> {
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
         .join(", ");
-    let sql = format!("SELECT unit FROM unit_authors JOIN units USING(unit) WHERE is_stable=1 AND address IN({}) \
-					UNION \
-					SELECT unit FROM outputs JOIN units USING(unit) WHERE is_stable=1 AND address IN({})", 
-                    addresses_list, addresses_list);
+    let sql = format!(
+        "SELECT unit FROM unit_authors JOIN units USING(unit) WHERE is_stable=1 AND address IN({}) \
+         UNION \
+         SELECT unit FROM outputs JOIN units USING(unit) WHERE is_stable=1 AND address IN({})", 
+        addresses_list, addresses_list);
     let mut stmt = db.prepare_cached(&sql)?;
     let known_stable_units = stmt
         .query_map(&[], |row| row.get(0))?
