@@ -11,8 +11,8 @@ use rusqlite::Connection;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use storage;
+use validation::ValidationState;
 use witness_proof;
-use writer;
 
 const MAX_HISTORY_ITEMS: usize = 1000;
 
@@ -20,7 +20,7 @@ lazy_static! {
     static ref LIGHT_JOINTS: Mutex<()> = Mutex::new(());
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct HistoryRequest {
     pub witnesses: Vec<String>,
     #[serde(default)]
@@ -31,7 +31,7 @@ pub struct HistoryRequest {
     pub requested_joints: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct HistoryResponse {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     unstable_mc_joints: Vec<Joint>,
@@ -43,7 +43,7 @@ pub struct HistoryResponse {
     proofchain_balls: Vec<ProofBalls>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct ProofBalls {
     ball: String,
     unit: String,
@@ -202,7 +202,7 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
     // let last_ball_units = witness_proof.last_ball_units;
     // let assoc_last_ball_by_last_ball_unit = witness_proof.assoc_last_ball_by_last_ball_unit;
     let mut proven_units_non_serialness = HashMap::new();
-    let rr = witness_proof
+    let last_balls = witness_proof
         .assoc_last_ball_by_last_ball_unit
         .iter()
         .map(|s| s.1)
@@ -217,8 +217,8 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         ) {
             bail!("wrong ball hash");
         }
-        let a = rr.iter().find(|&&x| x.to_owned() == obj_ball.ball);
-        if a.is_none() {
+        let ret = last_balls.iter().find(|&&x| x.to_owned() == obj_ball.ball);
+        if ret.is_none() {
             bail!("ball not known");
         }
         proven_units_non_serialness.insert(obj_ball.unit.clone(), obj_ball.is_nonserial.unwrap());
@@ -268,8 +268,13 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
                 db.prepare_cached("UPDATE units SET main_chain_index=?, sequence=? WHERE unit=?")?;
             stmt.execute(&[&joint_r.unit.main_chain_index.unwrap(), &sequence, unit])?;
         } else {
-            writer::save_joint(joint_r, sequence).context("save_joint failed")?;
-            //TODO: save_joint need to be impl
+            let mut validate_state = ValidationState::new();
+            validate_state.sequence = sequence;
+            joint_r
+                .to_owned()
+                .save(validate_state)
+                .context("save_joint failed")?;
+            //FIXME: need to check save()
         }
     }
     fix_is_spent_flag_and_input_address().context("fix_is_spent_flag_and_input_address failed")?;

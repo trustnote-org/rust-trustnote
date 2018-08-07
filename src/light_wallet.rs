@@ -2,59 +2,26 @@
 
 use failure::ResultExt;
 
+use db;
+use error::Result;
+use light;
+use my_witness;
+use network::wallet::WalletConn;
 use rusqlite::Connection;
 use serde_json::{self, Value};
-use trustnote::error::Result;
-use trustnote::my_witness;
-use trustnote::*;
 
-struct ws {
-    b_refreshing_history: bool,
-    b_light_vendor: bool,
-}
-
-fn find_outbound_peer_or_connect(_: String) -> Result<ws> {
-    //get connect to hub
-    unimplemented!();
-}
-fn refresh_light_client_history() -> Result<()> {
-    if !config::IS_LIGHT {
-        info!("is not light wallet.");
-        return Ok(());
-    }
-    let light_vendor_url = "".to_string();
-    if light_vendor_url.is_empty() {
-        info!("refreshLightClientHistory called too early: light_vendor_url not set yet");
-        return Ok(());
-    }
-    info!("refresh_light_started");
-
-    let mut ws = find_outbound_peer_or_connect(light_vendor_url)?; //FIXME: need to impl
-
+pub fn refresh_light_client_history(ws: &WalletConn) -> Result<()> {
     let req_get_history =
         prepare_request_for_history().context("prepare_request_for_history failed")?;
-    let response_history = ws
+    let response_history_v = ws
         .send_request("light/get_history", &req_get_history)
         .context("send get_history_request failed")?;
+    let mut response_history_s: light::HistoryResponse =
+        serde_json::from_value(response_history_v)?;
 
-    let ret = light::process_history(response_history).context("process_history failed")?;
+    light::process_history(&mut response_history_s).context("process_history response failed")?;
 
     Ok(())
-}
-
-#[derive(Serialize, Deserialize)]
-struct Req_History {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    witnesses: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    addresses: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    unstable_units: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    known_stable_units: Vec<String>,
-    last_stable_mci: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    unit: Option<String>,
 }
 
 fn prepare_request_for_history() -> Result<Value> {
@@ -64,23 +31,21 @@ fn prepare_request_for_history() -> Result<Value> {
     }
     let db = db::DB_POOL.get_connection();
     let addresses = read_my_addresses(&db).context("prepare_request_for_history failed as ")?;
-    let unstable_units =
+    let requested_joints =
         read_list_of_unstable_units(&db).context("prepare_request_for_history failed as ")?;
-    if addresses.is_empty() && unstable_units.is_empty() {
-        bail!("prepare_request_for_history failed as addresses and unstable_units are not found");
+    if addresses.is_empty() && requested_joints.is_empty() {
+        bail!("prepare_request_for_history failed as addresses and requested_joints are not found");
     }
-    let mut req_history = Req_History {
+
+    let mut req_history = light::HistoryRequest {
         witnesses,
         addresses,
-        unstable_units,
-        known_stable_units: vec![],
-        last_stable_mci: 0,
-        unit: None,
+        requested_joints,
+        known_stable_units: Vec::new(),
     };
     if req_history.addresses.is_empty() {
         return Ok(serde_json::to_value(req_history)?);
     }
-    req_history.last_stable_mci = 0;
 
     let addresses_list = req_history
         .addresses
