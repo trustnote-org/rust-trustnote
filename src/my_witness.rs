@@ -6,7 +6,7 @@ lazy_static! {
     pub static ref MY_WITNESSES: Vec<String> = read_my_witnesses().unwrap();
 }
 
-pub fn read_my_witnesses() -> Result<Vec<String>> {
+fn read_my_witnesses() -> Result<Vec<String>> {
     // read from database
     let db = db::DB_POOL.get_connection();
     let witnesses = db.get_my_witnesses()?;

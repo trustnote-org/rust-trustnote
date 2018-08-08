@@ -27,7 +27,6 @@ use trustnote_wallet_base::{Base64KeyExt, ExtendedPrivKey, ExtendedPubKey, Mnemo
 struct WalletInfo {
     #[allow(dead_code)]
     master_prvk: ExtendedPrivKey,
-    #[allow(dead_code)]
     wallet_pubk: ExtendedPubKey,
     device_address: String,
     wallet_0_id: String,
@@ -82,8 +81,8 @@ fn init_log() {
     debug!("log init done!");
 }
 
+// TODO: src database is get from trustnote config which is not clear
 fn init_database() -> Result<()> {
-    // TODO: src database is get from trustnote config which is not clear
     // init the settings first
     let _settings = config::get_settings();
     let mut db_path = ::std::env::current_dir()?;
@@ -155,13 +154,12 @@ fn update_wallet_address(wallet_info: &WalletInfo) -> Result<()> {
 
 fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     update_wallet_address(&wallet_info)?;
-    //ws.get_history()?;
-    // TODO: print get history statistics
     let refresh_history = ws.get_history();
     match refresh_history {
         Ok(_) => println!("refresh history done"),
         Err(e) => eprintln!("refresh history failed, please 'sync' again\n err={}", e),
     }
+    // TODO: print get history statistics
     Ok(())
 }
 

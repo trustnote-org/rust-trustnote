@@ -501,7 +501,7 @@ struct Param {
 fn compose_joint(mut params: Param) -> Result<Joint> {
     let witnesses = params.witnesses.clone();
     if witnesses.is_empty() {
-        params.witnesses = my_witness::read_my_witnesses()?;
+        params.witnesses = my_witness::MY_WITNESSES.clone();
         return compose_joint(params);
     }
 

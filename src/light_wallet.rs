@@ -25,7 +25,7 @@ pub fn refresh_light_client_history(ws: &WalletConn) -> Result<()> {
 }
 
 fn prepare_request_for_history() -> Result<Value> {
-    let witnesses = my_witness::read_my_witnesses()?;
+    let witnesses = my_witness::MY_WITNESSES.clone();
     if witnesses.is_empty() {
         bail!("witnesses not found");
     }
