@@ -5,6 +5,7 @@ use std::time::Duration;
 use super::network::{Sender, Server, WsConnection};
 use config;
 use error::Result;
+use joint::Joint;
 use light::LastStableBallAndParentUnitsAndWitnessListUnit;
 use light_wallet;
 use may::coroutine;
@@ -94,6 +95,11 @@ impl WalletConn {
     pub fn get_history(&self) -> Result<()> {
         light_wallet::refresh_light_client_history(&self)
         //TODO: unimplemented!()
+    }
+
+    pub fn post_joint(&self, joint: &Joint) -> Result<()> {
+        self.send_request("post_joint", &serde_json::to_value(joint)?)?;
+        Ok(())
     }
 
     pub fn get_parents_and_last_ball_and_witness_list_unit(
