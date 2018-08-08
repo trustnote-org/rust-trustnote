@@ -222,7 +222,7 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         ) {
             bail!("wrong ball hash");
         }
-        if known_balls.contains(&obj_ball.ball) {
+        if !known_balls.contains(&obj_ball.ball) {
             bail!("ball not known");
         }
 
