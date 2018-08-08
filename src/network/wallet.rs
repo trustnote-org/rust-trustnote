@@ -162,11 +162,3 @@ impl Server<WalletData> for WalletData {
         Ok(response)
     }
 }
-
-pub fn request_from_light_vendor(
-    _ws: &Arc<::network::wallet::WalletConn>,
-    _request: &str,
-    _witnesses: Vec<String>,
-) -> Result<::light::LastStableBallAndParentUnitsAndWitnessListUnit> {
-    unimplemented!()
-}

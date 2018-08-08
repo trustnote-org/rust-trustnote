@@ -14,7 +14,6 @@ use rusqlite::Connection;
 use serde_json::{self, Value};
 use spec;
 use spec::*;
-use storage;
 
 #[derive(Debug, Clone)]
 struct InputWithProof {
@@ -509,22 +508,18 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
     }
 
     if params.light_props.is_none() {
-        match ::network::wallet::request_from_light_vendor(
-            &params.ws,
-            "light/get_parents_and_last_ball_and_witness_list_unit",
-            witnesses,
-        ) {
+        match params.ws.get_parents_and_last_ball_and_witness_list_unit() {
             Ok(res) => {
                 if res.parent_units.is_empty()
                     || res.last_stable_mc_ball.is_none()
                     || res.last_stable_mc_ball_unit.is_none()
                 {
-                    bail!("invalid parents from light vendor");
+                    bail!("invalid parents or last stable mc ball");
                 }
                 params.light_props = Some(res);
                 return compose_joint(params);
             }
-            Err(e) => bail!("request from light vendor, err = {}", e),
+            Err(_) => bail!("err : get_parents_and_last_ball_and_witness_list_unit"),
         }
     }
 
