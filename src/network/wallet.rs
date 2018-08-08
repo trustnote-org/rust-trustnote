@@ -5,10 +5,12 @@ use std::time::Duration;
 use super::network::{Sender, Server, WsConnection};
 use config;
 use error::Result;
+use light;
 use light_wallet;
 use may::coroutine;
 use may::net::TcpStream;
-use serde_json::Value;
+use my_witness;
+use serde_json::{self, Value};
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
@@ -126,6 +128,24 @@ impl WalletConn {
     fn on_subscribe(&self, _param: Value) -> Result<Value> {
         bail!("I'm light, cannot subscribe you to updates");
     }
+
+    fn on_get_parents_and_last_ball_and_witness_list_unit(
+        &self,
+        param: Value,
+    ) -> Result<light::LastStableBallAndParentUnitsAndWitnessListUnit> {
+        let mut witnesses_v = param;
+        if witnesses_v.get("winesses").is_none() {
+            let winesses = my_witness::read_my_witnesses()?; //Vec::new();
+            witnesses_v = serde_json::to_value(winesses)?;
+        }
+
+        let resp = self.send_request(
+            "light/get_parents_and_last_ball_and_witness_list_unit",
+            &witnesses_v,
+        )?;
+
+        Ok(serde_json::from_value(resp)?)
+    }
 }
 
 impl Server<WalletData> for WalletData {
@@ -142,6 +162,7 @@ impl Server<WalletData> for WalletData {
         let response = match command.as_str() {
             "heartbeat" => ws.on_heartbeat(params)?,
             "subscribe" => ws.on_subscribe(params)?,
+
             command => bail!("on_request unknown command: {}", command),
         };
         Ok(response)

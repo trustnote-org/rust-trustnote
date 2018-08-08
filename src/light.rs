@@ -639,7 +639,7 @@ fn build_path(
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct LastStableBallAndParentUnitsAndWitnessListUnit {
     last_stable_mc_ball: String,
     last_stable_mc_ball_mci: u32,

@@ -153,9 +153,13 @@ fn update_wallet_address(wallet_info: &WalletInfo) -> Result<()> {
     Ok(())
 }
 
+<<<<<<< HEAD
 fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     update_wallet_address(&wallet_info)?;
     ws.get_history()?;
+=======
+fn sync(ws: &WalletConn) -> Result<()> {
+>>>>>>> :pencil:send light/get_parents_and_last_ball_and_witness_list_unit request and handle it (#316)
     // TODO: print get history statistics
     let refresh_history = ws.get_history();
     match refresh_history {
