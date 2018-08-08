@@ -5,10 +5,12 @@ use std::time::Duration;
 use super::network::{Sender, Server, WsConnection};
 use config;
 use error::Result;
+use light::LastStableBallAndParentUnitsAndWitnessListUnit;
 use light_wallet;
 use may::coroutine;
 use may::net::TcpStream;
-use serde_json::Value;
+use my_witness;
+use serde_json::{self, Value};
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
@@ -92,6 +94,19 @@ impl WalletConn {
     pub fn get_history(&self) -> Result<()> {
         light_wallet::refresh_light_client_history(&self)
         //TODO: unimplemented!()
+    }
+
+    fn get_parents_and_last_ball_and_witness_list_unit(
+        &self,
+    ) -> Result<LastStableBallAndParentUnitsAndWitnessListUnit> {
+        let witnesses = serde_json::to_value(my_witness::read_my_witnesses()?)?;
+
+        let resp = self.send_request(
+            "light/get_parents_and_last_ball_and_witness_list_unit",
+            &witnesses,
+        )?;
+
+        Ok(serde_json::from_value(resp)?)
     }
 }
 

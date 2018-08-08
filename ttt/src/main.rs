@@ -155,7 +155,7 @@ fn update_wallet_address(wallet_info: &WalletInfo) -> Result<()> {
 
 fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     update_wallet_address(&wallet_info)?;
-    ws.get_history()?;
+    //ws.get_history()?;
     // TODO: print get history statistics
     let refresh_history = ws.get_history();
     match refresh_history {
