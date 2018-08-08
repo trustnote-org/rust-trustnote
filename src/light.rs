@@ -639,14 +639,16 @@ fn build_path(
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct LastStableBallAndParentUnitsAndWitnessListUnit {
-    last_stable_mc_ball: String,
-    last_stable_mc_ball_mci: u32,
-    last_stable_mc_ball_unit: String,
-    parent_units: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    witness_list_unit: Option<String>,
+    pub last_stable_mc_ball: Option<String>,
+    pub last_stable_mc_ball_mci: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_stable_mc_ball_unit: Option<String>,
+    pub parent_units: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub witness_list_unit: Option<String>,
 }
 
 pub fn prepare_parents_and_last_ball_and_witness_list_unit(
@@ -673,9 +675,9 @@ pub fn prepare_parents_and_last_ball_and_witness_list_unit(
         storage::find_witness_list_unit(&db, witnesses, last_stable_mc_ball_mci)?;
 
     Ok(LastStableBallAndParentUnitsAndWitnessListUnit {
-        last_stable_mc_ball: last_stable_mc_ball.unwrap(),
+        last_stable_mc_ball: last_stable_mc_ball,
         last_stable_mc_ball_mci,
-        last_stable_mc_ball_unit: last_stable_mc_ball_unit.unwrap(),
+        last_stable_mc_ball_unit: last_stable_mc_ball_unit,
         parent_units,
         witness_list_unit,
     })
