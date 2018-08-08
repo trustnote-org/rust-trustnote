@@ -164,10 +164,30 @@ fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
 }
 
 fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
-    let histories = wallet::read_transaction_history(&wallet_info._00_address, index)?;
+    let histories = wallet::read_transaction_history(&wallet_info._00_address)?;
 
-    for history in histories {
-        println!("{}", history);
+    if let Some(index) = index {
+        if index <= histories.len() {
+            let history = &histories[index - 1];
+            if history.amount > 0 {
+                println!("FROM: \t{}", history.address_from);
+            } else {
+                println!("TO: \t{}", history.address_to);
+            }
+            println!("UNIT: \t\t{}", history.unit);
+            println!("AMOUNT: \t{} MN", history.amount / 1_000_000);
+            println!("DATE: \t\t{}", history.time);
+            println!("CONFIRMED: \t{}", history.confirmations);
+        }
+    } else {
+        for history in histories {
+            println!(
+                "#{} {:10.3} MN  \t{}",
+                history.id,
+                history.amount / 1_000_000,
+                history.time
+            );
+        }
     }
 
     Ok(())
@@ -197,14 +217,12 @@ fn main() -> Result<()> {
         let v = value_t!(log.value_of("v"), usize);
         match v {
             Ok(v) => {
-                println!("Wallet History of {}", v);
                 return history_log(&wallet_info, Some(v));
             }
             Err(clap::Error {
                 kind: clap::ErrorKind::ArgumentNotFound,
                 ..
             }) => {
-                println!("Wallet History");
                 return history_log(&wallet_info, None);
             }
             Err(e) => e.exit(),
