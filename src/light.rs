@@ -52,6 +52,7 @@ struct ProofBalls {
     content_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     is_nonserial: Option<bool>,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     skiplist_balls: Vec<String>,
 }

@@ -22,7 +22,7 @@ impl Default for Settings {
             hub_url: vec![String::from("119.28.86.54:6616")],
             mnemonic: mnemonic("")
                 .expect("failed to generate mnemonic")
-                .to_string(),
+            .to_string(),
             initial_db_path: String::from("../db/initial.trustnote.sqlite"),
             genesis_unit: String::from("V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU="),
             witnesses: vec![
