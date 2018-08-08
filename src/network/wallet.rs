@@ -96,7 +96,7 @@ impl WalletConn {
         //TODO: unimplemented!()
     }
 
-    pub fn post_joint(&self, joint: Joint) -> Result<()> {
+    pub fn post_joint(&self, joint: &Joint) -> Result<()> {
         self.send_request("post_joint", &serde_json::to_value(joint)?)?;
         Ok(())
     }
@@ -146,10 +146,6 @@ impl WalletConn {
     fn on_subscribe(&self, _param: Value) -> Result<Value> {
         bail!("I'm light, cannot subscribe you to updates");
     }
-
-    fn on_post_joint(&self, param: Value) -> Result<Value> {
-        self.send_request("post_joint", &param)
-    }
 }
 
 impl Server<WalletData> for WalletData {
@@ -166,7 +162,6 @@ impl Server<WalletData> for WalletData {
         let response = match command.as_str() {
             "heartbeat" => ws.on_heartbeat(params)?,
             "subscribe" => ws.on_subscribe(params)?,
-            "post_joint" => ws.on_post_joint(params)?,
             command => bail!("on_request unknown command: {}", command),
         };
         Ok(response)
