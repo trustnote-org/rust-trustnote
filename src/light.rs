@@ -204,14 +204,14 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         false,
     ).context("gprocess_witness_proof failed")?;
 
-    // let last_ball_units = witness_proof.last_ball_units;
-    // let assoc_last_ball_by_last_ball_unit = witness_proof.assoc_last_ball_by_last_ball_unit;
-    let mut proven_units_non_serialness = HashMap::new();
-    let last_balls = witness_proof
+    let known_balls = witness_proof
         .assoc_last_ball_by_last_ball_unit
-        .iter()
-        .map(|s| s.1)
-        .collect::<Vec<_>>();
+        .values()
+        .map(|s| s.clone())
+        .collect::<HashSet<_>>();
+
+    let mut proven_units_non_serialness = HashMap::new();
+
     for ball in &resp_history.proofchain_balls {
         let obj_ball = ball;
         if obj_ball.ball != object_hash::get_ball_hash(
@@ -222,9 +222,10 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         ) {
             bail!("wrong ball hash");
         }
-        if let None = last_balls.iter().find(|&&x| x == &obj_ball.ball) {
+        if known_balls.contains(&obj_ball.ball) {
             bail!("ball not known");
         }
+
         proven_units_non_serialness.insert(
             obj_ball.unit.clone(),
             obj_ball.is_nonserial.unwrap_or(false),

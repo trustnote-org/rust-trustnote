@@ -16,6 +16,7 @@ pub fn refresh_light_client_history(ws: &WalletConn) -> Result<()> {
     let response_history_v = ws
         .send_request("light/get_history", &req_get_history)
         .context("send get_history_request failed")?;
+
     let mut response_history_s: light::HistoryResponse =
         serde_json::from_value(response_history_v)?;
 
