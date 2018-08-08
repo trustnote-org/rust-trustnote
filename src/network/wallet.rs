@@ -141,6 +141,7 @@ impl WalletConn {
     fn on_subscribe(&self, _param: Value) -> Result<Value> {
         bail!("I'm light, cannot subscribe you to updates");
     }
+
     fn on_post_joint(&self, param: Value) -> Result<Value> {
         self.send_request("post_joint", &param)
     }
