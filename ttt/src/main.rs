@@ -165,15 +165,8 @@ fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     Ok(())
 }
 
-fn history_log(index: Option<usize>) -> Result<()> {
-    let settings = config::get_settings();
-    let mnemonic = Mnemonic::from(&settings.mnemonic)?;
-    let prvk = trustnote_wallet_base::master_private_key(&mnemonic, "")?;
-    //Now we use single address, the derived path is /m/44'/0'/0'/0/0
-    let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&prvk, 0)?;
-    let wallet_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;
-
-    let histories = wallet::read_transaction_history(&wallet_address, index)?;
+fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
+    let histories = wallet::read_transaction_history(&wallet_info._00_address, index)?;
 
     for history in histories {
         println!("{}", history);
@@ -207,14 +200,14 @@ fn main() -> Result<()> {
         match v {
             Ok(v) => {
                 println!("Wallet History of {}", v);
-                return history_log(Some(v));
+                return history_log(&wallet_info, Some(v));
             }
             Err(clap::Error {
                 kind: clap::ErrorKind::ArgumentNotFound,
                 ..
             }) => {
                 println!("Wallet History");
-                return history_log(None);
+                return history_log(&wallet_info, None);
             }
             Err(e) => e.exit(),
         }
