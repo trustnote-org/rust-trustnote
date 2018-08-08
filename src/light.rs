@@ -33,12 +33,16 @@ pub struct HistoryRequest {
 
 #[derive(Serialize, Deserialize)]
 pub struct HistoryResponse {
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     unstable_mc_joints: Vec<Joint>,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     witness_change_and_definition_joints: Vec<Joint>,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     joints: Vec<Joint>,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     proofchain_balls: Vec<ProofBalls>,
 }
@@ -214,15 +218,17 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
             &obj_ball.unit,
             &obj_ball.parent_balls,
             &obj_ball.skiplist_balls,
-            obj_ball.is_nonserial.unwrap(),
+            obj_ball.is_nonserial.unwrap_or(false),
         ) {
             bail!("wrong ball hash");
         }
-        let ret = last_balls.iter().find(|&&x| x.to_owned() == obj_ball.ball);
-        if ret.is_none() {
+        if let None = last_balls.iter().find(|&&x| x == &obj_ball.ball) {
             bail!("ball not known");
         }
-        proven_units_non_serialness.insert(obj_ball.unit.clone(), obj_ball.is_nonserial.unwrap());
+        proven_units_non_serialness.insert(
+            obj_ball.unit.clone(),
+            obj_ball.is_nonserial.unwrap_or(false),
+        );
     }
     let joints = &resp_history.joints;
     for joint in joints {

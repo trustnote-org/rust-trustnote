@@ -157,7 +157,12 @@ fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     let refresh_history = ws.get_history();
     match refresh_history {
         Ok(_) => println!("refresh history done"),
-        Err(e) => eprintln!("refresh history failed, please 'sync' again\n err={}", e),
+        Err(e) => {
+            println!("refresh history failed, please 'sync' again\n err={}", e);
+	    for e in e.iter_causes() {
+                println!{"cause: {}", e};
+            }
+        }
     }
     // TODO: print get history statistics
     Ok(())

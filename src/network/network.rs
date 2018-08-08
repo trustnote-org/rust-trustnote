@@ -103,8 +103,7 @@ impl<T> Sender for WsConnection<T> {
     fn send_json(&self, value: Value) -> Result<()> {
         let msg = serde_json::to_string(&value)?;
         if msg.len() < 1000 {
-        debug!("SENDING to {}: {}", self.peer, msg);
-
+            debug!("SENDING to {}: {}", self.peer, msg);
         } else {
             debug!("SENDING to {}: huge message", self.peer);
         }
@@ -202,8 +201,7 @@ impl<T> WsConnection<T> {
                     None => return,
                 };
                 if msg.len() < 1000 {
-                debug!("RECV from {}: {}", ws.peer, msg);
-
+                    debug!("RECV from {}: {}", ws.peer, msg);
                 } else {
                     debug!("RECV from {}: huge message!", ws.peer);
                 }
