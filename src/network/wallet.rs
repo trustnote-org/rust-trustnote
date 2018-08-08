@@ -95,7 +95,7 @@ impl WalletConn {
         //TODO: unimplemented!()
     }
 
-        pub fn post_joint(&self, joint: &Joint) -> Result<()> {
+    pub fn post_joint(&self, joint: Joint) -> Result<()> {
         self.send_request("post_joint", &serde_json::to_value(joint)?)?;
         Ok(())
     }
