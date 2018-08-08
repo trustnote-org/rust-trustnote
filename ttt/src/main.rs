@@ -165,10 +165,8 @@ fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     Ok(())
 }
 
-fn history_log(index: Option<usize>) -> Result<()> {
-    //TODO: get the address from mnemonic
-    let address = "VEMG2D62YM6JW7EMHSYAXBCALG4B6HLD";
-    let histories = wallet::read_transaction_history(&address, index)?;
+fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
+    let histories = wallet::read_transaction_history(&wallet_info._00_address, index)?;
 
     for history in histories {
         println!("{}", history);
@@ -202,14 +200,14 @@ fn main() -> Result<()> {
         match v {
             Ok(v) => {
                 println!("Wallet History of {}", v);
-                return history_log(Some(v));
+                return history_log(&wallet_info, Some(v));
             }
             Err(clap::Error {
                 kind: clap::ErrorKind::ArgumentNotFound,
                 ..
             }) => {
                 println!("Wallet History");
-                return history_log(None);
+                return history_log(&wallet_info, None);
             }
             Err(e) => e.exit(),
         }
