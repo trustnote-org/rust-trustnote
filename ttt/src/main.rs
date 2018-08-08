@@ -134,9 +134,14 @@ fn sync(ws: &WalletConn) -> Result<()> {
 }
 
 fn history_log(index: Option<usize>) -> Result<()> {
-    //TODO: get the address from mnemonic
-    let address = "VEMG2D62YM6JW7EMHSYAXBCALG4B6HLD";
-    let histories = wallet::read_transaction_history(&address, index)?;
+    let settings = config::get_settings();
+    let mnemonic = Mnemonic::from(&settings.mnemonic)?;
+    let prvk = trustnote_wallet_base::master_private_key(&mnemonic, "")?;
+    //Now we use single address, the derived path is /m/44'/0'/0'/0/0
+    let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&prvk, 0)?;
+    let wallet_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;
+
+    let histories = wallet::read_transaction_history(&wallet_address, index)?;
 
     for history in histories {
         println!("{}", history);
