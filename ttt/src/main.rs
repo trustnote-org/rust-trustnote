@@ -22,7 +22,41 @@ use std::sync::Arc;
 use clap::App;
 use trustnote::network::wallet::WalletConn;
 use trustnote::*;
-use trustnote_wallet_base::Mnemonic;
+use trustnote_wallet_base::{Base64KeyExt, ExtendedPrivKey, ExtendedPubKey, Mnemonic};
+
+struct WalletInfo {
+    #[allow(dead_code)]
+    master_prvk: ExtendedPrivKey,
+    #[allow(dead_code)]
+    wallet_pubk: ExtendedPubKey,
+    device_address: String,
+    wallet_0_id: String,
+    _00_address: String,
+    _00_address_pubk: ExtendedPubKey,
+}
+
+impl WalletInfo {
+    fn from_mnemonic(mnemonic: &str) -> Result<WalletInfo> {
+        let wallet = 0;
+        let mnemonic = Mnemonic::from(&mnemonic)?;
+        let master_prvk = trustnote_wallet_base::master_private_key(&mnemonic, "")?;
+        let device_address = trustnote_wallet_base::device_address(&master_prvk)?;
+        let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&master_prvk, wallet)?;
+        let wallet_0_id = trustnote_wallet_base::wallet_id(&wallet_pubk);
+        let _00_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;
+        let _00_address_pubk =
+            trustnote_wallet_base::wallet_address_pubkey(&wallet_pubk, false, 0)?;
+
+        Ok(WalletInfo {
+            master_prvk,
+            wallet_pubk,
+            device_address,
+            wallet_0_id,
+            _00_address,
+            _00_address_pubk,
+        })
+    }
+}
 
 fn init_log() {
     let log_lvl = if cfg!(debug_assertions) {
@@ -90,39 +124,37 @@ fn get_banlance(_address: &str) -> Result<u32> {
     Ok(0)
 }
 
-fn info() -> Result<()> {
-    let settings = config::get_settings();
-    let mnemonic = Mnemonic::from(&settings.mnemonic)?;
-    let prvk = trustnote_wallet_base::master_private_key(&mnemonic, "")?;
-    let wallet = 0;
-
+fn info(wallet_info: &WalletInfo) -> Result<()> {
+    let address_pubk = wallet_info._00_address_pubk.to_base64_key();
+    let balance = get_banlance(&wallet_info._00_address)? as f32 / 1000_000.0;
     println!("\ncurrent wallet info:\n");
-    // println!("mnemonic = {}", mnemonic.to_string());
-    // println!("wallet_private_key = {}", prvk.to_string());
-
-    let device_address = trustnote_wallet_base::device_address(&prvk)?;
-    println!("device_address: {}", device_address);
-
-    let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&prvk, wallet)?;
-    println!("wallet_public_key: {}", wallet_pubk.to_string());
-
-    let wallet_id = trustnote_wallet_base::wallet_id(&wallet_pubk);
-    println!("└──wallet_id(0): {}", wallet_id);
-
-    let wallet_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;
-    println!("   └──address(0/0): {}", wallet_address);
+    println!("device_address: {}", wallet_info.device_address);
+    println!("wallet_public_key: {}", wallet_info.wallet_pubk.to_string());
+    println!("└──wallet_id(0): {}", wallet_info.wallet_0_id);
+    println!("   └──address(0/0): {}", wallet_info._00_address);
     println!("      ├── path: /m/44'/0'/0'/0/0");
-
-    let balance = get_banlance(&wallet_address)?;
-    println!(
-        "      └── balance: {:.3}MN",
-        balance as f32 / 1000_000.0
-    );
+    println!("      ├── pubkey: {}", address_pubk);
+    println!("      └── balance: {:.3}MN", balance);
 
     Ok(())
 }
 
-fn sync(ws: &WalletConn) -> Result<()> {
+// save wallet address in database
+fn update_wallet_address(wallet_info: &WalletInfo) -> Result<()> {
+    use trustnote_wallet_base::Base64KeyExt;
+
+    wallet::update_wallet_address(
+        &db::DB_POOL.get_connection(),
+        &wallet_info.device_address,
+        &wallet_info.wallet_0_id,
+        &wallet_info._00_address,
+        &wallet_info._00_address_pubk.to_base64_key(),
+    )?;
+    Ok(())
+}
+
+fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
+    update_wallet_address(&wallet_info)?;
     ws.get_history()?;
     // TODO: print get history statistics
     let refresh_history = ws.get_history();
@@ -161,9 +193,12 @@ fn main() -> Result<()> {
 
     init()?;
 
+    let mut settings = config::get_settings();
+    let mut wallet_info = WalletInfo::from_mnemonic(&settings.mnemonic)?;
+
     //Info
     if let Some(_info) = m.subcommand_matches("info") {
-        return info();
+        return info(&wallet_info);
     }
 
     //Log
@@ -185,16 +220,18 @@ fn main() -> Result<()> {
         }
     }
 
-    let settings = config::get_settings();
     let ws = connect_to_remote(&settings.hub_url)?;
 
     //Sync
     if let Some(sync_arg) = m.subcommand_matches("sync") {
         if let Some(mnemonic) = sync_arg.value_of("MNEMONIC") {
             config::update_mnemonic(mnemonic)?;
+            // re_init settings
+            settings = config::get_settings();
+            wallet_info = WalletInfo::from_mnemonic(&settings.mnemonic)?;
         }
         //TODO: regist an event to handle_just_saying from hub?
-        return sync(&ws);
+        return sync(&ws, &wallet_info);
     }
 
     //Send
