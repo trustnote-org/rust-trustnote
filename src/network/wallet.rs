@@ -95,6 +95,24 @@ impl WalletConn {
         light_wallet::refresh_light_client_history(&self)
         //TODO: unimplemented!()
     }
+
+    fn on_get_parents_and_last_ball_and_witness_list_unit(
+        &self,
+        param: Value,
+    ) -> Result<LastStableBallAndParentUnitsAndWitnessListUnit> {
+        let mut witnesses_v = param;
+        if witnesses_v.get("winesses").is_none() {
+            let winesses = my_witness::read_my_witnesses()?; //Vec::new();
+            witnesses_v = serde_json::to_value(winesses)?;
+        }
+
+        let resp = self.send_request(
+            "light/get_parents_and_last_ball_and_witness_list_unit",
+            &witnesses_v,
+        )?;
+
+        Ok(serde_json::from_value(resp)?)
+    }
 }
 
 // the server side impl
@@ -127,24 +145,6 @@ impl WalletConn {
 
     fn on_subscribe(&self, _param: Value) -> Result<Value> {
         bail!("I'm light, cannot subscribe you to updates");
-    }
-
-    fn on_get_parents_and_last_ball_and_witness_list_unit(
-        &self,
-        param: Value,
-    ) -> Result<LastStableBallAndParentUnitsAndWitnessListUnit> {
-        let mut witnesses_v = param;
-        if witnesses_v.get("winesses").is_none() {
-            let winesses = my_witness::read_my_witnesses()?; //Vec::new();
-            witnesses_v = serde_json::to_value(winesses)?;
-        }
-
-        let resp = self.send_request(
-            "light/get_parents_and_last_ball_and_witness_list_unit",
-            &witnesses_v,
-        )?;
-
-        Ok(serde_json::from_value(resp)?)
     }
 }
 
