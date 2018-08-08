@@ -99,7 +99,7 @@ impl WalletConn {
     fn get_parents_and_last_ball_and_witness_list_unit(
         &self,
     ) -> Result<LastStableBallAndParentUnitsAndWitnessListUnit> {
-        let mut witnesses = serde_json::to_value(my_witness::read_my_witnesses()?)?;
+        let witnesses = serde_json::to_value(my_witness::read_my_witnesses()?)?;
 
         let resp = self.send_request(
             "light/get_parents_and_last_ball_and_witness_list_unit",
