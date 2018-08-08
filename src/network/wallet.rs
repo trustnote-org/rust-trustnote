@@ -168,10 +168,3 @@ impl Server<WalletData> for WalletData {
         Ok(response)
     }
 }
-
-pub fn request_from_light_vendor(
-    _request: &str,
-    _witnesses: Vec<String>,
-) -> Result<::parent_composer::LastStableBallAndParentUnits> {
-    unimplemented!()
-}
