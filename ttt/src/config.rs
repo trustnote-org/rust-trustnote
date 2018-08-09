@@ -4,7 +4,6 @@ use serde_json;
 use trustnote::Result;
 use trustnote_wallet_base::*;
 
-pub const DB_PATH: &str = "trustnote_light.sqlite";
 const SETTINGS_FILE: &str = "settings.json";
 
 #[derive(Debug, Serialize, Deserialize)]

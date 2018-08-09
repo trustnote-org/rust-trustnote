@@ -44,11 +44,18 @@ pub fn update_wallet_address(
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TransactionHistory {
     pub id: usize,
-    pub amount: Option<i64>,
-    pub timestamp: String,
+    pub amount: i64,
+    pub address_to: String,
+    pub address_from: String,
+    pub confirmations: bool,
+    pub fee: u32,
+    pub unit: String,
+    pub time: String,
+    pub level: u32,
+    pub mci: Option<u32>,
 }
 
-pub fn read_transaction_history(address: &str, index: Option<usize>) -> Result<Vec<String>> {
+pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>> {
     let mut history_transactions = Vec::new();
 
     let db = db::DB_POOL.get_connection();
@@ -97,28 +104,71 @@ pub fn read_transaction_history(address: &str, index: Option<usize>) -> Result<V
             to_address: row.get(8),
             from_address: row.get(9),
             mci: row.get(10),
-        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
 
     let mut id = 0;
     for row in rows {
         //info!("{:?}", row);
+
+        //TODO: handle invalid case
+
         if row.amount.is_some() {
-            id = id + 1;
-            let transaction = TransactionHistory {
-                id: id,
-                amount: row.amount,
-                timestamp: row.timestamp,
-            };
+            let mut amount = row.amount.unwrap();
 
-            history_transactions.push(serde_json::to_string_pretty(&transaction)?);
+            //Send
+            if row.from_address.is_some() {
+                amount = -amount;
+
+                id = id + 1;
+                let transaction = TransactionHistory {
+                    id: id,
+                    amount: amount,
+                    address_to: row.to_address.unwrap_or(String::new()),
+                    address_from: row.from_address.unwrap(),
+                    confirmations: row.is_stable > 0,
+                    fee: row.fee,
+                    unit: row.unit,
+                    time: row.timestamp,
+                    level: row.level,
+                    mci: row.mci,
+                };
+
+                history_transactions.push(transaction);
+
+            //Receive
+            } else {
+                let mut stmt = db.prepare_cached(
+                    "SELECT DISTINCT address FROM inputs \
+                     WHERE unit=? AND asset is NULL ORDER BY address",
+                )?;
+
+                let addresses = stmt
+                    .query_map(&[&row.unit], |row| row.get(0))?
+                    .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+                for address in addresses {
+                    id = id + 1;
+                    let transaction = TransactionHistory {
+                        id: id,
+                        amount: amount,
+                        address_to: row.to_address.as_ref().cloned().unwrap_or(String::new()),
+                        address_from: address,
+                        confirmations: row.is_stable > 0,
+                        fee: row.fee,
+                        unit: row.unit.clone(),
+                        time: row.timestamp.clone(),
+                        level: row.level,
+                        mci: row.mci,
+                    };
+
+                    history_transactions.push(transaction);
+                }
+            }
         }
     }
 
-    if let Some(id) = index {
-        if id <= history_transactions.len() {
-            return Ok(vec![history_transactions[id - 1].clone()]);
-        }
-    }
+    //TODO: sort by level and time
 
     Ok(history_transactions)
 }

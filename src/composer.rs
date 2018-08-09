@@ -1,19 +1,19 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use config;
 use db;
 use error::Result;
 use joint::Joint;
+use light::LastStableBallAndParentUnitsAndWitnessListUnit;
 use mc_outputs;
 use my_witness;
 use object_hash;
 use paid_witnessing;
-use parent_composer::LastStableBallAndParentUnits;
 use rusqlite::Connection;
 use serde_json::{self, Value};
 use spec;
 use spec::*;
-use storage;
 
 #[derive(Debug, Clone)]
 struct InputWithProof {
@@ -482,18 +482,20 @@ fn pick_divisible_coins_for_amount(
     issue_asset(db, input_info, asset, is_base)
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct Param {
     signing_addresses: Vec<String>,
     paying_addresses: Vec<String>,
     outputs: Vec<Output>,
     messages: Vec<Message>,
     signer: String,
-    light_props: Option<LastStableBallAndParentUnits>,
+    light_props: Option<LastStableBallAndParentUnitsAndWitnessListUnit>,
+    earned_headers_commission_recipients: Vec<spec::HeaderCommissionShare>,
     witnesses: Vec<String>,
     inputs: Vec<Input>,
     input_amount: Option<u32>,
     send_all: bool,
+    ws: Arc<::network::wallet::WalletConn>,
 }
 
 // TODO: params name
@@ -506,21 +508,18 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
     }
 
     if params.light_props.is_none() {
-        match ::network::wallet::request_from_light_vendor(
-            "light/get_parents_and_last_ball_and_witness_list_unit",
-            witnesses,
-        ) {
+        match params.ws.get_parents_and_last_ball_and_witness_list_unit() {
             Ok(res) => {
                 if res.parent_units.is_empty()
                     || res.last_stable_mc_ball.is_none()
                     || res.last_stable_mc_ball_unit.is_none()
                 {
-                    bail!("invalid parents from light vendor");
+                    bail!("invalid parents or last stable mc ball");
                 }
                 params.light_props = Some(res);
                 return compose_joint(params);
             }
-            Err(e) => bail!("request from light vendor, err = {}", e),
+            Err(_) => bail!("err : get_parents_and_last_ball_and_witness_list_unit"),
         }
     }
 
@@ -545,6 +544,7 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
     let external_outputs = outputs
         .iter()
         .filter(|output| output.amount > Some(0))
+        .clone()
         .collect::<Vec<_>>();
     if change_outputs.len() > 1 {
         bail!("more than one change output");
@@ -581,9 +581,9 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
 
     let mut total_amount = 0;
 
-    for output in external_outputs.iter() {
+    for output in external_outputs.into_iter() {
         match payment_message.clone().payload.unwrap() {
-            Payload::Payment(mut x) => x.outputs.push(output.clone().clone()),
+            Payload::Payment(mut x) => x.outputs.push(output.clone()),
             _ => {}
         }
         total_amount += output.amount.unwrap();
@@ -594,7 +594,13 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
     let is_multi_authored = from_addresses.len() > 1;
     let mut unit = Unit::default();
     unit.messages = messages.clone();
-    if is_multi_authored {
+
+    if !params.earned_headers_commission_recipients.is_empty() {
+        params
+            .earned_headers_commission_recipients
+            .sort_by(|a, b| a.address.cmp(&b.address));
+        unit.earned_headers_commission_recipients = params.earned_headers_commission_recipients;
+    } else if is_multi_authored {
         unit.earned_headers_commission_recipients
             .push(HeaderCommissionShare {
                 address: change_outputs.into_iter().nth(0).unwrap().address.unwrap(),
@@ -607,16 +613,15 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
     unit.parent_units = light_props.clone().unwrap().parent_units;
     unit.last_ball = light_props.clone().unwrap().last_stable_mc_ball;
     unit.last_ball_unit = light_props.clone().unwrap().last_stable_mc_ball_unit;
-    let last_ball_mci = light_props.unwrap().last_stable_mc_ball_mci;
+    let last_ball_mci = light_props.clone().unwrap().last_stable_mc_ball_mci;
 
-    check_for_unstable_predecessors()?;
+    let db = db::DB_POOL.get_connection();
+    check_for_unstable_predecessors(&db, last_ball_mci, &from_addresses)?;
 
     //authors
-    let db = db::DB_POOL.get_connection();
-
     let mut assoc_signing_paths: HashMap<String, Vec<String>> = HashMap::new();
     for from_address in from_addresses {
-        let mut author = ::spec::Author {
+        let mut author = Author {
             address: from_address.clone(),
             authentifiers: HashMap::new(),
             definition: Value::Null,
@@ -636,6 +641,7 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
             author.authentifiers.insert(signing_path, x.to_string());
         }
         unit.authors.push(author);
+
         let mut stmt = db.prepare_cached(
             "SELECT 1 FROM unit_authors CROSS JOIN units USING(unit) \
              WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
@@ -645,32 +651,37 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
             .query_map(&[&from_address, &last_ball_mci], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
         if rows.is_empty() {
-            author.definition = read_definition(&db, from_address, &signer)?;
+            author.definition = read_definition(&db, from_address)?;
             continue;
         }
-        let mut stmt = db.prepare_cached("SELECT definition \
-								FROM address_definition_changes CROSS JOIN units USING(unit) LEFT JOIN definitions USING(definition_chash) \
-								WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
-								ORDER BY level DESC LIMIT 1")?;
+        let mut stmt = db.prepare_cached(
+            "SELECT definition \
+			FROM address_definition_changes CROSS JOIN units USING(unit) LEFT JOIN definitions USING(definition_chash) \
+			WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
+			ORDER BY level DESC LIMIT 1")?;
         let rows = stmt
             .query_map(&[&from_address, &last_ball_mci], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<String>, _>>()?;
 
         let def: Value = serde_json::from_str(&rows[0])?;
         if !rows.is_empty() && def.is_null() {
-            author.definition = read_definition(&db, from_address, &signer)?;
+            author.definition = read_definition(&db, from_address)?;
         }
     }
 
     // witnesses
-    if storage::determine_if_witness_and_address_definition_have_refs(&db, &witnesses)? {
-        bail!("some witnesses have references in their addresses");
-    }
-
-    match storage::find_witness_list_unit(&db, &witnesses, last_ball_mci)? {
+    match light_props.unwrap().witness_list_unit {
         Some(witness_list_unit) => unit.witness_list_unit = Some(witness_list_unit),
-        None => unit.witnesses = witnesses,
+        None => unit.witnesses = witnesses.clone(),
     }
+    // if storage::determine_if_witness_and_address_definition_have_refs(&db, &witnesses)? {
+    //     bail!("some witnesses have references in their addresses");
+    // }
+
+    // match storage::find_witness_list_unit(&db, &witnesses, last_ball_mci)? {
+    //     Some(witness_list_unit) => unit.witness_list_unit = Some(witness_list_unit),
+    //     None => unit.witnesses = witnesses,
+    // }
 
     // messages retrieved via callback
 
@@ -733,7 +744,7 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
         - unit.payload_commission.unwrap() as i64;
     if change <= 0 {
         if !params.send_all {
-            bail!("change = {}, params = {:?}", change, params);
+            bail!("change = {}", change);
         }
         bail!(
             "NOT_ENOUGH_FUNDS: not enough spendable funds from {:?} for fees",
@@ -778,15 +789,43 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
     })
 }
 
-#[allow(dead_code)]
-fn check_for_unstable_predecessors() -> Result<()> {
-    unimplemented!()
+fn check_for_unstable_predecessors(
+    db: &Connection,
+    last_ball_mci: u32,
+    from_addresses: &Vec<String>,
+) -> Result<()> {
+    let addresses = from_addresses
+        .iter()
+        .map(|v| format!("'{}'", v))
+        .collect::<Vec<_>>()
+        .join(",");
+    let sql = format!("SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
+					WHERE  (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) AND definition_chash IS NOT NULL \
+					UNION \
+					SELECT 1 FROM units JOIN address_definition_changes USING(unit) \
+					WHERE (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) \
+					UNION \
+					SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
+					WHERE (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) AND sequence!='good'", last_ball_mci, addresses, last_ball_mci, addresses, last_ball_mci, addresses);
+    let mut stmt = db.prepare_cached(&sql)?;
+    let rows = stmt
+        .query_map(&[], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    if !rows.is_empty() {
+        bail!("some definition changes or definitions or nonserials are not stable yet");
+    }
+    Ok(())
 }
 
-//signer.
-#[allow(dead_code)]
-fn read_definition(_db: &Connection, _from_address: String, _signer: &String) -> Result<Value> {
-    unimplemented!()
+fn read_definition(db: &Connection, address: String) -> Result<Value> {
+    let mut stmt = db.prepare_cached("SELECT definition FROM my_addresses WHERE address=? UNION SELECT definition FROM shared_addresses WHERE shared_address=?")?;
+    let rows = stmt
+        .query_map(&[&address, &address], |row| row.get(0))?
+        .collect::<::std::result::Result<Vec<String>, _>>()?;
+    if rows.len() != 1 {
+        bail!("definition not found");
+    }
+    Ok(serde_json::to_value(rows.into_iter().nth(0))?)
 }
 
 #[allow(dead_code)]
