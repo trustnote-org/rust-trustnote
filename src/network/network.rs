@@ -77,13 +77,6 @@ struct WsInner {
     last_recv: Instant,
 }
 
-impl Drop for WsInner {
-    fn drop(&mut self) {
-        // send the close socket request
-        self.ws.close(None).ok();
-    }
-}
-
 pub struct WsConnection<T> {
     // lock proected inner
     ws: RwLock<WsInner>,
@@ -141,6 +134,8 @@ impl<T> Drop for WsConnection<T> {
             return;
         }
         if let Some(h) = self.listener.take(Ordering::Relaxed) {
+            // close the connection first
+            self.ws.write().unwrap().ws.close(None).ok();
             unsafe { h.coroutine().cancel() };
             h.join().ok();
         }
