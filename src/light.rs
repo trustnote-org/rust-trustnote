@@ -204,7 +204,7 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         false,
     ).context("gprocess_witness_proof failed")?;
 
-    let known_balls = witness_proof
+    let mut known_balls = witness_proof
         .assoc_last_ball_by_last_ball_unit
         .values()
         .map(|s| s.clone())
@@ -225,7 +225,14 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         if !known_balls.contains(&obj_ball.ball) {
             bail!("ball not known");
         }
-
+        for parent_ball in &obj_ball.parent_balls {
+            known_balls.insert(parent_ball.to_owned());
+        }
+        if !obj_ball.skiplist_balls.is_empty() {
+            for skiplist_ball in &obj_ball.skiplist_balls {
+                known_balls.insert(skiplist_ball.to_owned());
+            }
+        }
         proven_units_non_serialness.insert(
             obj_ball.unit.clone(),
             obj_ball.is_nonserial.unwrap_or(false),
@@ -253,7 +260,7 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         .collect::<Vec<_>>()
         .join(", ");
     //FIXME: delete "is_stable" is Ok?
-    let mut stmt = db.prepare_cached("SELECT unit, is_stable FROM units WHERE unit IN({})")?;
+    let mut stmt = db.prepare_cached("SELECT unit, is_stable FROM units WHERE unit IN(?)")?;
     let existing_units = stmt
         .query_map(&[&units_list], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
