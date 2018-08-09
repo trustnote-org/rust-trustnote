@@ -33,12 +33,16 @@ pub struct HistoryRequest {
 
 #[derive(Serialize, Deserialize)]
 pub struct HistoryResponse {
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     unstable_mc_joints: Vec<Joint>,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     witness_change_and_definition_joints: Vec<Joint>,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     joints: Vec<Joint>,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     proofchain_balls: Vec<ProofBalls>,
 }
@@ -52,6 +56,7 @@ struct ProofBalls {
     content_hash: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     is_nonserial: Option<bool>,
+    #[serde(default)]
     #[serde(skip_serializing_if = "Vec::is_empty")]
     skiplist_balls: Vec<String>,
 }
@@ -199,29 +204,39 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         false,
     ).context("gprocess_witness_proof failed")?;
 
-    // let last_ball_units = witness_proof.last_ball_units;
-    // let assoc_last_ball_by_last_ball_unit = witness_proof.assoc_last_ball_by_last_ball_unit;
-    let mut proven_units_non_serialness = HashMap::new();
-    let last_balls = witness_proof
+    let mut known_balls = witness_proof
         .assoc_last_ball_by_last_ball_unit
-        .iter()
-        .map(|s| s.1)
-        .collect::<Vec<_>>();
+        .values()
+        .map(|s| s.clone())
+        .collect::<HashSet<_>>();
+
+    let mut proven_units_non_serialness = HashMap::new();
+
     for ball in &resp_history.proofchain_balls {
         let obj_ball = ball;
         if obj_ball.ball != object_hash::get_ball_hash(
             &obj_ball.unit,
             &obj_ball.parent_balls,
             &obj_ball.skiplist_balls,
-            obj_ball.is_nonserial.unwrap(),
+            obj_ball.is_nonserial.unwrap_or(false),
         ) {
             bail!("wrong ball hash");
         }
-        let ret = last_balls.iter().find(|&&x| x.to_owned() == obj_ball.ball);
-        if ret.is_none() {
+        if !known_balls.contains(&obj_ball.ball) {
             bail!("ball not known");
         }
-        proven_units_non_serialness.insert(obj_ball.unit.clone(), obj_ball.is_nonserial.unwrap());
+        for parent_ball in &obj_ball.parent_balls {
+            known_balls.insert(parent_ball.to_owned());
+        }
+        if !obj_ball.skiplist_balls.is_empty() {
+            for skiplist_ball in &obj_ball.skiplist_balls {
+                known_balls.insert(skiplist_ball.to_owned());
+            }
+        }
+        proven_units_non_serialness.insert(
+            obj_ball.unit.clone(),
+            obj_ball.is_nonserial.unwrap_or(false),
+        );
     }
     let joints = &resp_history.joints;
     for joint in joints {
@@ -245,12 +260,12 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         .collect::<Vec<_>>()
         .join(", ");
     //FIXME: delete "is_stable" is Ok?
-    let mut stmt = db.prepare_cached("SELECT unit, is_stable FROM units WHERE unit IN({})")?;
+    let mut stmt = db.prepare_cached("SELECT unit, is_stable FROM units WHERE unit IN(?)")?;
     let existing_units = stmt
         .query_map(&[&units_list], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
-    let mut provent_units = vec![];
+    let mut provent_units = Vec::new();
     let joints_reverse = joints.iter().rev();
     for joint_r in joints_reverse {
         let unit = joint_r.unit.unit.as_ref().unwrap();
@@ -272,7 +287,7 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
             validate_state.sequence = sequence;
             joint_r
                 .to_owned()
-                .save(validate_state)
+                .save(validate_state, true)
                 .context("save_joint failed")?;
             //FIXME: need to check save()
         }
@@ -816,7 +831,7 @@ fn fix_is_spent_flag(db: &Connection) -> Result<()> {
         })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     if rows.is_empty() {
-        bail!("no output need update in fix_is_spent_flag");
+        return Ok(());
     }
     for row in rows {
         let mut stmt = db.prepare_cached(
@@ -838,8 +853,8 @@ fn fix_input_address(db: &Connection) -> Result<()> {
     let mut stmt = db.prepare_cached(
         "SELECT outputs.unit, outputs.message_index, outputs.output_index, outputs.address \
          FROM outputs \
-         JOIN inputs ON outputs.unit=inputs.src_unit AND outp \
-         uts.message_index=inputs.src_message_index \
+         JOIN inputs ON outputs.unit=inputs.src_unit AND \
+         outputs.message_index=inputs.src_message_index \
          AND outputs.output_index=inputs.src_output_index \
          WHERE inputs.address IS NULL AND type='transfer'",
     )?;
@@ -853,7 +868,7 @@ fn fix_input_address(db: &Connection) -> Result<()> {
         })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     if rows.is_empty() {
-        bail!("no output need update in fix_input_address");
+        return Ok(());
     }
     for row in rows {
         let mut stmt = db.prepare_cached(

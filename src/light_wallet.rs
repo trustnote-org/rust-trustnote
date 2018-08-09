@@ -16,6 +16,7 @@ pub fn refresh_light_client_history(ws: &WalletConn) -> Result<()> {
     let response_history_v = ws
         .send_request("light/get_history", &req_get_history)
         .context("send get_history_request failed")?;
+
     let mut response_history_s: light::HistoryResponse =
         serde_json::from_value(response_history_v)?;
 
@@ -31,8 +32,12 @@ fn prepare_request_for_history() -> Result<Value> {
     }
     let db = db::DB_POOL.get_connection();
     let addresses = read_my_addresses(&db).context("prepare_request_for_history failed as ")?;
-    let requested_joints =
+    let mut requested_joints =
         read_list_of_unstable_units(&db).context("prepare_request_for_history failed as ")?;
+    if requested_joints.is_empty() {
+        requested_joints.push("v|NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=".to_string());
+    }
+
     if addresses.is_empty() && requested_joints.is_empty() {
         bail!("prepare_request_for_history failed as addresses and requested_joints are not found");
     }
@@ -46,6 +51,9 @@ fn prepare_request_for_history() -> Result<Value> {
     if req_history.addresses.is_empty() {
         return Ok(serde_json::to_value(req_history)?);
     }
+    req_history
+        .known_stable_units
+        .push("v|NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=".to_string());
 
     let addresses_list = req_history
         .addresses
@@ -86,7 +94,7 @@ fn read_list_of_unstable_units(db: &Connection) -> Result<Vec<String>> {
         .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if units.is_empty() {
-        bail!("unstable_units not found");
+        info!("unstable_units not found");
     }
     Ok(units)
 }
