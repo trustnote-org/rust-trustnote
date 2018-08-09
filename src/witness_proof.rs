@@ -133,7 +133,7 @@ pub fn prepare_witness_proof(
 #[derive(Debug)]
 pub struct ProcessWitnessProof {
     pub last_ball_units: Vec<String>,
-    pub assoc_last_ball_by_last_ball_unit: HashMap<String, String>,
+    pub assoc_last_ball_by_last_ball_unit: HashMap<String, String>, //FIXME: assoc
 }
 
 pub fn process_witness_proof(

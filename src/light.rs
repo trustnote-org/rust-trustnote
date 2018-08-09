@@ -194,15 +194,15 @@ pub fn process_history(db: &Connection, history: &mut HistoryResponse) -> Result
 
     let witness_proof = witness_proof::process_witness_proof(
         db,
-        &history.unstable_mc_joints,
+        &resp_history.unstable_mc_joints, //FIXME: resp
         &history.witness_change_and_definition_joints,
         false,
-    ).context("process_history process_witness_proof failed")?;
+    ).context("process_witness_proof failed")?;
 
     let mut known_balls = witness_proof
         .assoc_last_ball_by_last_ball_unit
         .values()
-        .cloned()
+        .map(|s| s.clone())
         .collect::<HashSet<_>>();
 
     let mut proven_units_non_serial = HashMap::new();

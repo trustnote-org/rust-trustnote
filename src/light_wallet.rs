@@ -54,11 +54,8 @@ pub fn get_history(db: &Connection) -> Result<HistoryRequest> {
 }
 
 fn read_my_addresses(db: &Connection) -> Result<Vec<String>> {
-    let mut stmt = db.prepare_cached(
-        "SELECT address FROM my_addresses \
-         UNION \
-         SELECT shared_address AS address FROM shared_addresses",
-    )?;
+    let mut stmt =
+            db.prepare_cached("SELECT address FROM my_addresses UNION SELECT shared_address AS address FROM shared_addresses")?;
     let addresses = stmt
         .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;

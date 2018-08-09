@@ -161,7 +161,8 @@ fn issue_asset(
         let max_serial_numbers = stmt
             .query_map(&[asset.asset.as_ref().unwrap(), &issuer_address], |row| {
                 row.get(0)
-            })?.collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
+            })?
+            .collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
         let max_serial_number = if max_serial_numbers.is_empty() {
             0
         } else {
@@ -249,12 +250,11 @@ fn add_mc_inputs(
     max_mci: u32,
 ) -> Result<()> {
     for addr in &input_info.paying_addresses {
-        let target_amount =
-            input_info.required_amount + input_size + if input_info.multi_authored {
-                config::ADDRESS_SIZE
-            } else {
-                0
-            } - input_info.inputs_and_amount.amount;
+        let target_amount = input_info.required_amount + input_size + if input_info.multi_authored {
+            config::ADDRESS_SIZE
+        } else {
+            0
+        } - input_info.inputs_and_amount.amount;
         let mc_result = mc_outputs::find_mc_index_interval_to_target_amount(
             db,
             input_type,
@@ -366,7 +366,8 @@ fn pick_multiple_coins_and_continue(
             address: row.get(4),
             blinding: row.get(5),
             ..Default::default()
-        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
     for mut input in input_rows {
         input_info.required_amount += is_base as u32 * config::TRANSFER_INPUT_SIZE;
         input_info.inputs_and_amount = add_input(
@@ -451,7 +452,8 @@ fn pick_one_coin_just_bigger_and_continue(
                 blinding: row.get(5),
                 ..Default::default()
             },
-        )?.collect::<::std::result::Result<Vec<_>, _>>()?;
+        )?
+        .collect::<::std::result::Result<Vec<_>, _>>()?;
     if input_rows.len() == 1 {
         return add_input(
             input_info.inputs_and_amount,
@@ -818,6 +820,7 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
     for mut author in &mut unit.authors {
         let address = author.address.clone();
         for path in assoc_signing_paths[&address].iter() {
+            //TODO: signer.sign     impl sign for signer, signer(trait)in lib , sign in wallet
             let signature = sign(&signer, &c_unit, &address, path)?; //call which sign?
             if signature == "[refused]" {
                 bail!("one of the cosigners refused to sign");
