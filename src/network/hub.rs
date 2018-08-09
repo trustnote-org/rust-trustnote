@@ -988,7 +988,7 @@ impl HubConn {
                     if joint.unsigned == Some(true) {
                         bail!("ifOk() unsigned");
                     }
-                    joint.save(validate_state)?;
+                    joint.save(validate_state, false)?;
                     drop(lock);
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
@@ -1102,7 +1102,7 @@ impl HubConn {
                     if joint.unsigned == Some(true) {
                         bail!("ifOk() unsigned");
                     }
-                    joint.save(validation_state)?;
+                    joint.save(validation_state, false)?;
                     drop(lock);
 
                     self.send_result(json!({"unit": unit, "result": "accepted"}))?;
@@ -1236,7 +1236,7 @@ impl HubConn {
                     if joint.unsigned == Some(true) {
                         bail!("ifOk() unsigned");
                     }
-                    joint.save(validate_state)?;
+                    joint.save(validate_state, false)?;
                     drop(lock);
 
                     if !IS_CACTCHING_UP.is_locked() {

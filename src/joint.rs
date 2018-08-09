@@ -563,7 +563,11 @@ impl Joint {
         Ok(address?)
     }
 
-    pub fn save(&self, validation_state: validation::ValidationState) -> Result<()> {
+    pub fn save(
+        &self,
+        validation_state: validation::ValidationState,
+        is_light_wallet: bool,
+    ) -> Result<()> {
         // first construct all the sql within a mutex
         info!("saving unit = {:?}", self.unit);
         assert_eq!(self.unit.unit.is_some(), true);
@@ -577,19 +581,24 @@ impl Joint {
         validation_state.additional_queries.execute(&*tx)?;
 
         self.save_unit(&tx, &sequence)?;
-        self.save_ball(&tx)?;
+        if !is_light_wallet {
+            self.save_ball(&tx)?;
+        }
         self.save_parents(&tx)?;
         self.save_witnesses(&tx)?;
         self.save_authors(&tx)?;
         self.save_messages(&tx)?;
         self.save_header_earnings(&tx)?;
         self.save_inline_payment(&tx)?;
-        if !self.unit.parent_units.is_empty() {
-            let best_parent_unit = self.update_best_parent(&tx)?;
-            self.update_level(&tx)?;
-            self.update_witness_level(&tx, best_parent_unit)?;
-            main_chain::update_main_chain(&tx, None)?;
+        if !is_light_wallet {
+            if !self.unit.parent_units.is_empty() {
+                let best_parent_unit = self.update_best_parent(&tx)?;
+                self.update_level(&tx)?;
+                self.update_witness_level(&tx, best_parent_unit)?;
+                main_chain::update_main_chain(&tx, None)?;
+            }
         }
+
         // TODO: add precommit hook
         tx.commit()?;
 

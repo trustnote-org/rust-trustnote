@@ -23,7 +23,7 @@ impl Default for Settings {
             mnemonic: mnemonic("")
                 .expect("failed to generate mnemonic")
                 .to_string(),
-            initial_db_path: String::from("../db/initial.trustnote.sqlite"),
+            initial_db_path: String::from("../db/initial.trustnote-light.sqlite"),
             genesis_unit: String::from("V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU="),
             witnesses: vec![
                 String::from("6LDM27ELDDAJBTNTVVQQYW7MWOK3F6WD"),

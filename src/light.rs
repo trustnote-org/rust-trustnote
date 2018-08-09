@@ -265,7 +265,7 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         .query_map(&[&units_list], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
-    let mut provent_units = vec![];
+    let mut provent_units = Vec::new();
     let joints_reverse = joints.iter().rev();
     for joint_r in joints_reverse {
         let unit = joint_r.unit.unit.as_ref().unwrap();
@@ -287,7 +287,7 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
             validate_state.sequence = sequence;
             joint_r
                 .to_owned()
-                .save(validate_state)
+                .save(validate_state, true)
                 .context("save_joint failed")?;
             //FIXME: need to check save()
         }
@@ -829,7 +829,7 @@ fn fix_is_spent_flag(db: &Connection) -> Result<()> {
         })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     if rows.is_empty() {
-        bail!("no output need update in fix_is_spent_flag");
+        return Ok(());
     }
     for row in rows {
         let mut stmt = db.prepare_cached(
@@ -851,8 +851,8 @@ fn fix_input_address(db: &Connection) -> Result<()> {
     let mut stmt = db.prepare_cached(
         "SELECT outputs.unit, outputs.message_index, outputs.output_index, outputs.address \
          FROM outputs \
-         JOIN inputs ON outputs.unit=inputs.src_unit AND outp \
-         uts.message_index=inputs.src_message_index \
+         JOIN inputs ON outputs.unit=inputs.src_unit AND \
+         outputs.message_index=inputs.src_message_index \
          AND outputs.output_index=inputs.src_output_index \
          WHERE inputs.address IS NULL AND type='transfer'",
     )?;
@@ -866,7 +866,7 @@ fn fix_input_address(db: &Connection) -> Result<()> {
         })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     if rows.is_empty() {
-        bail!("no output need update in fix_input_address");
+        return Ok(());
     }
     for row in rows {
         let mut stmt = db.prepare_cached(
