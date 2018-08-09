@@ -170,7 +170,7 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
         if index <= histories.len() {
             let history = &histories[index - 1];
             if history.amount > 0 {
-                println!("FROM: \t{}", history.address_from);
+                println!("FROM: \t\t{}", history.address_from);
             } else {
                 println!("TO: \t{}", history.address_to);
             }

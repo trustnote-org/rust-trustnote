@@ -110,34 +110,61 @@ pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>
     let mut id = 0;
     for row in rows {
         //info!("{:?}", row);
+
+        //TODO: handle invalid case
+
         if row.amount.is_some() {
             let mut amount = row.amount.unwrap();
 
+            //Send
             if row.from_address.is_some() {
                 amount = -amount;
-            }
 
-            if amount > 0 {
+                id = id + 1;
+                let transaction = TransactionHistory {
+                    id: id,
+                    amount: amount,
+                    address_to: row.to_address.unwrap_or(String::new()),
+                    address_from: row.from_address.unwrap(),
+                    confirmations: row.is_stable > 0,
+                    fee: row.fee,
+                    unit: row.unit,
+                    time: row.timestamp,
+                    level: row.level,
+                    mci: row.mci,
+                };
 
+                history_transactions.push(transaction);
+
+            //Receive
             } else {
+                let mut stmt = db.prepare_cached(
+                    "SELECT DISTINCT address FROM inputs \
+                     WHERE unit=? AND asset is NULL ORDER BY address",
+                )?;
 
+                let addresses = stmt
+                    .query_map(&[&row.unit], |row| row.get(0))?
+                    .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+                for address in addresses {
+                    id = id + 1;
+                    let transaction = TransactionHistory {
+                        id: id,
+                        amount: amount,
+                        address_to: row.to_address.as_ref().cloned().unwrap_or(String::new()),
+                        address_from: address,
+                        confirmations: row.is_stable > 0,
+                        fee: row.fee,
+                        unit: row.unit.clone(),
+                        time: row.timestamp.clone(),
+                        level: row.level,
+                        mci: row.mci,
+                    };
+
+                    history_transactions.push(transaction);
+                }
             }
-
-            id = id + 1;
-            let transaction = TransactionHistory {
-                id: id,
-                amount: amount,
-                address_to: row.to_address.unwrap_or(String::new()),
-                address_from: row.from_address.unwrap_or(String::new()),
-                confirmations: row.is_stable > 0,
-                fee: row.fee,
-                unit: row.unit,
-                time: row.timestamp,
-                level: row.level,
-                mci: row.mci,
-            };
-
-            history_transactions.push(transaction);
         }
     }
 
