@@ -83,10 +83,11 @@ fn init_log() {
 
 // TODO: src database is get from trustnote config which is not clear
 fn init_database() -> Result<()> {
-    // init the settings first
+    // init the settings first, trustnote lib need this settings file
     let _settings = config::get_settings();
+
     let mut db_path = ::std::env::current_dir()?;
-    db_path.push(config::DB_PATH);
+    db_path.push("trustnote_light.sqlite");
     db::set_db_path(db_path);
     let _db = db::DB_POOL.get_connection();
     Ok(())
