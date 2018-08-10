@@ -120,13 +120,9 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
     bail!("failed to connect remote hub");
 }
 
-fn get_banlance(address: &str) -> Result<u32> {
-    wallet::get_balance(address)
-}
-
 fn info(wallet_info: &WalletInfo) -> Result<()> {
     let address_pubk = wallet_info._00_address_pubk.to_base64_key();
-    let balance = get_banlance(&wallet_info._00_address)? as f32 / 1000_000.0;
+    let balance = wallet::get_balance(&wallet_info._00_address)? as f32 / 1000_000.0;
     println!("\ncurrent wallet info:\n");
     println!("device_address: {}", wallet_info.device_address);
     println!("wallet_public_key: {}", wallet_info.wallet_pubk.to_string());
