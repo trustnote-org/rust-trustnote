@@ -2,58 +2,30 @@
 
 use failure::ResultExt;
 
-use db;
 use error::Result;
-use light;
+use light::HistoryRequest;
 use my_witness;
-use network::wallet::WalletConn;
 use rusqlite::Connection;
-use serde_json::{self, Value};
 
-pub fn refresh_light_client_history(ws: &WalletConn) -> Result<()> {
-    let req_get_history =
-        prepare_request_for_history().context("prepare_request_for_history failed")?;
-    let response_history_v = ws
-        .send_request("light/get_history", &req_get_history)
-        .context("send get_history_request failed")?;
-
-    let mut response_history_s: light::HistoryResponse =
-        serde_json::from_value(response_history_v)?;
-
-    light::process_history(&mut response_history_s).context("process_history response failed")?;
-
-    Ok(())
-}
-
-fn prepare_request_for_history() -> Result<Value> {
+pub fn get_history(db: &Connection) -> Result<HistoryRequest> {
     let witnesses = my_witness::MY_WITNESSES.clone();
     if witnesses.is_empty() {
         bail!("witnesses not found");
     }
-    let db = db::DB_POOL.get_connection();
-    let addresses = read_my_addresses(&db).context("prepare_request_for_history failed as ")?;
+
+    let addresses = read_my_addresses(db).context("prepare_request_for_history failed as ")?;
     let mut requested_joints =
-        read_list_of_unstable_units(&db).context("prepare_request_for_history failed as ")?;
+        read_list_of_unstable_units(db).context("prepare_request_for_history failed as ")?;
     if requested_joints.is_empty() {
         requested_joints.push("v|NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=".to_string());
     }
 
-    if addresses.is_empty() && requested_joints.is_empty() {
-        bail!("prepare_request_for_history failed as addresses and requested_joints are not found");
-    }
-
-    let mut req_history = light::HistoryRequest {
+    let mut req_history = HistoryRequest {
         witnesses,
         addresses,
         requested_joints,
-        known_stable_units: Vec::new(),
+        known_stable_units: vec!["v|NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=".to_string()],
     };
-    if req_history.addresses.is_empty() {
-        return Ok(serde_json::to_value(req_history)?);
-    }
-    req_history
-        .known_stable_units
-        .push("v|NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=".to_string());
 
     let addresses_list = req_history
         .addresses
@@ -67,18 +39,23 @@ fn prepare_request_for_history() -> Result<Value> {
          SELECT unit FROM outputs JOIN units USING(unit) WHERE is_stable=1 AND address IN({})", 
         addresses_list, addresses_list);
     let mut stmt = db.prepare_cached(&sql)?;
-    let known_stable_units = stmt
+    let known_stable_units_ = stmt
         .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
-    if !known_stable_units.is_empty() {
-        req_history.known_stable_units = known_stable_units;
+
+    if !known_stable_units_.is_empty() {
+        req_history.known_stable_units = known_stable_units_;
     }
-    Ok(serde_json::to_value(req_history)?)
+
+    Ok(req_history)
 }
 
 fn read_my_addresses(db: &Connection) -> Result<Vec<String>> {
-    let mut stmt =
-            db.prepare_cached("SELECT address FROM my_addresses UNION SELECT shared_address AS address FROM shared_addresses")?;
+    let mut stmt = db.prepare_cached(
+        "SELECT address FROM my_addresses \
+         UNION \
+         SELECT shared_address AS address FROM shared_addresses",
+    )?;
     let addresses = stmt
         .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
