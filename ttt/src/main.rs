@@ -120,8 +120,8 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
     bail!("failed to connect remote hub");
 }
 
-fn get_banlance(_address: &str) -> Result<u32> {
-    Ok(0)
+fn get_banlance(address: &str) -> Result<u32> {
+    wallet::get_balance(address)
 }
 
 fn info(wallet_info: &WalletInfo) -> Result<()> {

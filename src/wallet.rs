@@ -104,8 +104,7 @@ pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>
             to_address: row.get(8),
             from_address: row.get(9),
             mci: row.get(10),
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     let mut id = 0;
     for row in rows {
@@ -171,4 +170,17 @@ pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>
     //TODO: sort by level and time
 
     Ok(history_transactions)
+}
+
+pub fn get_balance(address: &str) -> Result<u32> {
+    let db = db::DB_POOL.get_connection();
+    let mut stmt = db.prepare_cached(
+        "SELECT asset, is_stable, SUM(amount) AS balance \
+         FROM outputs JOIN units USING(unit) \
+         WHERE is_spent=0 AND address=? AND sequence='good' AND asset IS NULL \
+         GROUP BY is_stable",
+    )?;
+    let total = stmt.query_row(&[&address], |row| row.get(2)).unwrap_or(0);
+
+    Ok(total)
 }
