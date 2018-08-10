@@ -267,7 +267,6 @@ pub fn process_history(db: &Connection, history: &mut HistoryResponse) -> Result
         } else {
             String::from("good")
         };
-        //let _d = proven_units_non_serialness.get(unit);
         if proven_units_non_serial.get(unit).is_some() {
             proven_units.push(unit);
         }
