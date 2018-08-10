@@ -34,28 +34,48 @@ impl Joint {
         self.unit.unit.as_ref().unwrap()
     }
 
-    fn save_unit(&self, tx: &Transaction, sequence: &String) -> Result<()> {
+    fn save_unit(&self, tx: &Transaction, sequence: &String, is_light_wallet: bool) -> Result<()> {
         let unit = &self.unit;
         let unit_hash = self.get_unit_hash();
+        let sql = if is_light_wallet {
+            format!(
+                "INSERT INTO units \
+                 (unit, version, alt, witness_list_unit, last_ball_unit, \
+                 headers_commission, payload_commission, sequence, content_hash, \
+                 main_chain_index, creation_date) \
+                 VALUES ('{}', '{}', '{}', '{}', '{}', {}, {}, '{}', '{}', {}, datetime({}, 'unixepoch'))",
+                unit_hash,
+                &unit.version,
+                &unit.alt,
+                &unit.witness_list_unit.clone().unwrap_or(String::new()),
+                &unit.last_ball_unit.clone().unwrap_or(String::new()),
+                &unit.headers_commission.unwrap_or(0),
+                &unit.payload_commission.unwrap_or(0),
+                sequence,
+                &unit.content_hash.clone().unwrap_or(String::new()),
+                &unit.main_chain_index.unwrap_or(0),
+                &unit.timestamp.unwrap_or(0),
+            )
+        } else {
+            format!(
+                "INSERT INTO units \
+                 (unit, version, alt, witness_list_unit, last_ball_unit, \
+                 headers_commission, payload_commission, sequence, content_hash) \
+                 VALUES ('{}', '{}', '{}', '{}', '{}', {}, {}, '{}', '{}')",
+                unit_hash,
+                &unit.version,
+                &unit.alt,
+                &unit.witness_list_unit.clone().unwrap(),
+                &unit.last_ball_unit.clone().unwrap(),
+                &unit.headers_commission.unwrap(),
+                &unit.payload_commission.unwrap(),
+                sequence,
+                &unit.content_hash.clone().unwrap(),
+            )
+        };
+        let mut stmt = tx.prepare_cached(&sql)?;
 
-        let mut stmt = tx.prepare_cached(
-            "INSERT INTO units \
-             (unit, version, alt, witness_list_unit, last_ball_unit, \
-             headers_commission, payload_commission, sequence, content_hash) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )?;
-
-        stmt.execute(&[
-            unit_hash,
-            &unit.version,
-            &unit.alt,
-            &unit.witness_list_unit,
-            &unit.last_ball_unit,
-            &unit.headers_commission,
-            &unit.payload_commission,
-            sequence,
-            &unit.content_hash,
-        ])?;
+        stmt.execute(&[])?;
         Ok(())
     }
 
@@ -413,7 +433,7 @@ impl Joint {
         }
     }
 
-    fn save_inline_payment(&self, tx: &Transaction) -> Result<()> {
+    fn save_inline_payment(&self, tx: &Transaction, is_light_wallet: bool) -> Result<()> {
         let unit_hash = self.get_unit_hash();
         let mut author_addresses = vec![];
         for author in &self.unit.authors {
@@ -455,12 +475,16 @@ impl Joint {
                         "headers_commission" | "witnessing" | "issue" => {
                             input.address.as_ref().expect("no input address").clone()
                         }
-                        _ => self.determine_input_address_from_output(
-                            tx,
-                            payment.asset.as_ref().unwrap(),
-                            denomination,
-                            &input,
-                        )?,
+                        _ => if !is_light_wallet {
+                            self.determine_input_address_from_output(
+                                tx,
+                                payment.asset.as_ref().unwrap(),
+                                denomination,
+                                &input,
+                            )?
+                        } else {
+                            "".to_string()
+                        },
                     }
                 };
 
@@ -580,7 +604,7 @@ impl Joint {
         let sequence = validation_state.sequence;
         validation_state.additional_queries.execute(&*tx)?;
 
-        self.save_unit(&tx, &sequence)?;
+        self.save_unit(&tx, &sequence, is_light_wallet)?;
         if !is_light_wallet {
             self.save_ball(&tx)?;
         }
@@ -589,7 +613,7 @@ impl Joint {
         self.save_authors(&tx)?;
         self.save_messages(&tx)?;
         self.save_header_earnings(&tx)?;
-        self.save_inline_payment(&tx)?;
+        self.save_inline_payment(&tx, is_light_wallet)?;
         if !is_light_wallet {
             if !self.unit.parent_units.is_empty() {
                 let best_parent_unit = self.update_best_parent(&tx)?;
