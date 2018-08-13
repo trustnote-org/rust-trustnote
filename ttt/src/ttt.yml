@@ -6,6 +6,12 @@ about: ttt wallet command line tool
 settings:
     - ArgRequiredElseHelp
 
+args:
+    - verbose:
+        short: v
+        multiple: true
+        help: Sets the level of verbosity
+
 # All subcommands must be listed in the 'subcommand:' object, where the key to
 # the list is the name of the subcommand, and all settings for that command are
 # are part of a Hash object

@@ -57,11 +57,12 @@ impl WalletInfo {
     }
 }
 
-fn init_log() {
-    let log_lvl = if cfg!(debug_assertions) {
-        log::LevelFilter::Debug
-    } else {
-        log::LevelFilter::Error
+fn init_log(verbosity: u64) {
+    let log_lvl = match verbosity {
+        0 => log::LevelFilter::Off,
+        1 => log::LevelFilter::Error,
+        2 => log::LevelFilter::Info,
+        _ => log::LevelFilter::Debug,
     };
 
     fern::Dispatch::new()
@@ -93,7 +94,7 @@ fn init_database() -> Result<()> {
     Ok(())
 }
 
-fn init() -> Result<()> {
+fn init(verbosity: u64) -> Result<()> {
     // init default coroutine settings
     let stack_size = if cfg!(debug_assertions) {
         0x4000
@@ -102,7 +103,7 @@ fn init() -> Result<()> {
     };
     may::config().set_stack_size(stack_size);
 
-    init_log();
+    init_log(verbosity);
     init_database()?;
     Ok(())
 }
@@ -201,7 +202,8 @@ fn main() -> Result<()> {
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();
 
-    init()?;
+    let verbosity = m.occurrences_of("verbose");
+    init(verbosity)?;
 
     let mut settings = config::get_settings();
     let mut wallet_info = WalletInfo::from_mnemonic(&settings.mnemonic)?;
