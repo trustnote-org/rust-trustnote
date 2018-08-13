@@ -52,14 +52,17 @@ fn issue_asset(
     is_base: bool,
     send_all: bool,
 ) -> Result<InputsAndAmount> {
-    //TODO: mount === Infinity && !objAsset.cap
-
     if asset.is_none() || asset.as_ref().unwrap().asset.is_none() {
         return finish(send_all, input_info.inputs_and_amount);
-    }
-
-    if send_all && asset.as_ref().unwrap().cap {
-        return finish(send_all, input_info.inputs_and_amount);
+    } else {
+        if send_all && !asset.as_ref().unwrap().cap {
+            bail!(
+                "error_code: NOT_ENOUGH_FUNDS 
+                 error: not enough spendable funds from {:?} for {}",
+                input_info.inputs_and_amount.input_with_proofs,
+                input_info.inputs_and_amount.amount
+            )
+        }
     }
 
     let asset = asset.as_ref().unwrap();
@@ -150,8 +153,10 @@ fn issue_asset(
             return Ok(input_info.inputs_and_amount);
         }
     } else {
-        let mut stmt =
-                db.prepare_cached("SELECT MAX(serial_number) AS max_serial_number FROM inputs WHERE type='issue' AND asset=? AND address=?")?;
+        let mut stmt = db.prepare_cached(
+            "SELECT MAX(serial_number) AS max_serial_number \
+             FROM inputs WHERE type='issue' AND asset=? AND address=?",
+        )?;
 
         let max_serial_numbers = stmt
             .query_map(&[asset.asset.as_ref().unwrap(), &issuer_address], |row| {
@@ -227,7 +232,8 @@ fn add_input(
 fn finish(send_all: bool, inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
     if !send_all || inputs_and_amount.input_with_proofs.is_empty() {
         bail!(
-            "error_code: NOT_ENOUGH_FUNDS\nerror: not enough spendable funds from {:?} for {}",
+            "error_code: NOT_ENOUGH_FUNDS 
+             error: not enough spendable funds from {:?} for {}",
             inputs_and_amount.input_with_proofs,
             inputs_and_amount.amount
         )
@@ -401,7 +407,17 @@ fn pick_one_coin_just_bigger_and_continue(
     last_ball_mci: u32,
     send_all: bool,
 ) -> Result<InputsAndAmount> {
-    //TODO: infinity
+    if send_all {
+        return pick_multiple_coins_and_continue(
+            db,
+            asset,
+            spendable_addresses,
+            input_info,
+            is_base,
+            last_ball_mci,
+            send_all,
+        );
+    }
     let tmp_sql = if asset.is_none() {
         " IS NULL".to_string()
     } else {
@@ -742,6 +758,7 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
             last_ball_mci,
             target_amount as u32,
             is_multi_authored,
+            params.send_all,
         )?;
         if input_and_amount.input_with_proofs.is_empty() {
             bail!(
