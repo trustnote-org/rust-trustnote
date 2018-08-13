@@ -42,7 +42,7 @@ pub struct TransactionHistory {
     pub confirmations: bool,
     pub fee: u32,
     pub unit: String,
-    pub time: String,
+    pub timestamp: i64,
     pub level: Option<u32>,
     pub mci: Option<u32>,
 }
@@ -52,14 +52,14 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
 
     let mut stmt = db.prepare_cached(
         "SELECT unit, level, is_stable, sequence, address, \
-            units.creation_date AS ts, headers_commission+payload_commission AS fee, \
+            strftime('%s', units.creation_date) AS ts, headers_commission+payload_commission AS fee, \
             SUM(amount) AS amount, address AS to_address, NULL AS from_address, main_chain_index AS mci \
         FROM units JOIN outputs USING(unit) \
         WHERE address=? AND asset is NULL \
         GROUP BY unit, address \
         UNION \
         SELECT unit, level, is_stable, sequence, address, \
-            units.creation_date AS ts, headers_commission+payload_commission AS fee, \
+            strftime('%s', units.creation_date) AS ts, headers_commission+payload_commission AS fee, \
             NULL AS amount, NULL AS to_address, address AS from_address, main_chain_index AS mci \
         FROM units JOIN inputs USING(unit) \
         WHERE address=? AND asset is NULL \
@@ -73,7 +73,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
         is_stable: u32,
         sequence: String,
         address: String,
-        timestamp: String,
+        timestamp: i64,
         fee: u32,
         amount: Option<i64>,
         to_address: Option<String>,
@@ -88,7 +88,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
             is_stable: row.get(2),
             sequence: row.get(3),
             address: row.get(4),
-            timestamp: row.get(5),
+            timestamp: row.get::<_, String>(5).parse::<i64>().unwrap() * 1000,
             fee: row.get(6),
             amount: row.get(7),
             to_address: row.get(8),
@@ -102,7 +102,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
         struct Movement {
             plus: i64,
             has_minus: bool,
-            timestamp: String,
+            timestamp: i64,
             level: Option<u32>,
             is_stable: bool,
             sequence: String,
@@ -166,7 +166,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
                     confirmations: movement.is_stable,
                     fee: movement.fee,
                     unit: unit.clone(),
-                    time: movement.timestamp.clone(),
+                    timestamp: movement.timestamp,
                     level: movement.level,
                     mci: movement.mci,
                 };
@@ -214,7 +214,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
                     confirmations: movement.is_stable,
                     fee: movement.fee,
                     unit: unit.clone(),
-                    time: movement.timestamp.clone(),
+                    timestamp: movement.timestamp,
                     level: movement.level,
                     mci: movement.mci,
                 };
@@ -225,7 +225,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
     }
 
     //Should sort by level and time, but level is None in light wallet
-    history_transactions.sort_by(|a, b| b.time.cmp(&a.time));
+    history_transactions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
     Ok(history_transactions)
 }

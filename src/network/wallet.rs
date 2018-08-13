@@ -19,13 +19,8 @@ use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
 
+#[derive(Default)]
 pub struct WalletData {}
-
-impl Default for WalletData {
-    fn default() -> Self {
-        WalletData {}
-    }
-}
 
 pub type WalletConn = WsConnection<WalletData>;
 
@@ -101,11 +96,11 @@ impl WalletConn {
         wallet_info_address: &str,
     ) -> Result<::composer::Param> {
         let address = address.to_string();
-        let amount = amount
+        let amount = (amount
             .to_string()
-            .parse::<u32>()
+            .parse::<f64>()
             .context(format!("pay amount '{}' is error", amount))?
-            * 1_000_000;
+            * 1_000_000.0) as u32;
 
         let light_props;
         match self.get_parents_and_last_ball_and_witness_list_unit() {

@@ -186,7 +186,6 @@ fn test_wallet_pubkey() -> Result<()> {
 fn test_sign_and_verify() -> Result<()> {
     // data must be a valid sha256 hash
     let hash = "KLop9582tzXZJbytWjiWLcnpEdvJI7mUymbnUPXweOM=";
-    let hash = base64::decode(hash)?;
     let wallet = 0;
     let is_change = false;
     let index = 0;
@@ -198,8 +197,8 @@ fn test_sign_and_verify() -> Result<()> {
     let wallet_pubk = wallet_pubkey(&master_prvk, wallet)?;
     let pubk = wallet_address_pubkey(&wallet_pubk, is_change, index)?;
 
-    let sig = sign(&hash, &prvk)?;
-    verify(&hash, &sig, &pubk.to_base64_key())
+    let sig = sign(&base64::decode(hash)?, &prvk)?;
+    verify(hash, &sig, &pubk.to_base64_key())
 }
 
 #[test]

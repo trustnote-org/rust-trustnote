@@ -19,6 +19,7 @@ mod config;
 
 use std::sync::Arc;
 
+use chrono::{Local, TimeZone};
 use clap::App;
 use composer;
 use trustnote::network::wallet::WalletConn;
@@ -195,7 +196,10 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
         }
         println!("UNIT     : {}", history.unit);
         println!("AMOUNT   : {:.3} MN", history.amount as f64 / 1_000_000.0);
-        println!("DATE     : {}", history.time);
+        println!(
+            "DATE     : {}",
+            Local.timestamp_millis(history.timestamp).naive_local()
+        );
         println!("CONFIRMED: {}", history.confirmations);
     } else {
         for (id, history) in histories.iter().enumerate() {
@@ -203,7 +207,7 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
                 "#{:<4} {:>10.3} MN  \t{}",
                 id + 1,
                 history.amount as f64 / 1_000_000.0,
-                history.time
+                Local.timestamp_millis(history.timestamp).naive_local()
             );
         }
     }
