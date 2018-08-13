@@ -5,7 +5,9 @@ use std::time::Duration;
 use super::network::{Sender, Server, WsConnection};
 use config;
 use error::Result;
+use failure::ResultExt;
 use joint::Joint;
+use light;
 use light::LastStableBallAndParentUnitsAndWitnessListUnit;
 use light_wallet;
 use may::coroutine;
@@ -91,12 +93,6 @@ impl WalletConn {
         self.send_request("heartbeat", &Value::Null)?;
         Ok(())
     }
-
-    pub fn get_history(&self) -> Result<()> {
-        light_wallet::refresh_light_client_history(&self)
-        //TODO: unimplemented!()
-    }
-
     pub fn post_joint(&self, joint: &Joint) -> Result<()> {
         self.send_request("post_joint", &serde_json::to_value(joint)?)?;
         Ok(())
@@ -113,6 +109,22 @@ impl WalletConn {
         )?;
 
         Ok(serde_json::from_value(resp)?)
+    }
+
+    pub fn refresh_history(&self) -> Result<()> {
+        let db = ::db::DB_POOL.get_connection();
+
+        let req_get_history =
+            light_wallet::get_history(&db).context("prepare_request_for_history failed")?;
+
+        let response_history = self
+            .send_request("light/get_history", &serde_json::to_value(req_get_history)?)
+            .context("send request get_history failed")?;
+
+        let mut response_history_s: light::HistoryResponse =
+            serde_json::from_value(response_history)?;
+
+        light::process_history(&db, &mut response_history_s)
     }
 }
 

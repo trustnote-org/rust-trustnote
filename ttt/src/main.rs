@@ -155,11 +155,11 @@ fn update_wallet_address(wallet_info: &WalletInfo) -> Result<()> {
 
 fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     update_wallet_address(&wallet_info)?;
-    let refresh_history = ws.get_history();
-    match refresh_history {
+    match ws.refresh_history() {
         Ok(_) => println!("refresh history done"),
         Err(e) => {
-            println!("refresh history failed, please 'sync' again\n err={:?}", e);
+            eprintln!("refresh history failed, please 'sync' again\n err={:?}", e);
+            bail!("refresh history failed");
         }
     }
     // TODO: print get history statistics

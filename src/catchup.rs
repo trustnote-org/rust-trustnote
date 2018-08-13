@@ -107,7 +107,7 @@ pub fn process_catchup_chain(db: &Connection, catchup_chain: CatchupChain) -> Re
     let witness_proof = witness_proof::process_witness_proof(
         db,
         &catchup_chain.unstable_mc_joints,
-        catchup_chain.witness_change_and_definition_joints,
+        &catchup_chain.witness_change_and_definition_joints,
         true,
     )?;
 

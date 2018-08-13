@@ -183,36 +183,31 @@ pub fn prepare_history(
     })
 }
 
-pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
-    if resp_history.joints.is_empty() {
-        bail!("no joints");
+pub fn process_history(db: &Connection, history: &mut HistoryResponse) -> Result<()> {
+    if history.joints.is_empty() {
+        info!("no joints need to be added or updated");
+        return Ok(());
     }
-    if resp_history.unstable_mc_joints.is_empty() {
+    if history.unstable_mc_joints.is_empty() {
         bail!("no unstable_mc_joints");
     }
-    // if resp_history.witness_change_and_definition_joints.is_empty() {
-    //     resp_history.witness_change_and_definition_joints = vec![];
-    // }
-    // if resp_history.proofchain_balls.is_empty() {
-    //     resp_history.proofchain_balls = vec![];
-    // }
-    let db = db::DB_POOL.get_connection();
+
     let witness_proof = witness_proof::process_witness_proof(
-        &db,
-        &resp_history.unstable_mc_joints,
-        resp_history.witness_change_and_definition_joints.clone(),
+        db,
+        &history.unstable_mc_joints,
+        &history.witness_change_and_definition_joints,
         false,
-    ).context("gprocess_witness_proof failed")?;
+    ).context("process_history process_witness_proof failed")?;
 
     let mut known_balls = witness_proof
         .assoc_last_ball_by_last_ball_unit
         .values()
-        .map(|s| s.clone())
+        .cloned()
         .collect::<HashSet<_>>();
 
-    let mut proven_units_non_serialness = HashMap::new();
+    let mut proven_units_non_serial = HashMap::new();
 
-    for ball in &resp_history.proofchain_balls {
+    for ball in &history.proofchain_balls {
         let obj_ball = ball;
         if obj_ball.ball != object_hash::get_ball_hash(
             &obj_ball.unit,
@@ -228,81 +223,84 @@ pub fn process_history(resp_history: &mut HistoryResponse) -> Result<()> {
         for parent_ball in &obj_ball.parent_balls {
             known_balls.insert(parent_ball.to_owned());
         }
-        if !obj_ball.skiplist_balls.is_empty() {
-            for skiplist_ball in &obj_ball.skiplist_balls {
-                known_balls.insert(skiplist_ball.to_owned());
-            }
+        for skiplist_ball in &obj_ball.skiplist_balls {
+            known_balls.insert(skiplist_ball.to_owned());
         }
-        proven_units_non_serialness.insert(
+
+        proven_units_non_serial.insert(
             obj_ball.unit.clone(),
             obj_ball.is_nonserial.unwrap_or(false),
         );
     }
-    let joints = &resp_history.joints;
+    let joints = &history.joints;
     for joint in joints {
         let unit = &joint.unit;
-        if Some(joint.get_unit_hash().to_owned()) != unit.unit {
+        if joint.get_unit_hash() != &unit.get_unit_hash() {
             bail!("invalid hash");
         }
-        if unit.timestamp.is_none() || unit.timestamp.unwrap() == 0 {
+        if unit.timestamp.is_none() {
             bail!("no timestamp");
         }
     }
     let _g = LIGHT_JOINTS.lock().unwrap();
 
-    let units = joints
+    let units_list = joints
         .iter()
-        .map(|s| s.unit.unit.as_ref().unwrap())
-        .collect::<Vec<_>>();
-    let units_list = units
-        .iter()
-        .map(|s| format!("'{}'", s))
+        .map(|s| format!("'{}'", s.get_unit_hash()))
         .collect::<Vec<_>>()
         .join(", ");
-    //FIXME: delete "is_stable" is Ok?
-    let mut stmt = db.prepare_cached("SELECT unit, is_stable FROM units WHERE unit IN(?)")?;
+    let sql = format!(
+        "SELECT unit, is_stable FROM units WHERE unit IN({})",
+        units_list
+    );
+    let mut stmt = db.prepare_cached(&sql)?;
     let existing_units = stmt
-        .query_map(&[&units_list], |row| row.get(0))?
+        .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
-    let mut provent_units = Vec::new();
+    let mut proven_units = Vec::new();
     let joints_reverse = joints.iter().rev();
     for joint_r in joints_reverse {
-        let unit = joint_r.unit.unit.as_ref().unwrap();
-        let sequence = if proven_units_non_serialness[unit] {
+        let unit = joint_r.get_unit_hash();
+        let sequence = if proven_units_non_serial[unit] {
             String::from("final-bad")
         } else {
             String::from("good")
         };
-        //let _d = proven_units_non_serialness.get(unit);
-        if proven_units_non_serialness.get(unit).is_some() {
-            provent_units.push(unit);
+        if proven_units_non_serial.get(unit).is_some() {
+            proven_units.push(unit);
         }
         if existing_units.contains(unit) {
             let mut stmt =
                 db.prepare_cached("UPDATE units SET main_chain_index=?, sequence=? WHERE unit=?")?;
-            stmt.execute(&[&joint_r.unit.main_chain_index.unwrap(), &sequence, unit])?;
+            stmt.execute(&[&joint_r.unit.main_chain_index, &sequence, unit])?;
         } else {
             let mut validate_state = ValidationState::new();
             validate_state.sequence = sequence;
             joint_r
-                .to_owned()
                 .save(validate_state, true)
                 .context("save_joint failed")?;
-            //FIXME: need to check save()
         }
     }
-    fix_is_spent_flag_and_input_address().context("fix_is_spent_flag_and_input_address failed")?;
-    if provent_units.is_empty() {
+
+    fix_is_spent_flag_and_input_address(db)
+        .context("fix_is_spent_flag_and_input_address failed")?;
+    if proven_units.is_empty() {
         return Ok(());
     }
-    let provent_units_list = provent_units
+
+    let proven_units_list = proven_units
         .iter()
         .map(|s| format!("'{}'", s))
         .collect::<Vec<_>>()
         .join(", ");
-    let mut stmt = db.prepare_cached("UPDATE units SET is_stable=1, is_free=0 WHERE unit IN(?)")?;
-    stmt.execute(&[&provent_units_list])?;
+
+    let sql = format!(
+        "UPDATE units SET is_stable=1, is_free=0 WHERE unit IN({})",
+        proven_units_list
+    );
+    let mut stmt = db.prepare_cached(&sql)?;
+    stmt.execute(&[])?;
 
     Ok(())
 }
@@ -802,10 +800,10 @@ fn build_proof_chain_on_mc(
     }
 }
 
-fn fix_is_spent_flag_and_input_address() -> Result<()> {
-    let db = db::DB_POOL.get_connection();
-    fix_is_spent_flag(&db).context("")?;
-    fix_input_address(&db).context("")?;
+fn fix_is_spent_flag_and_input_address(db: &Connection) -> Result<()> {
+    fix_is_spent_flag(db).context("")?;
+    fix_input_address(db).context("")?;
+
     Ok(())
 }
 
