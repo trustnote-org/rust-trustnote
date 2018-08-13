@@ -8,6 +8,10 @@ lazy_static! {
     static ref SECP256K1: Secp256k1 = ::std::thread::spawn(|| Secp256k1::new()).join().unwrap();
 }
 
+pub trait Signer {
+    fn sign(&self, hash: &[u8], address: &str) -> Result<String>;
+}
+
 /// return a bas64 string for the encrypted hash with the priv_key
 pub fn sign(hash: &[u8], priv_key: &[u8]) -> Result<String> {
     let msg = Message::from_slice(hash)?;

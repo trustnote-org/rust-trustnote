@@ -45,6 +45,7 @@ pub struct Input {
     pub to_main_chain_index: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub blinding: Option<String>,
 }
 

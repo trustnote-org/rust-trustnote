@@ -63,14 +63,12 @@ fn issue_asset(
                 input_info.inputs_and_amount.amount
             )
         }
-    }
-
     let asset = asset.as_ref().unwrap();
 
     if asset.issued_by_definer_only.is_some()
         && !input_info.paying_addresses.contains(&asset.definer_address)
     {
-        return finish(send_all, input_info.inputs_and_amount);
+        return finish(input_info.inputs_and_amount);
     }
 
     let issuer_address = if asset.issued_by_definer_only.is_some() {
@@ -146,7 +144,7 @@ fn issue_asset(
             .query_map(&[asset.asset.as_ref().unwrap()], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
         if !input_rows.is_empty() {
-            return finish(send_all, input_info.inputs_and_amount);
+            return finish(input_info.inputs_and_amount);
         }
 
         if add_issue_input(1, &mut input_info)? {
@@ -230,7 +228,7 @@ fn add_input(
     Ok(inputs_and_amount.clone())
 }
 
-fn finish(send_all: bool, inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
+fn finish(inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
     if !send_all || inputs_and_amount.input_with_proofs.is_empty() {
         bail!(
             "error_code: NOT_ENOUGH_FUNDS 
@@ -306,7 +304,6 @@ fn add_headers_commission_inputs(
     mut input_info: InputInfo,
     is_base: bool,
     last_ball_mci: u32,
-    send_all: bool,
 ) -> Result<InputsAndAmount> {
     if let Some(max_mci) = paid_witnessing::get_max_spendable_mci_for_last_ball_mci(last_ball_mci) {
         if add_mc_inputs(
@@ -325,7 +322,7 @@ fn add_headers_commission_inputs(
                 max_mci,
             ).is_err()
             {
-                return issue_asset(db, input_info, asset, is_base, send_all);
+                return issue_asset(db, input_info, asset, is_base);
             }
         }
     }
@@ -339,7 +336,6 @@ fn pick_multiple_coins_and_continue(
     mut input_info: InputInfo,
     is_base: bool,
     last_ball_mci: u32,
-    send_all: bool,
 ) -> Result<InputsAndAmount> {
     let tmp_sql = if asset.is_none() || asset.as_ref().unwrap().asset.is_none() {
         " IS NULL".to_string()
@@ -386,16 +382,9 @@ fn pick_multiple_coins_and_continue(
         }
     }
     if asset.is_some() {
-        return issue_asset(db, input_info, asset, is_base, send_all);
+        return issue_asset(db, input_info, asset, is_base);
     } else {
-        return add_headers_commission_inputs(
-            db,
-            asset,
-            input_info,
-            is_base,
-            last_ball_mci,
-            send_all,
-        );
+        return add_headers_commission_inputs(db, asset, input_info, is_base, last_ball_mci);
     }
 }
 
@@ -469,7 +458,6 @@ fn pick_one_coin_just_bigger_and_continue(
             input_info,
             is_base,
             last_ball_mci,
-            send_all,
         );
     }
 }
@@ -482,16 +470,11 @@ fn pick_divisible_coins_for_amount(
     last_ball_mci: u32,
     amount: u32,
     multi_authored: bool,
-    send_all: bool,
 ) -> Result<InputsAndAmount> {
     let is_base = if asset.is_none() { true } else { false };
 
-    let mut spendable = paying_addresses
-        .iter()
-        .map(|v| format!("'{}'", v))
-        .collect::<Vec<_>>()
-        .join(",");
-    println!("spendable = {}", spendable);
+    let mut spendable = String::new();
+
     let input_info = InputInfo {
         multi_authored: multi_authored,
         inputs_and_amount: InputsAndAmount {
@@ -523,11 +506,10 @@ fn pick_divisible_coins_for_amount(
             input_info,
             is_base,
             last_ball_mci,
-            send_all,
         );
     }
 
-    issue_asset(db, input_info, asset, is_base, send_all)
+    issue_asset(db, input_info, asset, is_base)
 }
 
 #[derive(Clone)]

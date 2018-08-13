@@ -20,9 +20,12 @@ mod config;
 use std::sync::Arc;
 
 use clap::App;
+use composer;
 use trustnote::network::wallet::WalletConn;
 use trustnote::*;
 use trustnote_wallet_base::{Base64KeyExt, ExtendedPrivKey, ExtendedPubKey, Mnemonic};
+
+use trustnote::signature::Signer;
 
 struct WalletInfo {
     #[allow(dead_code)]
@@ -32,6 +35,7 @@ struct WalletInfo {
     wallet_0_id: String,
     _00_address: String,
     _00_address_pubk: ExtendedPubKey,
+    _00_address_prvk: ExtendedPrivKey,
 }
 
 impl WalletInfo {
@@ -43,6 +47,8 @@ impl WalletInfo {
         let wallet_pubk = trustnote_wallet_base::wallet_pubkey(&master_prvk, wallet)?;
         let wallet_0_id = trustnote_wallet_base::wallet_id(&wallet_pubk);
         let _00_address = trustnote_wallet_base::wallet_address(&wallet_pubk, false, 0)?;
+        let _00_address_prvk =
+            trustnote_wallet_base::wallet_address_prvkey(&master_prvk, 0, false, 0)?;
         let _00_address_pubk =
             trustnote_wallet_base::wallet_address_pubkey(&wallet_pubk, false, 0)?;
 
@@ -53,7 +59,18 @@ impl WalletInfo {
             wallet_0_id,
             _00_address,
             _00_address_pubk,
+            _00_address_prvk,
         })
+    }
+}
+
+impl Signer for WalletInfo {
+    fn sign(&self, hash: &[u8], address: &str) -> Result<String> {
+        if address != self._00_address {
+            bail!("invalid address for wallet to sign");
+        }
+
+        trustnote_wallet_base::sign(hash, &self._00_address_prvk)
     }
 }
 
@@ -199,6 +216,23 @@ fn pause() {
     ::std::io::stdin().read(&mut [0; 1]).unwrap();
 }
 
+fn send_payment(
+    ws: &Arc<WalletConn>,
+    address: &str,
+    amount: &str,
+    wallet_info: &WalletInfo,
+) -> Result<()> {
+    let payment = ws.prepare_payment(address, amount, &wallet_info._00_address)?;
+    let joint = composer::compose_joint(payment, wallet_info)?;
+    ws.post_joint(&joint)?;
+    println!("FROM  : {}", wallet_info._00_address);
+    println!("TO    : {}", address);
+    println!("UNIT  : {:?}", joint.unit.unit);
+    println!("AMOUNT: {}", amount);
+    println!("DATE  : {}", time::now());
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let yml = load_yaml!("ttt.yml");
     let m = App::from_yaml(yml).get_matches();
@@ -250,9 +284,9 @@ fn main() -> Result<()> {
         if let Some(pay) = send.values_of("pay") {
             //TODO: Some syntax check for address and amount
             let v = pay.collect::<Vec<_>>();
-            let amount = v[0];
-            let address = v[1];
-            println!("Pay {} TTT to address {}", amount, address);
+            for arg in v.chunks(2) {
+                send_payment(&ws, arg[0], arg[1], &wallet_info)?;
+            }
         }
 
         if let Some(text) = send.value_of("text") {
