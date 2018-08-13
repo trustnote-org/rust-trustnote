@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use error::Result;
 use rusqlite::Connection;
 use serde_json;
@@ -34,7 +36,6 @@ pub fn update_wallet_address(
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TransactionHistory {
-    pub id: usize,
     pub amount: i64,
     pub address_to: String,
     pub address_from: String,
@@ -95,14 +96,84 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
             mci: row.get(10),
         })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
-    let mut id = 0;
+    let mut movements = HashMap::new();
     for row in rows {
         //debug!("{:?}", row);
+        struct Movement {
+            plus: i64,
+            has_minus: bool,
+            timestamp: String,
+            level: Option<u32>,
+            is_stable: bool,
+            sequence: String,
+            fee: u32,
+            mci: Option<u32>,
+            from_address: Option<String>,
+            to_address: Option<String>,
+            amount: Option<i64>,
+        };
 
+        let has_to_address = row.to_address.is_some();
+        let has_from_address = row.from_address.is_some();
+
+        let mut movement = movements.entry(row.unit).or_insert(Movement {
+            plus: 0,
+            has_minus: false,
+            timestamp: row.timestamp,
+            level: row.level,
+            is_stable: row.is_stable > 0,
+            sequence: row.sequence,
+            fee: row.fee,
+            mci: row.mci,
+            from_address: row.from_address,
+            to_address: row.to_address,
+            amount: row.amount,
+        });
+
+        if has_to_address {
+            movement.plus = movement.plus + row.amount.unwrap_or(0);
+        }
+
+        if has_from_address {
+            movement.has_minus = true;
+        }
+    }
+
+    for (unit, movement) in movements.into_iter() {
         //TODO: handle invalid case
+        let _sequence = movement.sequence;
 
-        //Send
-        if row.from_address.is_some() {
+        //Receive
+        if movement.plus > 0 && !movement.has_minus {
+            let mut stmt = db.prepare_cached(
+                "SELECT DISTINCT address FROM inputs \
+                 WHERE unit=? AND asset is NULL ORDER BY address",
+            )?;
+
+            let addresses = stmt
+                .query_map(&[&unit], |row| row.get(0))?
+                .collect::<::std::result::Result<Vec<String>, _>>()?;
+
+            for address in addresses {
+                let transaction = TransactionHistory {
+                    amount: movement.amount.unwrap_or(0),
+                    address_to: movement
+                        .to_address
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or(String::new()),
+                    address_from: address,
+                    confirmations: movement.is_stable,
+                    fee: movement.fee,
+                    unit: unit.clone(),
+                    time: movement.timestamp.clone(),
+                    level: movement.level,
+                    mci: movement.mci,
+                };
+
+                history_transactions.push(transaction);
+            }
+        } else if movement.has_minus {
             //The amount is none when sending out
             let mut stmt = db.prepare_cached(
                 "SELECT address, SUM(amount) AS amount, (address!=?) AS is_external \
@@ -119,7 +190,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
             }
 
             let payee_rows = stmt
-                .query_map(&[&address, &row.unit], |row| PayeeRows {
+                .query_map(&[&address, &unit], |row| PayeeRows {
                     address: row.get(0),
                     amount: row.get(1),
                     is_external: row.get(2),
@@ -132,47 +203,20 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
                     continue;
                 }
 
-                id = id + 1;
                 let transaction = TransactionHistory {
-                    id: id,
                     amount: -payee_row.amount.unwrap_or(0),
                     address_to: payee_row.address.unwrap_or(String::new()),
-                    address_from: address.to_owned(),
-                    confirmations: row.is_stable > 0,
-                    fee: row.fee,
-                    unit: row.unit.clone(),
-                    time: row.timestamp.clone(),
-                    level: row.level,
-                    mci: row.mci,
-                };
-
-                history_transactions.push(transaction);
-            }
-
-        //Receive
-        } else {
-            let mut stmt = db.prepare_cached(
-                "SELECT DISTINCT address FROM inputs \
-                 WHERE unit=? AND asset is NULL ORDER BY address",
-            )?;
-
-            let addresses = stmt
-                .query_map(&[&row.unit], |row| row.get(0))?
-                .collect::<::std::result::Result<Vec<String>, _>>()?;
-
-            for address in addresses {
-                id = id + 1;
-                let transaction = TransactionHistory {
-                    id: id,
-                    amount: row.amount.unwrap_or(0),
-                    address_to: row.to_address.as_ref().cloned().unwrap_or(String::new()),
-                    address_from: address,
-                    confirmations: row.is_stable > 0,
-                    fee: row.fee,
-                    unit: row.unit.clone(),
-                    time: row.timestamp.clone(),
-                    level: row.level,
-                    mci: row.mci,
+                    address_from: movement
+                        .from_address
+                        .as_ref()
+                        .cloned()
+                        .unwrap_or(String::new()),
+                    confirmations: movement.is_stable,
+                    fee: movement.fee,
+                    unit: unit.clone(),
+                    time: movement.timestamp.clone(),
+                    level: movement.level,
+                    mci: movement.mci,
                 };
 
                 history_transactions.push(transaction);
@@ -180,7 +224,8 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
         }
     }
 
-    //TODO: sort by level and time, but level is None in light wallet
+    //Should sort by level and time, but level is None in light wallet
+    history_transactions.sort_by(|a, b| b.time.cmp(&a.time));
 
     Ok(history_transactions)
 }

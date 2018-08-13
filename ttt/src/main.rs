@@ -177,14 +177,14 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
             println!("TO       : {}", history.address_to);
         }
         println!("UNIT     : {}", history.unit);
-        println!("AMOUNT   : {} MN", history.amount as f64 / 1_000_000.0);
+        println!("AMOUNT   : {:.3} MN", history.amount as f64 / 1_000_000.0);
         println!("DATE     : {}", history.time);
         println!("CONFIRMED: {}", history.confirmations);
     } else {
-        for history in histories {
+        for (id, history) in histories.iter().enumerate() {
             println!(
                 "#{:<4} {:>10.3} MN  \t{}",
-                history.id,
+                id + 1,
                 history.amount as f64 / 1_000_000.0,
                 history.time
             );
