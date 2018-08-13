@@ -155,7 +155,6 @@ impl WalletConn {
     pub fn get_parents_and_last_ball_and_witness_list_unit(
         &self,
     ) -> Result<LastStableBallAndParentUnitsAndWitnessListUnit> {
-
         let resp = self.send_request(
             "light/get_parents_and_last_ball_and_witness_list_unit",
             &json!({"witnesses": &*my_witness::MY_WITNESSES}),

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use config;
 use db;
@@ -7,11 +6,11 @@ use error::Result;
 use joint::Joint;
 use light::LastStableBallAndParentUnitsAndWitnessListUnit;
 use mc_outputs;
-use my_witness;
 use object_hash;
 use paid_witnessing;
 use rusqlite::Connection;
 use serde_json::{self, Value};
+use signature::Signer;
 use spec;
 use spec::*;
 
@@ -63,12 +62,14 @@ fn issue_asset(
                 input_info.inputs_and_amount.amount
             )
         }
+    }
+
     let asset = asset.as_ref().unwrap();
 
     if asset.issued_by_definer_only.is_some()
         && !input_info.paying_addresses.contains(&asset.definer_address)
     {
-        return finish(input_info.inputs_and_amount);
+        return finish(send_all, input_info.inputs_and_amount);
     }
 
     let issuer_address = if asset.issued_by_definer_only.is_some() {
@@ -144,7 +145,7 @@ fn issue_asset(
             .query_map(&[asset.asset.as_ref().unwrap()], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
         if !input_rows.is_empty() {
-            return finish(input_info.inputs_and_amount);
+            return finish(send_all, input_info.inputs_and_amount);
         }
 
         if add_issue_input(1, &mut input_info)? {
@@ -159,8 +160,7 @@ fn issue_asset(
         let max_serial_numbers = stmt
             .query_map(&[asset.asset.as_ref().unwrap(), &issuer_address], |row| {
                 row.get(0)
-            })?
-            .collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
+            })?.collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
         let max_serial_number = if max_serial_numbers.is_empty() {
             0
         } else {
@@ -228,7 +228,7 @@ fn add_input(
     Ok(inputs_and_amount.clone())
 }
 
-fn finish(inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
+fn finish(send_all: bool, inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
     if !send_all || inputs_and_amount.input_with_proofs.is_empty() {
         bail!(
             "error_code: NOT_ENOUGH_FUNDS 
@@ -248,11 +248,12 @@ fn add_mc_inputs(
     max_mci: u32,
 ) -> Result<()> {
     for addr in &input_info.paying_addresses {
-        let target_amount = input_info.required_amount + input_size + if input_info.multi_authored {
-            config::ADDRESS_SIZE
-        } else {
-            0
-        } - input_info.inputs_and_amount.amount;
+        let target_amount =
+            input_info.required_amount + input_size + if input_info.multi_authored {
+                config::ADDRESS_SIZE
+            } else {
+                0
+            } - input_info.inputs_and_amount.amount;
         let mc_result = mc_outputs::find_mc_index_interval_to_target_amount(
             db,
             input_type,
@@ -304,6 +305,7 @@ fn add_headers_commission_inputs(
     mut input_info: InputInfo,
     is_base: bool,
     last_ball_mci: u32,
+    send_all: bool,
 ) -> Result<InputsAndAmount> {
     if let Some(max_mci) = paid_witnessing::get_max_spendable_mci_for_last_ball_mci(last_ball_mci) {
         if add_mc_inputs(
@@ -322,7 +324,7 @@ fn add_headers_commission_inputs(
                 max_mci,
             ).is_err()
             {
-                return issue_asset(db, input_info, asset, is_base);
+                return issue_asset(db, input_info, asset, is_base, send_all);
             }
         }
     }
@@ -336,6 +338,7 @@ fn pick_multiple_coins_and_continue(
     mut input_info: InputInfo,
     is_base: bool,
     last_ball_mci: u32,
+    send_all: bool,
 ) -> Result<InputsAndAmount> {
     let tmp_sql = if asset.is_none() || asset.as_ref().unwrap().asset.is_none() {
         " IS NULL".to_string()
@@ -362,8 +365,7 @@ fn pick_multiple_coins_and_continue(
             address: row.get(4),
             blinding: row.get(5),
             ..Default::default()
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
     for mut input in input_rows {
         input_info.required_amount += is_base as u32 * config::TRANSFER_INPUT_SIZE;
         input_info.inputs_and_amount = add_input(
@@ -382,9 +384,16 @@ fn pick_multiple_coins_and_continue(
         }
     }
     if asset.is_some() {
-        return issue_asset(db, input_info, asset, is_base);
+        return issue_asset(db, input_info, asset, is_base, send_all);
     } else {
-        return add_headers_commission_inputs(db, asset, input_info, is_base, last_ball_mci);
+        return add_headers_commission_inputs(
+            db,
+            asset,
+            input_info,
+            is_base,
+            last_ball_mci,
+            send_all,
+        );
     }
 }
 
@@ -441,8 +450,7 @@ fn pick_one_coin_just_bigger_and_continue(
                 blinding: row.get(5),
                 ..Default::default()
             },
-        )?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        )?.collect::<::std::result::Result<Vec<_>, _>>()?;
     if input_rows.len() == 1 {
         return add_input(
             input_info.inputs_and_amount,
@@ -458,6 +466,7 @@ fn pick_one_coin_just_bigger_and_continue(
             input_info,
             is_base,
             last_ball_mci,
+            send_all,
         );
     }
 }
@@ -470,11 +479,16 @@ fn pick_divisible_coins_for_amount(
     last_ball_mci: u32,
     amount: u32,
     multi_authored: bool,
+    send_all: bool,
 ) -> Result<InputsAndAmount> {
     let is_base = if asset.is_none() { true } else { false };
 
-    let mut spendable = String::new();
-
+    let mut spendable = paying_addresses
+        .iter()
+        .map(|v| format!("'{}'", v))
+        .collect::<Vec<_>>()
+        .join(",");
+    println!("spendable = {}", spendable);
     let input_info = InputInfo {
         multi_authored: multi_authored,
         inputs_and_amount: InputsAndAmount {
@@ -506,66 +520,41 @@ fn pick_divisible_coins_for_amount(
             input_info,
             is_base,
             last_ball_mci,
+            send_all,
         );
     }
 
-    issue_asset(db, input_info, asset, is_base)
+    issue_asset(db, input_info, asset, is_base, send_all)
 }
 
-#[derive(Clone)]
-struct Param {
-    signing_addresses: Vec<String>,
-    paying_addresses: Vec<String>,
-    outputs: Vec<Output>,
-    messages: Vec<Message>,
-    signer: String,
-    light_props: Option<LastStableBallAndParentUnitsAndWitnessListUnit>,
-    earned_headers_commission_recipients: Vec<spec::HeaderCommissionShare>,
-    witnesses: Vec<String>,
-    inputs: Vec<Input>,
-    input_amount: Option<u32>,
-    send_all: bool,
-    ws: Arc<::network::wallet::WalletConn>,
+pub struct Param {
+    pub signing_addresses: Vec<String>,
+    pub paying_addresses: Vec<String>,
+    pub outputs: Vec<Output>,
+    pub messages: Vec<Message>,
+    pub light_props: LastStableBallAndParentUnitsAndWitnessListUnit,
+    pub earned_headers_commission_recipients: Vec<spec::HeaderCommissionShare>,
+    pub witnesses: Vec<String>,
+    pub inputs: Vec<Input>,
+    pub input_amount: Option<u32>,
+    pub send_all: bool,
 }
 
 // TODO: params name
-#[allow(dead_code)]
-fn compose_joint(mut params: Param) -> Result<Joint> {
-    let witnesses = params.witnesses.clone();
-    if witnesses.is_empty() {
-        params.witnesses = my_witness::MY_WITNESSES.clone();
-        return compose_joint(params);
-    }
-
-    if params.light_props.is_none() {
-        match params.ws.get_parents_and_last_ball_and_witness_list_unit() {
-            Ok(res) => {
-                if res.parent_units.is_empty()
-                    || res.last_stable_mc_ball.is_none()
-                    || res.last_stable_mc_ball_unit.is_none()
-                {
-                    bail!("invalid parents or last stable mc ball");
-                }
-                params.light_props = Some(res);
-                return compose_joint(params);
-            }
-            Err(_) => bail!("err : get_parents_and_last_ball_and_witness_list_unit"),
-        }
-    }
-
-    let c_params = params.clone();
-    let mut signing_addresses = c_params.signing_addresses;
-    let mut paying_addresses = c_params.paying_addresses;
-    let outputs = c_params.outputs;
-    let mut messages = c_params.messages;
-
-    let light_props = c_params.light_props;
-    let signer = c_params.signer;
-
-    if light_props.is_none() {
-        bail!("no parent props for light");
-    }
-
+pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
+    let Param {
+        mut signing_addresses,
+        mut paying_addresses,
+        outputs,
+        messages,
+        light_props,
+        mut earned_headers_commission_recipients,
+        witnesses,
+        inputs,
+        input_amount,
+        send_all,
+    } = params;
+    let _ = messages;
     let change_outputs = outputs
         .iter()
         .filter(|output| output.amount == Some(0))
@@ -576,6 +565,7 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
         .filter(|output| output.amount > Some(0))
         .clone()
         .collect::<Vec<_>>();
+
     if change_outputs.len() > 1 {
         bail!("more than one change output");
     }
@@ -612,24 +602,19 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
     let mut total_amount = 0;
 
     for output in external_outputs.into_iter() {
-        match payment_message.clone().payload.unwrap() {
-            Payload::Payment(mut x) => x.outputs.push(output.clone()),
+        match payment_message.payload {
+            Some(Payload::Payment(ref mut x)) => x.outputs.push(output.clone()),
             _ => {}
         }
         total_amount += output.amount.unwrap();
     }
 
-    messages.push(payment_message.clone());
-
     let is_multi_authored = from_addresses.len() > 1;
     let mut unit = Unit::default();
-    unit.messages = messages.clone();
 
-    if !params.earned_headers_commission_recipients.is_empty() {
-        params
-            .earned_headers_commission_recipients
-            .sort_by(|a, b| a.address.cmp(&b.address));
-        unit.earned_headers_commission_recipients = params.earned_headers_commission_recipients;
+    if !earned_headers_commission_recipients.is_empty() {
+        earned_headers_commission_recipients.sort_by(|a, b| a.address.cmp(&b.address));
+        unit.earned_headers_commission_recipients = earned_headers_commission_recipients;
     } else if is_multi_authored {
         unit.earned_headers_commission_recipients
             .push(HeaderCommissionShare {
@@ -640,95 +625,61 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
 
     // TODO: lock
 
-    unit.parent_units = light_props.clone().unwrap().parent_units;
-    unit.last_ball = light_props.clone().unwrap().last_stable_mc_ball;
-    unit.last_ball_unit = light_props.clone().unwrap().last_stable_mc_ball_unit;
-    let last_ball_mci = light_props.clone().unwrap().last_stable_mc_ball_mci;
+    let LastStableBallAndParentUnitsAndWitnessListUnit {
+        last_stable_mc_ball,
+        last_stable_mc_ball_mci,
+        last_stable_mc_ball_unit,
+        parent_units,
+        witness_list_unit,
+    } = light_props;
+
+    unit.parent_units = parent_units;
+    unit.last_ball = last_stable_mc_ball;
+    unit.last_ball_unit = last_stable_mc_ball_unit;
 
     let db = db::DB_POOL.get_connection();
-    check_for_unstable_predecessors(&db, last_ball_mci, &from_addresses)?;
+    check_for_unstable_predecessors(&db, last_stable_mc_ball_mci, &from_addresses)?;
 
     //authors
-    let mut assoc_signing_paths: HashMap<String, Vec<String>> = HashMap::new();
-    for from_address in from_addresses {
+    for from_address in &from_addresses {
         let mut author = Author {
             address: from_address.clone(),
             authentifiers: HashMap::new(),
             definition: Value::Null,
         };
-        let lengths_by_signing_paths = read_signing_paths(&db, from_address.clone(), &signer)?;
-        let signing_paths = lengths_by_signing_paths
-            .keys()
-            .map(|x| x.clone())
-            .collect::<Vec<_>>();
-        assoc_signing_paths.insert(from_address.clone(), signing_paths.clone());
-        for signing_path in signing_paths {
-            let x = &lengths_by_signing_paths[&signing_path]
-                .iter()
-                .map(|s| s.clone())
-                .collect::<Vec<_>>()
-                .join("-");
-            author.authentifiers.insert(signing_path, x.to_string());
-        }
-        unit.authors.push(author);
 
         let mut stmt = db.prepare_cached(
             "SELECT 1 FROM unit_authors CROSS JOIN units USING(unit) \
              WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
              LIMIT 1",
         )?;
-        let rows = stmt
-            .query_map(&[&from_address, &last_ball_mci], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
-        if rows.is_empty() {
-            author.definition = read_definition(&db, from_address)?;
-            continue;
+        if !stmt.exists(&[from_address, &last_stable_mc_ball_mci])? {
+            author.definition = read_definition(&db, &from_address)?;
         }
-        let mut stmt = db.prepare_cached(
-            "SELECT definition \
-			FROM address_definition_changes CROSS JOIN units USING(unit) LEFT JOIN definitions USING(definition_chash) \
-			WHERE address=? AND is_stable=1 AND sequence='good' AND main_chain_index<=? \
-			ORDER BY level DESC LIMIT 1")?;
-        let rows = stmt
-            .query_map(&[&from_address, &last_ball_mci], |row| row.get(0))?
-            .collect::<::std::result::Result<Vec<String>, _>>()?;
 
-        let def: Value = serde_json::from_str(&rows[0])?;
-        if !rows.is_empty() && def.is_null() {
-            author.definition = read_definition(&db, from_address)?;
-        }
+        unit.authors.push(author);
     }
 
     // witnesses
-    match light_props.unwrap().witness_list_unit {
-        Some(witness_list_unit) => unit.witness_list_unit = Some(witness_list_unit),
-        None => unit.witnesses = witnesses.clone(),
+    if witness_list_unit.is_some() {
+        unit.witness_list_unit = witness_list_unit;
+    } else {
+        unit.witnesses = witnesses;
     }
-    // if storage::determine_if_witness_and_address_definition_have_refs(&db, &witnesses)? {
-    //     bail!("some witnesses have references in their addresses");
-    // }
-
-    // match storage::find_witness_list_unit(&db, &witnesses, last_ball_mci)? {
-    //     Some(witness_list_unit) => unit.witness_list_unit = Some(witness_list_unit),
-    //     None => unit.witnesses = witnesses,
-    // }
-
-    // messages retrieved via callback
 
     // input coins
     let total_input;
-    unit.headers_commission = Some(unit.get_header_size());
+    unit.headers_commission = Some(unit.get_header_size() + config::SIG_LENGTH as u32);
     let naked_payload_commission = unit.get_payload_size();
-    if params.inputs.is_empty() {
-        if params.input_amount.is_none() {
+    if !inputs.is_empty() {
+        if input_amount.is_none() {
             bail!("inputs but no input_amount");
         }
-        total_input = params.input_amount.unwrap();
-        match payment_message.clone().payload.unwrap() {
-            Payload::Payment(mut x) => x.inputs = params.inputs.clone(),
+        total_input = input_amount.unwrap();
+        match payment_message.payload {
+            Some(Payload::Payment(ref mut x)) => x.inputs = inputs,
             _ => {}
         }
-        unit.payload_commission = Some(unit.get_payload_size());
     } else {
         let target_amount = if params.send_all {
             ::std::i64::MAX
@@ -738,12 +689,13 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
         let input_and_amount = pick_divisible_coins_for_amount(
             &db,
             None,
-            paying_addresses.clone(),
-            last_ball_mci,
+            from_addresses,
+            last_stable_mc_ball_mci,
             target_amount as u32,
             is_multi_authored,
-            params.send_all,
+            send_all,
         )?;
+        println!("input_and_amount = {:?}", input_and_amount);
         if input_and_amount.input_with_proofs.is_empty() {
             bail!(
                 "NOT_ENOUGH_FUNDS, not enough spendable funds from {:?} for {}",
@@ -752,29 +704,30 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
             );
         }
         total_input = input_and_amount.amount;
-        match payment_message.clone().payload.unwrap() {
-            Payload::Payment(mut x) => {
-                x.inputs = input_and_amount
-                    .input_with_proofs
-                    .iter()
-                    .map(|s| s.input.clone().unwrap())
-                    .collect::<Vec<_>>()
+
+        match payment_message.payload {
+            Some(Payload::Payment(ref mut x)) => {
+                for input in input_and_amount.input_with_proofs.iter() {
+                    x.inputs.push(input.input.clone().unwrap());
+                }
             }
             _ => {}
         }
-        unit.payload_commission = Some(unit.get_payload_size());
-        info!(
-            "inputs increased payload by {}",
-            unit.payload_commission.unwrap() - naked_payload_commission
-        );
     }
+    unit.messages.push(payment_message.clone());
+    unit.payload_commission = Some(unit.get_payload_size() + config::HASH_LENGTH as u32);
+    info!(
+        "inputs increased payload by {}",
+        unit.payload_commission.unwrap() - naked_payload_commission
+    );
+    unit.messages.pop();
 
     let change = total_input as i64
         - total_amount
         - unit.headers_commission.unwrap() as i64
         - unit.payload_commission.unwrap() as i64;
     if change <= 0 {
-        if !params.send_all {
+        if !send_all {
             bail!("change = {}", change);
         }
         bail!(
@@ -782,8 +735,8 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
             paying_addresses
         );
     }
-    match payment_message.payload.unwrap() {
-        Payload::Payment(mut x) => {
+    match payment_message.payload {
+        Some(Payload::Payment(ref mut x)) => {
             x.outputs[0].amount = Some(change);
             x.outputs.sort_by(|a, b| {
                 if a.address == b.address {
@@ -797,22 +750,18 @@ fn compose_joint(mut params: Param) -> Result<Joint> {
         }
         _ => {}
     }
+    unit.messages.push(payment_message);
 
-    let c_unit = unit.clone();
+    let unit_hash = unit.get_unit_hash_to_sign();
     for mut author in &mut unit.authors {
-        let address = author.address.clone();
-        for path in assoc_signing_paths[&address].iter() {
-            //TODO: signer.sign     impl sign for signer, signer(trait)in lib , sign in wallet
-            let signature = sign(&signer, &c_unit, &address, path)?; //call which sign?
-            if signature == "[refused]" {
-                bail!("one of the cosigners refused to sign");
-            }
-            author.authentifiers.insert(path.to_string(), signature);
-        }
+        let signature = signer.sign(&unit_hash, &author.address)?;
+        author.authentifiers.insert("r".to_string(), signature);
     }
-    unit.unit = Some(unit.get_unit_hash());
-    unit.timestamp = Some(::time::now() / 1000);
 
+    unit.timestamp = Some(::time::now() / 1000);
+    unit.unit = Some(unit.get_unit_hash());
+
+    // println!("-----unit---------{}", serde_json::to_string_pretty(&unit)?);
     Ok(Joint {
         ball: None,
         skiplist_units: Vec::new(),
@@ -840,24 +789,24 @@ fn check_for_unstable_predecessors(
 					SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
 					WHERE (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) AND sequence!='good'", last_ball_mci, addresses, last_ball_mci, addresses, last_ball_mci, addresses);
     let mut stmt = db.prepare_cached(&sql)?;
-    let rows = stmt
-        .query_map(&[], |row| row.get(0))?
-        .collect::<::std::result::Result<Vec<String>, _>>()?;
-    if !rows.is_empty() {
+    // let rows = stmt.exist(&[])?;
+    // .query_map(&[], |row| row.get(0))?
+    // .collect::<::std::result::Result<Vec<String>, _>>()?;
+    if stmt.exists(&[])? {
         bail!("some definition changes or definitions or nonserials are not stable yet");
     }
     Ok(())
 }
 
-fn read_definition(db: &Connection, address: String) -> Result<Value> {
+fn read_definition(db: &Connection, address: &String) -> Result<Value> {
     let mut stmt = db.prepare_cached("SELECT definition FROM my_addresses WHERE address=? UNION SELECT definition FROM shared_addresses WHERE shared_address=?")?;
     let rows = stmt
-        .query_map(&[&address, &address], |row| row.get(0))?
+        .query_map(&[address, address], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
     if rows.len() != 1 {
         bail!("definition not found");
     }
-    Ok(serde_json::to_value(rows.into_iter().nth(0))?)
+    Ok(serde_json::from_str(&rows.into_iter().nth(0).unwrap())?)
 }
 
 #[allow(dead_code)]
@@ -866,9 +815,5 @@ fn read_signing_paths(
     _from_address: String,
     _signer: &String,
 ) -> Result<HashMap<String, Vec<String>>> {
-    unimplemented!()
-}
-
-fn sign(_signer: &String, _unit: &Unit, _address: &String, _path: &String) -> Result<String> {
     unimplemented!()
 }
