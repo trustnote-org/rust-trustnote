@@ -166,27 +166,26 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
         wallet::read_transaction_history(&db::DB_POOL.get_connection(), &wallet_info._00_address)?;
 
     if let Some(index) = index {
-        if index <= histories.len() {
-            if index == 0 {
-                bail!("log index should start from 1");
-            }
-            let history = &histories[index - 1];
-            if history.amount > 0 {
-                println!("FROM     : {}", history.address_from);
-            } else {
-                println!("TO       : {}", history.address_to);
-            }
-            println!("UNIT     : {}", history.unit);
-            println!("AMOUNT   : {} MN", history.amount / 1_000_000);
-            println!("DATE     : {}", history.time);
-            println!("CONFIRMED: {}", history.confirmations);
+        if index == 0 || index > histories.len() {
+            bail!("invalid transaction index");
         }
+
+        let history = &histories[index - 1];
+        if history.amount > 0 {
+            println!("FROM     : {}", history.address_from);
+        } else {
+            println!("TO       : {}", history.address_to);
+        }
+        println!("UNIT     : {}", history.unit);
+        println!("AMOUNT   : {} MN", history.amount as f64 / 1_000_000.0);
+        println!("DATE     : {}", history.time);
+        println!("CONFIRMED: {}", history.confirmations);
     } else {
         for history in histories {
             println!(
                 "#{:<4} {:>10.3} MN  \t{}",
                 history.id,
-                history.amount / 1_000_000,
+                history.amount as f64 / 1_000_000.0,
                 history.time
             );
         }
