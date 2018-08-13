@@ -165,7 +165,8 @@ fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
 }
 
 fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
-    let histories = wallet::read_transaction_history(&wallet_info._00_address)?;
+    let histories =
+        wallet::read_transaction_history(&db::DB_POOL.get_connection(), &wallet_info._00_address)?;
 
     if let Some(index) = index {
         if index <= histories.len() {
@@ -173,7 +174,7 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
             if history.amount > 0 {
                 println!("FROM: \t\t{}", history.address_from);
             } else {
-                println!("TO: \t{}", history.address_to);
+                println!("TO: \t\t{}", history.address_to);
             }
             println!("UNIT: \t\t{}", history.unit);
             println!("AMOUNT: \t{} MN", history.amount / 1_000_000);

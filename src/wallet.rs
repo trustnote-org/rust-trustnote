@@ -43,14 +43,12 @@ pub struct TransactionHistory {
     pub fee: u32,
     pub unit: String,
     pub time: String,
-    pub level: u32,
+    pub level: Option<u32>,
     pub mci: Option<u32>,
 }
 
-pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>> {
+pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<TransactionHistory>> {
     let mut history_transactions = Vec::new();
-
-    let db = db::DB_POOL.get_connection();
 
     let mut stmt = db.prepare_cached(
         "SELECT unit, level, is_stable, sequence, address, \
@@ -71,7 +69,7 @@ pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>
     #[derive(Debug)]
     struct TempRow {
         unit: String,
-        level: u32,
+        level: Option<u32>,
         is_stable: u32,
         sequence: String,
         address: String,
@@ -100,66 +98,90 @@ pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>
 
     let mut id = 0;
     for row in rows {
-        //info!("{:?}", row);
+        //debug!("{:?}", row);
 
         //TODO: handle invalid case
 
-        if row.amount.is_some() {
-            let mut amount = row.amount.unwrap();
+        //Send
+        if row.from_address.is_some() {
+            //The amount is none when sending out
+            let mut stmt = db.prepare_cached(
+                "SELECT address, SUM(amount) AS amount, (address!=?) AS is_external \
+                 FROM outputs \
+                 WHERE unit=? AND asset is NULL \
+                 GROUP BY address",
+            )?;
 
-            //Send
-            if row.from_address.is_some() {
-                amount = -amount;
+            #[derive(Debug)]
+            struct PayeeRows {
+                address: Option<String>,
+                amount: Option<i64>,
+                is_external: bool,
+            }
+
+            let payee_rows = stmt
+                .query_map(&[&address, &row.unit], |row| PayeeRows {
+                    address: row.get(0),
+                    amount: row.get(1),
+                    is_external: row.get(2),
+                })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+
+            for payee_row in payee_rows {
+                //debug!("{:?}", payee_row);
+
+                if !payee_row.is_external {
+                    continue;
+                }
 
                 id = id + 1;
                 let transaction = TransactionHistory {
                     id: id,
-                    amount: amount,
-                    address_to: row.to_address.unwrap_or(String::new()),
-                    address_from: row.from_address.unwrap(),
+                    amount: -payee_row.amount.unwrap_or(0),
+                    address_to: payee_row.address.unwrap_or(String::new()),
+                    address_from: address.to_owned(),
                     confirmations: row.is_stable > 0,
                     fee: row.fee,
-                    unit: row.unit,
-                    time: row.timestamp,
+                    unit: row.unit.clone(),
+                    time: row.timestamp.clone(),
                     level: row.level,
                     mci: row.mci,
                 };
 
                 history_transactions.push(transaction);
+            }
 
-            //Receive
-            } else {
-                let mut stmt = db.prepare_cached(
-                    "SELECT DISTINCT address FROM inputs \
-                     WHERE unit=? AND asset is NULL ORDER BY address",
-                )?;
+        //Receive
+        } else {
+            let mut stmt = db.prepare_cached(
+                "SELECT DISTINCT address FROM inputs \
+                 WHERE unit=? AND asset is NULL ORDER BY address",
+            )?;
 
-                let addresses = stmt
-                    .query_map(&[&row.unit], |row| row.get(0))?
-                    .collect::<::std::result::Result<Vec<String>, _>>()?;
+            let addresses = stmt
+                .query_map(&[&row.unit], |row| row.get(0))?
+                .collect::<::std::result::Result<Vec<String>, _>>()?;
 
-                for address in addresses {
-                    id = id + 1;
-                    let transaction = TransactionHistory {
-                        id: id,
-                        amount: amount,
-                        address_to: row.to_address.as_ref().cloned().unwrap_or(String::new()),
-                        address_from: address,
-                        confirmations: row.is_stable > 0,
-                        fee: row.fee,
-                        unit: row.unit.clone(),
-                        time: row.timestamp.clone(),
-                        level: row.level,
-                        mci: row.mci,
-                    };
+            for address in addresses {
+                id = id + 1;
+                let transaction = TransactionHistory {
+                    id: id,
+                    amount: row.amount.unwrap_or(0),
+                    address_to: row.to_address.as_ref().cloned().unwrap_or(String::new()),
+                    address_from: address,
+                    confirmations: row.is_stable > 0,
+                    fee: row.fee,
+                    unit: row.unit.clone(),
+                    time: row.timestamp.clone(),
+                    level: row.level,
+                    mci: row.mci,
+                };
 
-                    history_transactions.push(transaction);
-                }
+                history_transactions.push(transaction);
             }
         }
     }
 
-    //TODO: sort by level and time
+    //TODO: sort by level and time, but level is None in light wallet
 
     Ok(history_transactions)
 }
