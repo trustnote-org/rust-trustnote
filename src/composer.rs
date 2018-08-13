@@ -50,10 +50,16 @@ fn issue_asset(
     mut input_info: InputInfo,
     asset: Option<Asset>,
     is_base: bool,
+    send_all: bool,
 ) -> Result<InputsAndAmount> {
     //TODO: mount === Infinity && !objAsset.cap
+
     if asset.is_none() || asset.as_ref().unwrap().asset.is_none() {
-        return finish(input_info.inputs_and_amount);
+        return finish(send_all, input_info.inputs_and_amount);
+    }
+
+    if send_all && asset.as_ref().unwrap().cap {
+        return finish(send_all, input_info.inputs_and_amount);
     }
 
     let asset = asset.as_ref().unwrap();
@@ -61,7 +67,7 @@ fn issue_asset(
     if asset.issued_by_definer_only.is_some()
         && !input_info.paying_addresses.contains(&asset.definer_address)
     {
-        return finish(input_info.inputs_and_amount);
+        return finish(send_all, input_info.inputs_and_amount);
     }
 
     let issuer_address = if asset.issued_by_definer_only.is_some() {
@@ -72,13 +78,14 @@ fn issue_asset(
 
     let add_issue_input = |serial_number: u32, closer_input_info: &mut InputInfo| -> Result<bool> {
         #[derive(Serialize)]
-        struct TmpSpendProof {
-            asset: Option<String>,
+        struct TmpSpendProof<'a> {
+            asset: &'a Option<String>,
             amount: u32,
-            address: String,
+            address: &'a String,
             c: u32,
             serial_number: u32,
         }
+
         closer_input_info.inputs_and_amount.amount += 1;
 
         let mut input = spec::Input {
@@ -99,10 +106,10 @@ fn issue_asset(
 
         if asset.is_private {
             let spend_proof = object_hash::get_base64_hash(&TmpSpendProof {
-                asset: asset.asset.clone(),
+                asset: &asset.asset,
                 amount: 1,
                 c: 1,
-                address: issuer_address.clone(),
+                address: &issuer_address,
                 serial_number: serial_number,
             })?;
             let mut spend_proof = spec::SpendProof {
@@ -136,13 +143,12 @@ fn issue_asset(
             .query_map(&[asset.asset.as_ref().unwrap()], |row| row.get(0))?
             .collect::<::std::result::Result<Vec<Option<String>>, _>>()?;
         if !input_rows.is_empty() {
-            return finish(input_info.inputs_and_amount);
+            return finish(send_all, input_info.inputs_and_amount);
         }
 
         if add_issue_input(1, &mut input_info)? {
             return Ok(input_info.inputs_and_amount);
         }
-        return finish(input_info.inputs_and_amount);
     } else {
         let mut stmt =
                 db.prepare_cached("SELECT MAX(serial_number) AS max_serial_number FROM inputs WHERE type='issue' AND asset=? AND address=?")?;
@@ -159,44 +165,41 @@ fn issue_asset(
         if add_issue_input(max_serial_number + 1, &mut input_info)? {
             return Ok(input_info.inputs_and_amount);
         }
-        finish(input_info.inputs_and_amount)
     }
+    finish(send_all, input_info.inputs_and_amount)
 }
 
 fn add_input(
-    inputs_and_amount: &mut InputsAndAmount,
+    mut inputs_and_amount: InputsAndAmount,
     input: spec::Input,
     asset: &Option<Asset>,
     multi_authored: bool,
 ) -> Result<InputsAndAmount> {
     #[derive(Serialize)]
-    struct TmpSpendProof {
-        asset: Option<String>,
-        amount: Option<i64>,
-        address: Option<String>,
-        unit: Option<String>,
-        message_index: Option<u32>,
-        output_index: Option<u32>,
-        blinding: Option<String>,
+    struct TmpSpendProof<'a> {
+        asset: &'a Option<String>,
+        amount: &'a Option<i64>,
+        address: &'a Option<String>,
+        unit: &'a Option<String>,
+        message_index: &'a Option<u32>,
+        output_index: &'a Option<u32>,
+        blinding: &'a Option<String>,
     }
 
     inputs_and_amount.amount += input.amount.map_or(0, |v| v) as u32;
-
     let mut input_with_proof = InputWithProof {
         spend_proof: None,
-        input: Some(input.clone()),
+        input: None,
     };
-
     if asset.is_some() && asset.as_ref().unwrap().is_private {
-        let tmp_input = input.clone();
         let spend_proof = object_hash::get_base64_hash(&TmpSpendProof {
-            asset: asset.clone().unwrap().asset,
-            amount: tmp_input.amount,
-            address: tmp_input.address,
-            unit: tmp_input.unit,
-            message_index: tmp_input.message_index,
-            output_index: tmp_input.output_index,
-            blinding: tmp_input.blinding,
+            asset: &asset.as_ref().unwrap().asset,
+            amount: &input.amount,
+            address: &input.address,
+            unit: &input.unit,
+            message_index: &input.message_index,
+            output_index: &input.output_index,
+            blinding: &input.blinding,
         })?;
         let mut spend_proof = spec::SpendProof {
             spend_proof,
@@ -208,12 +211,21 @@ fn add_input(
 
         input_with_proof.spend_proof = Some(spend_proof);
     }
+
+    input_with_proof.input = Some(input);
+
+    if !multi_authored || !input_with_proof.input.as_ref().unwrap().kind.is_none() {
+        input_with_proof.input.as_mut().unwrap().address = None;
+    }
+
+    input_with_proof.input.as_mut().unwrap().amount = None;
+    input_with_proof.input.as_mut().unwrap().blinding = None;
     inputs_and_amount.input_with_proofs.push(input_with_proof);
     Ok(inputs_and_amount.clone())
 }
 
-fn finish(inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
-    if inputs_and_amount.input_with_proofs.is_empty() {
+fn finish(send_all: bool, inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
+    if !send_all || inputs_and_amount.input_with_proofs.is_empty() {
         bail!(
             "error_code: NOT_ENOUGH_FUNDS\nerror: not enough spendable funds from {:?} for {}",
             inputs_and_amount.input_with_proofs,
@@ -288,6 +300,7 @@ fn add_headers_commission_inputs(
     mut input_info: InputInfo,
     is_base: bool,
     last_ball_mci: u32,
+    send_all: bool,
 ) -> Result<InputsAndAmount> {
     if let Some(max_mci) = paid_witnessing::get_max_spendable_mci_for_last_ball_mci(last_ball_mci) {
         if add_mc_inputs(
@@ -306,7 +319,7 @@ fn add_headers_commission_inputs(
                 max_mci,
             ).is_err()
             {
-                return issue_asset(db, input_info, asset, is_base);
+                return issue_asset(db, input_info, asset, is_base, send_all);
             }
         }
     }
@@ -320,6 +333,7 @@ fn pick_multiple_coins_and_continue(
     mut input_info: InputInfo,
     is_base: bool,
     last_ball_mci: u32,
+    send_all: bool,
 ) -> Result<InputsAndAmount> {
     let tmp_sql = if asset.is_none() || asset.as_ref().unwrap().asset.is_none() {
         " IS NULL".to_string()
@@ -349,8 +363,8 @@ fn pick_multiple_coins_and_continue(
         })?.collect::<::std::result::Result<Vec<_>, _>>()?;
     for mut input in input_rows {
         input_info.required_amount += is_base as u32 * config::TRANSFER_INPUT_SIZE;
-        add_input(
-            &mut input_info.inputs_and_amount,
+        input_info.inputs_and_amount = add_input(
+            input_info.inputs_and_amount,
             input,
             &asset,
             input_info.multi_authored,
@@ -365,9 +379,16 @@ fn pick_multiple_coins_and_continue(
         }
     }
     if asset.is_some() {
-        return issue_asset(db, input_info, asset, is_base);
+        return issue_asset(db, input_info, asset, is_base, send_all);
     } else {
-        return add_headers_commission_inputs(db, asset, input_info, is_base, last_ball_mci);
+        return add_headers_commission_inputs(
+            db,
+            asset,
+            input_info,
+            is_base,
+            last_ball_mci,
+            send_all,
+        );
     }
 }
 
@@ -375,9 +396,10 @@ fn pick_one_coin_just_bigger_and_continue(
     db: &Connection,
     spendable_addresses: String,
     asset: Option<Asset>,
-    mut input_info: InputInfo,
+    input_info: InputInfo,
     is_base: bool,
     last_ball_mci: u32,
+    send_all: bool,
 ) -> Result<InputsAndAmount> {
     //TODO: infinity
     let tmp_sql = if asset.is_none() {
@@ -416,7 +438,7 @@ fn pick_one_coin_just_bigger_and_continue(
         )?.collect::<::std::result::Result<Vec<_>, _>>()?;
     if input_rows.len() == 1 {
         return add_input(
-            &mut input_info.inputs_and_amount,
+            input_info.inputs_and_amount,
             input_rows[0].clone(),
             &asset,
             input_info.multi_authored,
@@ -429,6 +451,7 @@ fn pick_one_coin_just_bigger_and_continue(
             input_info,
             is_base,
             last_ball_mci,
+            send_all,
         );
     }
 }
@@ -441,11 +464,16 @@ fn pick_divisible_coins_for_amount(
     last_ball_mci: u32,
     amount: u32,
     multi_authored: bool,
+    send_all: bool,
 ) -> Result<InputsAndAmount> {
     let is_base = if asset.is_none() { true } else { false };
 
-    let mut spendable = String::new();
-
+    let mut spendable = paying_addresses
+        .iter()
+        .map(|v| format!("'{}'", v))
+        .collect::<Vec<_>>()
+        .join(",");
+    println!("spendable = {}", spendable);
     let input_info = InputInfo {
         multi_authored: multi_authored,
         inputs_and_amount: InputsAndAmount {
@@ -477,9 +505,11 @@ fn pick_divisible_coins_for_amount(
             input_info,
             is_base,
             last_ball_mci,
+            send_all,
         );
     }
-    issue_asset(db, input_info, asset, is_base)
+
+    issue_asset(db, input_info, asset, is_base, send_all)
 }
 
 #[derive(Clone)]
