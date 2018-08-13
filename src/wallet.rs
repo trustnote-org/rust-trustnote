@@ -55,10 +55,8 @@ pub struct TransactionHistory {
     pub mci: Option<u32>,
 }
 
-pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>> {
+pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<TransactionHistory>> {
     let mut history_transactions = Vec::new();
-
-    let db = db::DB_POOL.get_connection();
 
     let mut stmt = db.prepare_cached(
         "SELECT unit, level, is_stable, sequence, address, \
@@ -134,8 +132,7 @@ pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>
                     address: row.get(0),
                     amount: row.get(1),
                     is_external: row.get(2),
-                })?
-                .collect::<::std::result::Result<Vec<_>, _>>()?;
+                })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
             for payee_row in payee_rows {
                 //debug!("{:?}", payee_row);
@@ -192,7 +189,7 @@ pub fn read_transaction_history(address: &str) -> Result<Vec<TransactionHistory>
         }
     }
 
-    //TODO: sort by level and time
+    //TODO: sort by level and time, but level is None in light wallet
 
     Ok(history_transactions)
 }
