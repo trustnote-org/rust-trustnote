@@ -184,7 +184,7 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
     } else {
         for history in histories {
             println!(
-                "#{} {:10.3} MN  \t{}",
+                "#{:<4} {:>10.3} MN  \t{}",
                 history.id,
                 history.amount / 1_000_000,
                 history.time

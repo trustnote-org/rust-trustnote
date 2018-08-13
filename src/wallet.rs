@@ -1,4 +1,3 @@
-use db;
 use error::Result;
 use rusqlite::Connection;
 use serde_json;
