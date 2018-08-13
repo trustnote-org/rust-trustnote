@@ -119,7 +119,7 @@ impl WalletConn {
 
         let response_history = self
             .send_request("light/get_history", &serde_json::to_value(req_get_history)?)
-            .context("send_request get_history failed")?;
+            .context("send request get_history failed")?;
 
         let mut response_history_s: light::HistoryResponse =
             serde_json::from_value(response_history)?;

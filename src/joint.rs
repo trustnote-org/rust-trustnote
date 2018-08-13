@@ -37,45 +37,47 @@ impl Joint {
     fn save_unit(&self, tx: &Transaction, sequence: &String, is_light_wallet: bool) -> Result<()> {
         let unit = &self.unit;
         let unit_hash = self.get_unit_hash();
-        let sql = if is_light_wallet {
-            format!(
-                "INSERT INTO units \
-                 (unit, version, alt, witness_list_unit, last_ball_unit, \
-                 headers_commission, payload_commission, sequence, content_hash, \
-                 main_chain_index, creation_date) \
-                 VALUES ('{}', '{}', '{}', '{}', '{}', {}, {}, '{}', '{}', {}, datetime({}, 'unixepoch'))",
-                unit_hash,
-                &unit.version,
-                &unit.alt,
-                &unit.witness_list_unit.clone().unwrap_or(String::new()),
-                &unit.last_ball_unit.clone().unwrap_or(String::new()),
-                &unit.headers_commission.unwrap_or(0),
-                &unit.payload_commission.unwrap_or(0),
-                sequence,
-                &unit.content_hash.clone().unwrap_or(String::new()),
-                &unit.main_chain_index.unwrap_or(0),
-                &unit.timestamp.unwrap_or(0),
-            )
-        } else {
-            format!(
+
+        if !is_light_wallet {
+            let mut stmt = tx.prepare_cached(
                 "INSERT INTO units \
                  (unit, version, alt, witness_list_unit, last_ball_unit, \
                  headers_commission, payload_commission, sequence, content_hash) \
-                 VALUES ('{}', '{}', '{}', '{}', '{}', {}, {}, '{}', '{}')",
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )?;
+            stmt.execute(&[
                 unit_hash,
                 &unit.version,
                 &unit.alt,
-                &unit.witness_list_unit.clone().unwrap(),
-                &unit.last_ball_unit.clone().unwrap(),
-                &unit.headers_commission.unwrap(),
-                &unit.payload_commission.unwrap(),
+                &unit.witness_list_unit,
+                &unit.last_ball_unit,
+                &unit.headers_commission,
+                &unit.payload_commission,
                 sequence,
-                &unit.content_hash.clone().unwrap(),
-            )
-        };
-        let mut stmt = tx.prepare_cached(&sql)?;
+                &unit.content_hash,
+            ])?;
+        } else {
+            let mut stmt = tx.prepare_cached(
+                "INSERT INTO units \
+                 (unit, version, alt, witness_list_unit, last_ball_unit, \
+                 headers_commission, payload_commission, sequence, content_hash, main_chain_index, creation_date) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime(?, 'unixepoch'))",
+            )?;
+            stmt.execute(&[
+                unit_hash,
+                &unit.version,
+                &unit.alt,
+                &unit.witness_list_unit,
+                &unit.last_ball_unit,
+                &unit.headers_commission,
+                &unit.payload_commission,
+                sequence,
+                &unit.content_hash,
+                &unit.main_chain_index,
+                &(unit.timestamp.unwrap_or(0) as i64),
+            ])?;
+        }
 
-        stmt.execute(&[])?;
         Ok(())
     }
 
@@ -483,6 +485,7 @@ impl Joint {
                                 &input,
                             )?
                         } else {
+                            // FIXME: we don't have an address here for light wallet
                             "".to_string()
                         },
                     }

@@ -13,10 +13,12 @@ pub fn get_history(db: &Connection) -> Result<HistoryRequest> {
         bail!("witnesses not found");
     }
 
-    let addresses = read_my_addresses(db).context("prepare_request_for_history failed as ")?;
-    let mut requested_joints =
-        read_list_of_unstable_units(db).context("prepare_request_for_history failed as ")?;
+    let addresses =
+        read_my_addresses(db).context("prepare_request_for_history read_my_addresses failed")?;
+    let mut requested_joints = read_list_of_unstable_units(db)
+        .context("prepare_request_for_history read_list_of_unstable_units failed")?;
     if requested_joints.is_empty() {
+        // here we can't give an empty vec, just make up one
         requested_joints.push("v|NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=".to_string());
     }
 
@@ -24,6 +26,7 @@ pub fn get_history(db: &Connection) -> Result<HistoryRequest> {
         witnesses,
         addresses,
         requested_joints,
+        // here we can't give an empty vec, just make up one
         known_stable_units: vec!["v|NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=".to_string()],
     };
 
@@ -39,12 +42,12 @@ pub fn get_history(db: &Connection) -> Result<HistoryRequest> {
          SELECT unit FROM outputs JOIN units USING(unit) WHERE is_stable=1 AND address IN({})", 
         addresses_list, addresses_list);
     let mut stmt = db.prepare_cached(&sql)?;
-    let known_stable_units_ = stmt
+    let known_stable_units = stmt
         .query_map(&[], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
 
-    if !known_stable_units_.is_empty() {
-        req_history.known_stable_units = known_stable_units_;
+    if !known_stable_units.is_empty() {
+        req_history.known_stable_units = known_stable_units;
     }
 
     Ok(req_history)

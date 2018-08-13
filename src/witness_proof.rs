@@ -139,7 +139,7 @@ pub struct ProcessWitnessProof {
 pub fn process_witness_proof(
     db: &Connection,
     unstable_mc_joints: &[Joint],
-    witness_change_and_definition: Vec<Joint>,
+    witness_change_and_definition: &[Joint],
     from_current: bool,
 ) -> Result<ProcessWitnessProof> {
     let mut parent_units = Vec::new();
@@ -190,7 +190,7 @@ pub fn process_witness_proof(
     );
 
     // changes and definitions of witnesses
-    for joint in &witness_change_and_definition {
+    for joint in witness_change_and_definition {
         ensure!(
             joint.ball.is_some(),
             "witness_change_and_definition_joints: joint without ball"
