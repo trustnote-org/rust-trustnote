@@ -126,10 +126,10 @@ pub fn wallet_id(wallet_pubk: &ExtendedPubKey) -> String {
 }
 
 /// sign for hash, return base64 string
-pub fn sign(hash: &str, prvk: &ExtendedPrivKey) -> Result<String> {
-    let hash = base64::decode(hash)?;
+pub fn sign(hash: &[u8], prvk: &ExtendedPrivKey) -> Result<String> {
+    // let hash = base64::decode(hash)?;
     //Sign it with the secret key
-    let msg = secp256k1::Message::from_slice(&hash)?;
+    let msg = secp256k1::Message::from_slice(hash)?;
     let recoverable = SECP256K1.sign_recoverable(&msg, &prvk.secret_key)?;
     let (_, sig) = recoverable.serialize_compact(&SECP256K1);
     Ok(base64::encode(&sig[..]))
@@ -186,6 +186,7 @@ fn test_wallet_pubkey() -> Result<()> {
 fn test_sign_and_verify() -> Result<()> {
     // data must be a valid sha256 hash
     let hash = "KLop9582tzXZJbytWjiWLcnpEdvJI7mUymbnUPXweOM=";
+    let hash = base64::decode(hash)?;
     let wallet = 0;
     let is_change = false;
     let index = 0;

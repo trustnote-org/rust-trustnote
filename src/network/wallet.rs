@@ -93,6 +93,60 @@ impl WalletConn {
         self.send_request("heartbeat", &Value::Null)?;
         Ok(())
     }
+
+    pub fn prepare_payment(
+        &self,
+        address: &str,
+        amount: &str,
+        wallet_info_address: &str,
+    ) -> Result<::composer::Param> {
+        let address = address.to_string();
+        let amount = amount
+            .to_string()
+            .parse::<u32>()
+            .context(format!("pay amount '{}' is error", amount))?
+            * 1_000_000;
+
+        let light_props;
+        match self.get_parents_and_last_ball_and_witness_list_unit() {
+            Ok(res) => {
+                if res.parent_units.is_empty()
+                    || res.last_stable_mc_ball.is_none()
+                    || res.last_stable_mc_ball_unit.is_none()
+                {
+                    bail!("invalid parents or last stable mc ball");
+                }
+                light_props = res;
+            }
+            Err(e) => bail!(
+                "err : get_parents_and_last_ball_and_witness_list_unit err:{:?}",
+                e
+            ),
+        }
+
+        Ok(::composer::Param {
+            paying_addresses: vec![wallet_info_address.to_string()],
+            input_amount: Some(amount),
+            signing_addresses: Vec::new(),
+            outputs: vec![
+                ::spec::Output {
+                    address: Some(address.to_string()),
+                    amount: Some(amount as i64),
+                },
+                ::spec::Output {
+                    address: Some(wallet_info_address.to_string()),
+                    amount: Some(0),
+                },
+            ],
+            messages: Vec::new(),
+            light_props: light_props,
+            earned_headers_commission_recipients: Vec::new(),
+            witnesses: Vec::new(),
+            inputs: Vec::new(),
+            send_all: false,
+        })
+    }
+
     pub fn post_joint(&self, joint: &Joint) -> Result<()> {
         self.send_request("post_joint", &serde_json::to_value(joint)?)?;
         Ok(())
@@ -101,11 +155,9 @@ impl WalletConn {
     pub fn get_parents_and_last_ball_and_witness_list_unit(
         &self,
     ) -> Result<LastStableBallAndParentUnitsAndWitnessListUnit> {
-        let witnesses = serde_json::to_value(&*my_witness::MY_WITNESSES)?;
-
         let resp = self.send_request(
             "light/get_parents_and_last_ball_and_witness_list_unit",
-            &witnesses,
+            &json!({"witnesses": &*my_witness::MY_WITNESSES}),
         )?;
 
         Ok(serde_json::from_value(resp)?)
