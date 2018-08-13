@@ -103,9 +103,9 @@ impl WalletConn {
         let address = address.to_string();
         let amount = amount
             .to_string()
-            .parse::<u32>()
+            .parse::<f64>()
             .context(format!("pay amount '{}' is error", amount))?
-            * 1_000_000;
+            * 1_000_000.0;
 
         let light_props;
         match self.get_parents_and_last_ball_and_witness_list_unit() {
