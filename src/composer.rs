@@ -536,7 +536,7 @@ pub struct Param {
     pub earned_headers_commission_recipients: Vec<spec::HeaderCommissionShare>,
     pub witnesses: Vec<String>,
     pub inputs: Vec<Input>,
-    pub input_amount: Option<f64>,
+    pub input_amount: Option<u32>,
     pub send_all: bool,
 }
 
@@ -703,7 +703,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
                 target_amount
             );
         }
-        total_input = f64::from(input_and_amount.amount);
+        total_input = input_and_amount.amount;
 
         match payment_message.payload {
             Some(Payload::Payment(ref mut x)) => {
