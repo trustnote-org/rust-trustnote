@@ -123,7 +123,8 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
 
 fn info(wallet_info: &WalletInfo) -> Result<()> {
     let address_pubk = wallet_info._00_address_pubk.to_base64_key();
-    let balance = wallet::get_balance(&wallet_info._00_address)? as f32 / 1000_000.0;
+    let db = db::DB_POOL.get_connection();
+    let balance = wallet::get_balance(&db, &wallet_info._00_address)? as f32 / 1000_000.0;
     println!("\ncurrent wallet info:\n");
     println!("device_address: {}", wallet_info.device_address);
     println!("wallet_public_key: {}", wallet_info.wallet_pubk.to_string());

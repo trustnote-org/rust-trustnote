@@ -12,17 +12,12 @@ pub fn update_wallet_address(
 ) -> Result<()> {
     let pubk_at_device = format!("$pubkey@{}", device_address);
     let definition_template = serde_json::to_string(&json!(["sig", { "pubkey": pubk_at_device }]))?;
-    // insert or ignore into wallets ('wallet', 'account', 'definition_template')
-    // values('3YgAjv3h6EhFmo4hBXkmwoszR51YXHjMgUS3EQXsuY8=', 0,
-    // '["sig",{"pubkey":"$pubkey@0EQ2LEGHQ6UEUYRBWLADZ6IYDNTOKRER7"}]');
     let mut stmt = db.prepare_cached(
         "INSERT OR IGNORE INTO wallets ('wallet', 'account', 'definition_template') \
          VALUES (?, 0, ?)",
     )?;
     stmt.execute(&[wallet_id, &definition_template])?;
 
-    // insert or ignore into wallet_signing_paths ('wallet', 'signing_path', 'device_address')
-    // values ('3YgAjv3h6EhFmo4hBXkmwoszR51YXHjMgUS3EQXsuY8=', 'r', '0EQ2LEGHQ6UEUYRBWLADZ6IYDNTOKRER7');
     let mut stmt = db.prepare_cached(
         "INSERT OR IGNORE INTO wallet_signing_paths ('wallet', 'signing_path', 'device_address') \
          VALUES (?, 'r', ?)",
@@ -34,9 +29,6 @@ pub fn update_wallet_address(
         "INSERT OR IGNORE INTO my_addresses ('address', 'wallet', 'is_change', 'address_index', 'definition') \
          VALUES (?, ?, 0, 0, ?)")?;
     stmt.execute(&[address, wallet_id, &definition])?;
-    // insert or ignore into my_addresses ('address', 'wallet', 'is_change', 'address_index', 'definition')
-    // values ('VSZLIBN4JCI2IMTKCVEM3B7AUQEERW46', '3YgAjv3h6EhFmo4hBXkmwoszR51YXHjMgUS3EQXsuY8=', 0, 0,
-    // '["sig",{"pubkey":"A925AsiHhyP0FCT2uLOW5Ezn6lQzGMG+RUrCXeIqUAMr"}]');
 
     Ok(())
 }
@@ -194,8 +186,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
     Ok(history_transactions)
 }
 
-pub fn get_balance(address: &str) -> Result<u32> {
-    let db = db::DB_POOL.get_connection();
+pub fn get_balance(db: &Connection, address: &str) -> Result<u32> {
     let mut stmt = db.prepare_cached(
         "SELECT asset, is_stable, SUM(amount) AS balance \
          FROM outputs JOIN units USING(unit) \
