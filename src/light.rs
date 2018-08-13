@@ -262,7 +262,7 @@ pub fn process_history(db: &Connection, history: &mut HistoryResponse) -> Result
     let joints_reverse = joints.iter().rev();
     for joint_r in joints_reverse {
         let unit = joint_r.get_unit_hash();
-        let sequence = if proven_units_non_serial.contains_key(unit) {
+        let sequence = if *proven_units_non_serial.get(unit).unwrap_or(&true) {
             String::from("final-bad")
         } else {
             String::from("good")
