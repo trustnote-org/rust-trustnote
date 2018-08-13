@@ -155,10 +155,7 @@ fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     update_wallet_address(&wallet_info)?;
     match ws.refresh_history() {
         Ok(_) => println!("refresh history done"),
-        Err(e) => {
-            eprintln!("refresh history failed, please 'sync' again\n err={:?}", e);
-            bail!("refresh history failed");
-        }
+        Err(e) => bail!("refresh history failed, err={:?}", e),
     }
     // TODO: print get history statistics
     Ok(())
@@ -170,16 +167,19 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
 
     if let Some(index) = index {
         if index <= histories.len() {
+            if index == 0 {
+                bail!("log index should start from 1");
+            }
             let history = &histories[index - 1];
             if history.amount > 0 {
-                println!("FROM: \t\t{}", history.address_from);
+                println!("FROM     : {}", history.address_from);
             } else {
-                println!("TO: \t\t{}", history.address_to);
+                println!("TO       : {}", history.address_to);
             }
-            println!("UNIT: \t\t{}", history.unit);
-            println!("AMOUNT: \t{} MN", history.amount / 1_000_000);
-            println!("DATE: \t\t{}", history.time);
-            println!("CONFIRMED: \t{}", history.confirmations);
+            println!("UNIT     : {}", history.unit);
+            println!("AMOUNT   : {} MN", history.amount / 1_000_000);
+            println!("DATE     : {}", history.time);
+            println!("CONFIRMED: {}", history.confirmations);
         }
     } else {
         for history in histories {
