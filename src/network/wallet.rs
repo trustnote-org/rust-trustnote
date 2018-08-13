@@ -19,13 +19,8 @@ use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
 
+#[derive(Default)]
 pub struct WalletData {}
-
-impl Default for WalletData {
-    fn default() -> Self {
-        WalletData {}
-    }
-}
 
 pub type WalletConn = WsConnection<WalletData>;
 

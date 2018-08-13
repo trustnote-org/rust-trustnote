@@ -6,7 +6,6 @@ authors = ["Xudong Huang <huangxu008@hotmail.com>"]
 license = "MIT"
 
 [dependencies]
-log = "0.4"
 rand = "0.5"
 sha2 = "0.7"
 base64 = "0.9"
