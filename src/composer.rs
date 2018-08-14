@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use config;
-use db;
 use error::Result;
 use joint::Joint;
 use light::LastStableBallAndParentUnitsAndWitnessListUnit;
@@ -161,8 +160,7 @@ fn issue_asset(
         let max_serial_numbers = stmt
             .query_map(&[asset.asset.as_ref().unwrap(), &issuer_address], |row| {
                 row.get(0)
-            })?
-            .collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
+            })?.collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
         let max_serial_number = if max_serial_numbers.is_empty() {
             0
         } else {
@@ -373,8 +371,7 @@ fn pick_multiple_coins_and_continue(
             address: row.get(4),
             blinding: row.get(5),
             ..Default::default()
-        })?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        })?.collect::<::std::result::Result<Vec<_>, _>>()?;
     for mut input in input_rows {
         input_info.required_amount += is_base as u32 * config::TRANSFER_INPUT_SIZE;
         input_info.inputs_and_amount = add_input(
@@ -460,8 +457,7 @@ fn pick_one_coin_just_bigger_and_continue(
                 blinding: row.get(5),
                 ..Default::default()
             },
-        )?
-        .collect::<::std::result::Result<Vec<_>, _>>()?;
+        )?.collect::<::std::result::Result<Vec<_>, _>>()?;
     if input_rows.len() == 1 {
         return add_input(
             input_info.inputs_and_amount,
@@ -541,7 +537,7 @@ fn pick_divisible_coins_for_amount(
     issue_asset(db, input_info, asset, is_base, send_all)
 }
 
-pub struct Param {
+pub struct ComposeInfo {
     pub signing_addresses: Vec<String>,
     pub paying_addresses: Vec<String>,
     pub outputs: Vec<Output>,
@@ -550,13 +546,12 @@ pub struct Param {
     pub earned_headers_commission_recipients: Vec<spec::HeaderCommissionShare>,
     pub witnesses: Vec<String>,
     pub inputs: Vec<Input>,
-    pub input_amount: Option<u32>,
+    pub input_amount: i64,
     pub send_all: bool,
 }
 
-// TODO: params name, ComposeInfo
-pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
-    let Param {
+pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T) -> Result<Joint> {
+    let ComposeInfo {
         mut signing_addresses,
         mut paying_addresses,
         outputs,
@@ -577,7 +572,6 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
     let external_outputs = outputs
         .into_iter()
         .filter(|output| output.amount > Some(0))
-        // .cloned()
         .collect::<Vec<_>>();
 
     if change_outputs.len() > 1 {
@@ -594,7 +588,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
         signing_addresses.append(&mut paying_addresses);
         signing_addresses.sort();
         signing_addresses
-    }; // FIXME: from_addresses = paying_addresses
+    };
 
     let mut payment_message = Message {
         app: "payment".to_string(),
@@ -613,10 +607,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
         spend_proofs: Vec::new(),
     };
 
-    let mut total_amount = 0;
-
     for output in external_outputs.into_iter() {
-        total_amount += output.amount.unwrap();
         match payment_message.payload {
             Some(Payload::Payment(ref mut x)) => x.outputs.push(output),
             _ => {}
@@ -651,8 +642,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
     unit.last_ball = last_stable_mc_ball;
     unit.last_ball_unit = last_stable_mc_ball_unit;
 
-    let db = db::DB_POOL.get_connection(); //FIXME: get db from main.rs
-    check_for_unstable_predecessors(&db, last_stable_mc_ball_mci, &from_addresses)?;
+    check_for_unstable_predecessors(db, last_stable_mc_ball_mci, &from_addresses)?;
 
     //authors
     for from_address in &from_addresses {
@@ -686,20 +676,16 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
     unit.headers_commission = Some(unit.get_header_size() + config::SIG_LENGTH as u32);
     let naked_payload_commission = unit.get_payload_size();
     if !inputs.is_empty() {
-        if input_amount.is_none() {
-            bail!("inputs but no input_amount");
-        }
-        total_input = input_amount.unwrap();
+        total_input = input_amount;
         match payment_message.payload {
             Some(Payload::Payment(ref mut x)) => x.inputs = inputs,
             _ => {}
         }
     } else {
-        //FIXME: total_amount = input_amount
         let target_amount = if params.send_all {
             ::std::i64::MAX
         } else {
-            total_amount + unit.headers_commission.unwrap() as i64 + naked_payload_commission as i64
+            input_amount + unit.headers_commission.unwrap() as i64 + naked_payload_commission as i64
         };
         let input_and_amount = pick_divisible_coins_for_amount(
             &db,
@@ -718,7 +704,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
                 target_amount
             );
         }
-        total_input = input_and_amount.amount;
+        total_input = input_and_amount.amount as i64;
 
         match payment_message.payload {
             Some(Payload::Payment(ref mut x)) => {
@@ -739,7 +725,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
         let payment_message = &mut unit.messages[0];
 
         let change = total_input as i64
-            - total_amount
+            - input_amount
             - unit.headers_commission.unwrap() as i64
             - unit.payload_commission.unwrap() as i64;
         if change <= 0 {
@@ -796,18 +782,23 @@ fn check_for_unstable_predecessors(
         .map(|v| format!("'{}'", v))
         .collect::<Vec<_>>()
         .join(",");
-    //FIXME: {}->?
-    let sql = format!("SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
-					WHERE  (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) AND definition_chash IS NOT NULL \
+    let mut stmt = db.prepare("SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
+					WHERE  (main_chain_index>? OR main_chain_index IS NULL) AND address IN(?) AND definition_chash IS NOT NULL \
 					UNION \
 					SELECT 1 FROM units JOIN address_definition_changes USING(unit) \
-					WHERE (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) \
+					WHERE (main_chain_index>? OR main_chain_index IS NULL) AND address IN(?) \
 					UNION \
 					SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
-					WHERE (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) AND sequence!='good'", last_ball_mci, addresses, last_ball_mci, addresses, last_ball_mci, addresses);
-    let mut stmt = db.prepare(&sql)?;
+					WHERE (main_chain_index>? OR main_chain_index IS NULL) AND address IN(?) AND sequence!='good'")?;
 
-    if stmt.exists(&[])? {
+    if stmt.exists(&[
+        &last_ball_mci,
+        &addresses,
+        &last_ball_mci,
+        &addresses,
+        &last_ball_mci,
+        &addresses,
+    ])? {
         bail!("some definition changes or definitions or nonserials are not stable yet");
     }
     Ok(())
