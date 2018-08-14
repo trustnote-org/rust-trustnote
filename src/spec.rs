@@ -49,7 +49,7 @@ pub struct Input {
     pub blinding: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Message {
     pub app: String,
     pub payload: Option<Payload>,

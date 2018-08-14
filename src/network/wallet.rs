@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::network::{Sender, Server, WsConnection};
+use composer;
 use config;
 use error::Result;
 use failure::ResultExt;
@@ -19,7 +20,6 @@ use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
-
 #[derive(Default)]
 pub struct WalletData {}
 
@@ -93,7 +93,7 @@ impl WalletConn {
     pub fn prepare_payment(
         &self,
         address_amount: &HashMap<&str, f64>,
-        _text: Option<&str>,
+        text: Option<&str>,
         wallet_info_address: &str,
     ) -> Result<::composer::Param> {
         let mut outputs = Vec::new();
@@ -126,12 +126,18 @@ impl WalletConn {
             ),
         }
 
+        let messages = if text.is_some() {
+            vec![composer::create_text_message(&text.unwrap().to_string())?]
+        } else {
+            vec![]
+        };
+
         Ok(::composer::Param {
             paying_addresses: vec![wallet_info_address.to_string()],
             input_amount: Some(amounts as u32),
             signing_addresses: Vec::new(),
             outputs: outputs,
-            messages: Vec::new(),
+            messages,
             light_props: light_props,
             earned_headers_commission_recipients: Vec::new(),
             witnesses: Vec::new(),
