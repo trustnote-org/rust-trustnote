@@ -554,7 +554,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
         input_amount,
         send_all,
     } = params;
-    //let _ = messages;
+
     let change_outputs = outputs
         .iter()
         .filter(|output| output.amount == Some(0))
