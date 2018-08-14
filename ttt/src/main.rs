@@ -108,9 +108,7 @@ fn init_database() -> Result<()> {
     // init the settings first, trustnote lib need this settings file
     let _settings = config::get_settings();
 
-    let mut db_path = ::std::env::current_dir()?;
-    db_path.push("trustnote_light.sqlite");
-    db::set_db_path(db_path);
+    db::use_wallet_db();
     let _db = db::DB_POOL.get_connection();
     Ok(())
 }
@@ -175,7 +173,7 @@ fn update_wallet_address(wallet_info: &WalletInfo) -> Result<()> {
 fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     update_wallet_address(&wallet_info)?;
     match ws.refresh_history() {
-        Ok(_) => println!("refresh history done"),
+        Ok(_) => println!("refresh history done\n"),
         Err(e) => bail!("refresh history failed, err={:?}", e),
     }
     // TODO: print get history statistics
@@ -218,11 +216,6 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
     Ok(())
 }
 
-// fn pause() {
-//     use std::io::Read;
-//     ::std::io::stdin().read(&mut [0; 1]).unwrap();
-// }
-
 fn send_payment(
     ws: &Arc<WalletConn>,
     db: &Connection,
@@ -234,7 +227,7 @@ fn send_payment(
     let joint = composer::compose_joint(db, payment, wallet_info)?;
     ws.post_joint(&joint)?;
 
-    println!("\nFROM  : {}", wallet_info._00_address);
+    println!("FROM  : {}", wallet_info._00_address);
     println!("TO    : ");
     for (address, amount) in address_amount {
         println!("      address : {}, amount : {}", address, amount);

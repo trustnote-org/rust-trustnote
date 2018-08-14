@@ -16,6 +16,8 @@ extern crate url;
 #[macro_use]
 extern crate failure;
 #[macro_use]
+extern crate rust_embed;
+#[macro_use]
 extern crate lazy_static;
 extern crate app_dirs;
 extern crate base32;

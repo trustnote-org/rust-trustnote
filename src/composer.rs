@@ -25,6 +25,7 @@ struct InputsAndAmount {
     amount: u32,
 }
 
+#[derive(Debug)]
 struct Asset {
     asset: Option<String>,
     issued_by_definer_only: Option<u32>,
@@ -793,30 +794,29 @@ fn check_for_unstable_predecessors(
         .map(|v| format!("'{}'", v))
         .collect::<Vec<_>>()
         .join(",");
-    let mut stmt = db.prepare("SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
-					WHERE  (main_chain_index>? OR main_chain_index IS NULL) AND address IN(?) AND definition_chash IS NOT NULL \
-					UNION \
-					SELECT 1 FROM units JOIN address_definition_changes USING(unit) \
-					WHERE (main_chain_index>? OR main_chain_index IS NULL) AND address IN(?) \
-					UNION \
-					SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
-					WHERE (main_chain_index>? OR main_chain_index IS NULL) AND address IN(?) AND sequence!='good'")?;
-
-    if stmt.exists(&[
-        &last_ball_mci,
-        &addresses,
-        &last_ball_mci,
-        &addresses,
-        &last_ball_mci,
-        &addresses,
-    ])? {
+    let sql = format!(
+        "SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
+		 WHERE  (main_chain_index>? OR main_chain_index IS NULL) AND address IN({}) AND definition_chash IS NOT NULL \
+		 UNION \
+		 SELECT 1 FROM units JOIN address_definition_changes USING(unit) \
+		 WHERE (main_chain_index>? OR main_chain_index IS NULL) AND address IN({}) \
+		 UNION \
+		 SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
+		 WHERE (main_chain_index>? OR main_chain_index IS NULL) AND address IN({}) AND sequence!='good'",
+        addresses, addresses, addresses);
+    let mut stmt = db.prepare(&sql)?;
+    if stmt.exists(&[&last_ball_mci, &last_ball_mci, &last_ball_mci])? {
         bail!("some definition changes or definitions or nonserials are not stable yet");
     }
     Ok(())
 }
 
 fn read_definition(db: &Connection, address: &String) -> Result<Value> {
-    let mut stmt = db.prepare_cached("SELECT definition FROM my_addresses WHERE address=? UNION SELECT definition FROM shared_addresses WHERE shared_address=?")?;
+    let mut stmt = db.prepare_cached(
+        "SELECT definition FROM my_addresses WHERE address=? \
+         UNION \
+         SELECT definition FROM shared_addresses WHERE shared_address=?",
+    )?;
     let rows = stmt
         .query_map(&[address, address], |row| row.get(0))?
         .collect::<::std::result::Result<Vec<String>, _>>()?;
@@ -825,6 +825,7 @@ fn read_definition(db: &Connection, address: &String) -> Result<Value> {
     }
     Ok(serde_json::from_str(&rows.into_iter().nth(0).unwrap())?)
 }
+
 pub fn create_text_message(text: &String) -> Result<spec::Message> {
     Ok(spec::Message {
         app: String::from("text"),

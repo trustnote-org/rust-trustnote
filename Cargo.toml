@@ -13,6 +13,7 @@ rand = "0.5"
 chrono = "0.4"
 config = "0.9"
 failure = "0.1"
+app_dirs = "1.2"
 indexmap = "1.0"
 num_cpus = "1"
 crossbeam = "0.4"
@@ -31,7 +32,8 @@ sha1 = "0.6"
 sha2 = "0.7"
 ripemd160 = "0.7"
 bit-vec = "0.5"
-app_dirs = "1.2"
+
+rust-embed = { git = "https://github.com/Xudong-Huang/rust-embed.git" }
 
 [dependencies.rusqlite]
 version = "0.13"

@@ -1,38 +1,42 @@
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use config;
-use crossbeam::atomic::ArcCell;
 use error::Result;
 use may;
 use may::sync::mpmc::{self, Receiver, Sender};
 use num_cpus;
 use rusqlite::{Connection, OpenFlags};
 
+#[derive(RustEmbed)]
+#[folder = "db/"]
+struct InitDatabase;
+
 lazy_static! {
-    static ref DB_PATH: ArcCell<PathBuf> = { ArcCell::new(Arc::new(config::get_database_path())) };
+    static ref IS_WALLET: AtomicBool = AtomicBool::new(false);
     pub static ref DB_POOL: DatabasePool = DatabasePool::new();
 }
 
-pub fn set_db_path(path: PathBuf) {
-    DB_PATH.set(Arc::new(path));
+pub fn use_wallet_db() {
+    IS_WALLET.store(true, Ordering::Relaxed);
 }
 
 fn create_database_if_necessary() -> Result<PathBuf> {
-    use std::fs;
-    let db_path = &*DB_PATH.get();
+    let is_wallet = IS_WALLET.load(Ordering::Relaxed);
+    let db_path = config::get_database_path(is_wallet);
     if !db_path.exists() {
-        let initial_db_path = config::get_initial_db_path();
-        fs::copy(&initial_db_path, db_path)?;
-        info!(
-            "create_database_if_necessary done: db_path: {:?}, initial db path: {}",
-            db_path, initial_db_path
-        );
+        let init_db = if is_wallet {
+            InitDatabase::get("initial.trustnote-light.sqlite")
+        } else {
+            InitDatabase::get("initial.trustnote.sqlite")
+        }.expect("failed to find init db");
+        info!("create_database_if_necessary done: db_path: {:?}", db_path);
+        ::std::fs::write(&db_path, init_db)?;
     }
 
-    Ok(db_path.clone())
+    Ok(db_path)
 }
 
 pub struct DatabasePool {

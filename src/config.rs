@@ -48,7 +48,7 @@ pub fn show_config() {
     println!("\nconfig:");
     println!("\tremote_hub = {:?}", get_remote_hub_url());
     println!("\thub_server_port = {}", get_hub_server_port());
-    println!("\tdatabase_path = {:?}", get_database_path());
+    println!("\tdatabase_path = {:?}", get_database_path(false));
     println!("\n");
 }
 
@@ -75,27 +75,28 @@ pub fn get_hub_server_port() -> u16 {
     cfg.get::<u16>("hub_server_port").unwrap_or(6615)
 }
 
-pub fn get_initial_db_path() -> String {
-    let cfg = CONFIG.read().unwrap();
-    cfg.get::<String>("initial_db_path")
-        .unwrap_or_else(|_| "db/initial.trustnote.sqlite".to_owned())
-}
-
-pub fn get_database_path() -> ::std::path::PathBuf {
+pub fn get_database_path(is_wallet: bool) -> ::std::path::PathBuf {
     use app_dirs::*;
-    use std::fs;
 
-    const APP_INFO: AppInfo = AppInfo {
-        name: "rust-trustnote",
-        author: "trustnote-hub",
-    };
+    // wallet use current working directory
+    if is_wallet {
+        let mut db_path = ::std::env::current_dir().expect("call current_dir failed");
+        db_path.push("trustnote_light.sqlite");
+        db_path
+    } else {
+        const APP_INFO: AppInfo = AppInfo {
+            name: "rust-trustnote",
+            author: "trustnote-hub",
+        };
 
-    let mut db_path = get_app_root(AppDataType::UserData, &APP_INFO)
-        .unwrap_or_else(|e| panic!("failed to get app dir, err={}", e));
-    if !db_path.exists() {
-        fs::create_dir_all(&db_path)
-            .unwrap_or_else(|e| panic!("failed to create database dir: {:?}, err={}", db_path, e));
+        let mut db_path = get_app_root(AppDataType::UserData, &APP_INFO)
+            .unwrap_or_else(|e| panic!("failed to get app dir, err={}", e));
+        if !db_path.exists() {
+            ::std::fs::create_dir_all(&db_path).unwrap_or_else(|e| {
+                panic!("failed to create database dir: {:?}, err={}", db_path, e)
+            });
+        }
+        db_path.push("trustnote.sqlite");
+        db_path
     }
-    db_path.push("trustnote.sqlite");
-    db_path
 }

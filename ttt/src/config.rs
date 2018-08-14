@@ -10,19 +10,18 @@ const SETTINGS_FILE: &str = "settings.json";
 pub struct Settings {
     pub hub_url: Vec<String>,
     pub mnemonic: String,
-    pub initial_db_path: String,
     pub genesis_unit: String,
     pub witnesses: Vec<String>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        let mut hub_url = Vec::new();
-        let mut genesis_unit = String::from("");
-        let mut witnesses = Vec::new();
+        let hub_url;
+        let genesis_unit;
+        let witnesses;
         if cfg!(debug_assertions) {
-            hub_url.push("119.28.86.54:6616".to_string());
-            genesis_unit = "V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=".to_string();
+            hub_url = vec![String::from("119.28.86.54:6616")];
+            genesis_unit = String::from("V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=");
             witnesses = vec![
                 String::from("6LDM27ELDDAJBTNTVVQQYW7MWOK3F6WD"),
                 String::from("BP2NYKORMOB5SEUTFSVPF2CMSQSVEZOS"),
@@ -38,8 +37,8 @@ impl Default for Settings {
                 String::from("UABSDF77S6SU4FDAXWTYIODVODCAA22A"),
             ];
         } else {
-            hub_url.push("raytest.trustnote.org".to_string());
-            genesis_unit = "MtzrZeOHHjqVZheuLylf0DX7zhp10nBsQX5e/+cA3PQ=".to_string();
+            hub_url = vec![String::from("raytest.trustnote.org:6616")];
+            genesis_unit = String::from("MtzrZeOHHjqVZheuLylf0DX7zhp10nBsQX5e/+cA3PQ=");
             witnesses = vec![
                 String::from("34NRY6HRBMWYMJQUKBF22R7JEKXYUHHW"),
                 String::from("3C3OHD7WEFKV6RDF2U4M74RVK7YMDP7I"),
@@ -61,7 +60,6 @@ impl Default for Settings {
             mnemonic: mnemonic("")
                 .expect("failed to generate mnemonic")
                 .to_string(),
-            initial_db_path: String::from("../db/initial.trustnote-light.sqlite"),
             genesis_unit,
             witnesses,
         }
