@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use config;
-use db;
 use error::Result;
 use joint::Joint;
 use light::LastStableBallAndParentUnitsAndWitnessListUnit;
@@ -14,19 +13,18 @@ use signature::Signer;
 use spec;
 use spec::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct InputWithProof {
     spend_proof: Option<spec::SpendProof>,
     input: Option<spec::Input>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct InputsAndAmount {
     input_with_proofs: Vec<InputWithProof>,
     amount: u32,
 }
 
-#[derive(Debug, Clone)]
 struct Asset {
     asset: Option<String>,
     issued_by_definer_only: Option<u32>,
@@ -36,7 +34,7 @@ struct Asset {
     is_private: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct InputInfo {
     multi_authored: bool,
     inputs_and_amount: InputsAndAmount,
@@ -175,7 +173,7 @@ fn issue_asset(
 
 fn add_input(
     mut inputs_and_amount: InputsAndAmount,
-    input: spec::Input,
+    mut input: spec::Input,
     asset: &Option<Asset>,
     multi_authored: bool,
 ) -> Result<InputsAndAmount> {
@@ -190,11 +188,17 @@ fn add_input(
         blinding: &'a Option<String>,
     }
 
-    inputs_and_amount.amount += input.amount.map_or(0, |v| v) as u32;
+    if let Some(amount) = input.amount {
+        if amount > 0 {
+            inputs_and_amount.amount += amount as u32;
+        }
+    }
+
     let mut input_with_proof = InputWithProof {
         spend_proof: None,
         input: None,
     };
+
     if asset.is_some() && asset.as_ref().unwrap().is_private {
         let spend_proof = object_hash::get_base64_hash(&TmpSpendProof {
             asset: &asset.as_ref().unwrap().asset,
@@ -216,16 +220,16 @@ fn add_input(
         input_with_proof.spend_proof = Some(spend_proof);
     }
 
-    input_with_proof.input = Some(input);
-
-    if !multi_authored || !input_with_proof.input.as_ref().unwrap().kind.is_none() {
-        input_with_proof.input.as_mut().unwrap().address = None;
+    if !multi_authored || !input.kind.is_none() {
+        input.address = None;
     }
 
-    input_with_proof.input.as_mut().unwrap().amount = None;
-    input_with_proof.input.as_mut().unwrap().blinding = None;
+    input.amount = None;
+    input.blinding = None;
+    input_with_proof.input = Some(input);
+
     inputs_and_amount.input_with_proofs.push(input_with_proof);
-    Ok(inputs_and_amount.clone())
+    Ok(inputs_and_amount)
 }
 
 fn finish(send_all: bool, inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
@@ -248,12 +252,13 @@ fn add_mc_inputs(
     max_mci: u32,
 ) -> Result<()> {
     for addr in &input_info.paying_addresses {
+        let adjust = if input_info.multi_authored {
+            config::ADDRESS_SIZE
+        } else {
+            0
+        };
         let target_amount =
-            input_info.required_amount + input_size + if input_info.multi_authored {
-                config::ADDRESS_SIZE
-            } else {
-                0
-            } - input_info.inputs_and_amount.amount;
+            input_info.required_amount + input_size + adjust - input_info.inputs_and_amount.amount;
         let mc_result = mc_outputs::find_mc_index_interval_to_target_amount(
             db,
             input_type,
@@ -334,7 +339,7 @@ fn add_headers_commission_inputs(
 fn pick_multiple_coins_and_continue(
     db: &Connection,
     asset: Option<Asset>,
-    spendable_addresses: String,
+    spendable_addresses: Vec<String>,
     mut input_info: InputInfo,
     is_base: bool,
     last_ball_mci: u32,
@@ -345,6 +350,13 @@ fn pick_multiple_coins_and_continue(
     } else {
         "=".to_string() + asset.as_ref().unwrap().asset.as_ref().unwrap()
     };
+
+    let addresses = spendable_addresses
+        .iter()
+        .map(|v| format!("'{}'", v))
+        .collect::<Vec<_>>()
+        .join(",");
+
     let sql = format!(
         "SELECT unit, message_index, output_index, amount, address, blinding \
          FROM outputs \
@@ -352,7 +364,7 @@ fn pick_multiple_coins_and_continue(
          WHERE address IN({}) AND asset {} AND is_spent=0 \
          AND is_stable=1 AND sequence='good' AND main_chain_index<=?  \
          ORDER BY amount DESC",
-        spendable_addresses, tmp_sql,
+        addresses, tmp_sql,
     );
     let mut stmt = db.prepare_cached(&sql)?;
 
@@ -366,6 +378,7 @@ fn pick_multiple_coins_and_continue(
             blinding: row.get(5),
             ..Default::default()
         })?.collect::<::std::result::Result<Vec<_>, _>>()?;
+
     for mut input in input_rows {
         input_info.required_amount += is_base as u32 * config::TRANSFER_INPUT_SIZE;
         input_info.inputs_and_amount = add_input(
@@ -383,6 +396,7 @@ fn pick_multiple_coins_and_continue(
             return Ok(input_info.inputs_and_amount);
         }
     }
+
     if asset.is_some() {
         return issue_asset(db, input_info, asset, is_base, send_all);
     } else {
@@ -399,30 +413,25 @@ fn pick_multiple_coins_and_continue(
 
 fn pick_one_coin_just_bigger_and_continue(
     db: &Connection,
-    spendable_addresses: String,
-    asset: Option<Asset>,
-    input_info: InputInfo,
+    spendable_addresses: &Vec<String>,
+    asset: &Option<Asset>,
+    input_info: &InputInfo,
     is_base: bool,
     last_ball_mci: u32,
-    send_all: bool,
-) -> Result<InputsAndAmount> {
-    if send_all {
-        return pick_multiple_coins_and_continue(
-            db,
-            asset,
-            spendable_addresses,
-            input_info,
-            is_base,
-            last_ball_mci,
-            send_all,
-        );
-    }
-    let tmp_sql = if asset.is_none() {
+) -> Result<spec::Input> {
+    let asset_tmp = if asset.is_none() {
         " IS NULL".to_string()
     } else {
         "=".to_string() + asset.as_ref().unwrap().asset.as_ref().unwrap()
     };
+
     let more = if is_base { ">" } else { ">=" };
+
+    let addresses = spendable_addresses
+        .iter()
+        .map(|v| format!("'{}'", v))
+        .collect::<Vec<_>>()
+        .join(",");
 
     let sql = format!(
         "SELECT unit, message_index, output_index, amount, blinding, address \
@@ -431,7 +440,7 @@ fn pick_one_coin_just_bigger_and_continue(
          WHERE address IN({}) AND asset{} AND is_spent=0 AND amount {} ? \
          AND is_stable=1 AND sequence='good' AND main_chain_index<=?  \
          ORDER BY amount LIMIT 1",
-        spendable_addresses, tmp_sql, more
+        addresses, asset_tmp, more
     );
     let mut stmt = db.prepare_cached(&sql)?;
 
@@ -452,26 +461,12 @@ fn pick_one_coin_just_bigger_and_continue(
             },
         )?.collect::<::std::result::Result<Vec<_>, _>>()?;
     if input_rows.len() == 1 {
-        return add_input(
-            input_info.inputs_and_amount,
-            input_rows[0].clone(),
-            &asset,
-            input_info.multi_authored,
-        );
+        return Ok(input_rows.into_iter().nth(0).unwrap());
     } else {
-        return pick_multiple_coins_and_continue(
-            db,
-            asset,
-            spendable_addresses,
-            input_info,
-            is_base,
-            last_ball_mci,
-            send_all,
-        );
+        bail!("no needed input")
     }
 }
 
-#[allow(dead_code)]
 fn pick_divisible_coins_for_amount(
     db: &Connection,
     asset: Option<Asset>,
@@ -483,51 +478,74 @@ fn pick_divisible_coins_for_amount(
 ) -> Result<InputsAndAmount> {
     let is_base = if asset.is_none() { true } else { false };
 
-    let mut spendable = paying_addresses
-        .iter()
-        .map(|v| format!("'{}'", v))
-        .collect::<Vec<_>>()
-        .join(",");
-    println!("spendable = {}", spendable);
+    let mut spendable_addresses = paying_addresses.clone();
+
+    debug!("spendable_addresses = {:?}", spendable_addresses);
+
+    //now asset is None
+    if let Some(tmp) = &asset {
+        spendable_addresses = spendable_addresses
+            .into_iter()
+            .filter(|v| v != &tmp.definer_address)
+            .collect::<Vec<_>>()
+    }
+
     let input_info = InputInfo {
-        multi_authored: multi_authored,
+        multi_authored,
         inputs_and_amount: InputsAndAmount {
             input_with_proofs: Vec::new(),
             amount: 0,
         },
-        paying_addresses: paying_addresses,
+        paying_addresses,
         required_amount: amount,
     };
 
-    if let Some(tmp) = &asset {
-        let mut spendable_addresses = input_info
-            .paying_addresses
-            .iter()
-            .filter(|&v| v != &tmp.definer_address)
-            .collect::<Vec<_>>();
-        spendable = spendable_addresses
-            .iter()
-            .map(|v| format!("'{}'", v))
-            .collect::<Vec<_>>()
-            .join(",")
-    }
+    if !spendable_addresses.is_empty() {
+        if send_all {
+            return pick_multiple_coins_and_continue(
+                db,
+                asset,
+                spendable_addresses,
+                input_info,
+                is_base,
+                last_ball_mci,
+                send_all,
+            );
+        }
 
-    if spendable.len() > 0 {
-        return pick_one_coin_just_bigger_and_continue(
+        let input = pick_one_coin_just_bigger_and_continue(
             db,
-            spendable,
-            asset,
-            input_info,
+            &spendable_addresses,
+            &asset,
+            &input_info,
             is_base,
             last_ball_mci,
-            send_all,
         );
+
+        if let Ok(input) = input {
+            return add_input(
+                input_info.inputs_and_amount,
+                input,
+                &asset,
+                input_info.multi_authored,
+            );
+        } else {
+            return pick_multiple_coins_and_continue(
+                db,
+                asset,
+                spendable_addresses,
+                input_info,
+                is_base,
+                last_ball_mci,
+                send_all,
+            );
+        }
     }
 
     issue_asset(db, input_info, asset, is_base, send_all)
 }
 
-pub struct Param {
+pub struct ComposeInfo {
     pub signing_addresses: Vec<String>,
     pub paying_addresses: Vec<String>,
     pub outputs: Vec<Output>,
@@ -536,13 +554,12 @@ pub struct Param {
     pub earned_headers_commission_recipients: Vec<spec::HeaderCommissionShare>,
     pub witnesses: Vec<String>,
     pub inputs: Vec<Input>,
-    pub input_amount: Option<u32>,
+    pub input_amount: i64,
     pub send_all: bool,
 }
 
-// TODO: params name
-pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
-    let Param {
+pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T) -> Result<Joint> {
+    let ComposeInfo {
         mut signing_addresses,
         mut paying_addresses,
         outputs,
@@ -554,16 +571,15 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
         input_amount,
         send_all,
     } = params;
-    let _ = messages;
+
     let change_outputs = outputs
         .iter()
         .filter(|output| output.amount == Some(0))
         .cloned()
         .collect::<Vec<_>>();
     let external_outputs = outputs
-        .iter()
+        .into_iter()
         .filter(|output| output.amount > Some(0))
-        .clone()
         .collect::<Vec<_>>();
 
     if change_outputs.len() > 1 {
@@ -599,18 +615,18 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
         spend_proofs: Vec::new(),
     };
 
-    let mut total_amount = 0;
-
     for output in external_outputs.into_iter() {
         match payment_message.payload {
-            Some(Payload::Payment(ref mut x)) => x.outputs.push(output.clone()),
+            Some(Payload::Payment(ref mut x)) => x.outputs.push(output),
             _ => {}
         }
-        total_amount += output.amount.unwrap();
     }
 
     let is_multi_authored = from_addresses.len() > 1;
-    let mut unit = Unit::default();
+    let mut unit = Unit {
+        messages,
+        ..Default::default()
+    };
 
     if !earned_headers_commission_recipients.is_empty() {
         earned_headers_commission_recipients.sort_by(|a, b| a.address.cmp(&b.address));
@@ -637,8 +653,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
     unit.last_ball = last_stable_mc_ball;
     unit.last_ball_unit = last_stable_mc_ball_unit;
 
-    let db = db::DB_POOL.get_connection();
-    check_for_unstable_predecessors(&db, last_stable_mc_ball_mci, &from_addresses)?;
+    check_for_unstable_predecessors(db, last_stable_mc_ball_mci, &from_addresses)?;
 
     //authors
     for from_address in &from_addresses {
@@ -672,10 +687,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
     unit.headers_commission = Some(unit.get_header_size() + config::SIG_LENGTH as u32);
     let naked_payload_commission = unit.get_payload_size();
     if !inputs.is_empty() {
-        if input_amount.is_none() {
-            bail!("inputs but no input_amount");
-        }
-        total_input = input_amount.unwrap();
+        total_input = input_amount;
         match payment_message.payload {
             Some(Payload::Payment(ref mut x)) => x.inputs = inputs,
             _ => {}
@@ -684,7 +696,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
         let target_amount = if params.send_all {
             ::std::i64::MAX
         } else {
-            total_amount + unit.headers_commission.unwrap() as i64 + naked_payload_commission as i64
+            input_amount + unit.headers_commission.unwrap() as i64 + naked_payload_commission as i64
         };
         let input_and_amount = pick_divisible_coins_for_amount(
             &db,
@@ -695,7 +707,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
             is_multi_authored,
             send_all,
         )?;
-        println!("input_and_amount = {:?}", input_and_amount);
+        debug!("input_and_amount = {:?}", input_and_amount);
         if input_and_amount.input_with_proofs.is_empty() {
             bail!(
                 "NOT_ENOUGH_FUNDS, not enough spendable funds from {:?} for {}",
@@ -703,54 +715,55 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
                 target_amount
             );
         }
-        total_input = input_and_amount.amount;
+        total_input = input_and_amount.amount as i64;
 
         match payment_message.payload {
             Some(Payload::Payment(ref mut x)) => {
-                for input in input_and_amount.input_with_proofs.iter() {
-                    x.inputs.push(input.input.clone().unwrap());
+                for input in input_and_amount.input_with_proofs.into_iter() {
+                    x.inputs.push(input.input.unwrap());
                 }
             }
             _ => {}
         }
     }
-    unit.messages.push(payment_message.clone());
+    unit.messages.push(payment_message);
     unit.payload_commission = Some(unit.get_payload_size() + config::HASH_LENGTH as u32);
     info!(
         "inputs increased payload by {}",
         unit.payload_commission.unwrap() - naked_payload_commission
     );
-    unit.messages.pop();
+    {
+        let payment_message = unit.messages.last_mut().unwrap();
 
-    let change = total_input as i64
-        - total_amount
-        - unit.headers_commission.unwrap() as i64
-        - unit.payload_commission.unwrap() as i64;
-    if change <= 0 {
-        if !send_all {
-            bail!("change = {}", change);
+        let change = total_input as i64
+            - input_amount
+            - unit.headers_commission.unwrap() as i64
+            - unit.payload_commission.unwrap() as i64;
+        if change <= 0 {
+            if !send_all {
+                bail!("change = {}", change);
+            }
+            bail!(
+                "NOT_ENOUGH_FUNDS: not enough spendable funds from {:?} for fees",
+                paying_addresses
+            );
         }
-        bail!(
-            "NOT_ENOUGH_FUNDS: not enough spendable funds from {:?} for fees",
-            paying_addresses
-        );
-    }
-    match payment_message.payload {
-        Some(Payload::Payment(ref mut x)) => {
-            x.outputs[0].amount = Some(change);
-            x.outputs.sort_by(|a, b| {
-                if a.address == b.address {
-                    a.amount.cmp(&b.amount)
-                } else {
-                    a.address.cmp(&b.address)
-                }
-            });
+        match payment_message.payload {
+            Some(Payload::Payment(ref mut x)) => {
+                x.outputs[0].amount = Some(change);
+                x.outputs.sort_by(|a, b| {
+                    if a.address == b.address {
+                        a.amount.cmp(&b.amount)
+                    } else {
+                        a.address.cmp(&b.address)
+                    }
+                });
 
-            payment_message.payload_hash = object_hash::get_base64_hash(&x)?;
+                payment_message.payload_hash = object_hash::get_base64_hash(&x)?;
+            }
+            _ => {}
         }
-        _ => {}
     }
-    unit.messages.push(payment_message);
 
     let unit_hash = unit.get_unit_hash_to_sign();
     for mut author in &mut unit.authors {
@@ -761,7 +774,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
     unit.timestamp = Some(::time::now() / 1000);
     unit.unit = Some(unit.get_unit_hash());
 
-    // println!("-----unit---------{}", serde_json::to_string_pretty(&unit)?);
+    debug!("-----unit---------{}", serde_json::to_string_pretty(&unit)?);
     Ok(Joint {
         ball: None,
         skiplist_units: Vec::new(),
@@ -780,19 +793,23 @@ fn check_for_unstable_predecessors(
         .map(|v| format!("'{}'", v))
         .collect::<Vec<_>>()
         .join(",");
-    let sql = format!("SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
-					WHERE  (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) AND definition_chash IS NOT NULL \
+    let mut stmt = db.prepare("SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
+					WHERE  (main_chain_index>? OR main_chain_index IS NULL) AND address IN(?) AND definition_chash IS NOT NULL \
 					UNION \
 					SELECT 1 FROM units JOIN address_definition_changes USING(unit) \
-					WHERE (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) \
+					WHERE (main_chain_index>? OR main_chain_index IS NULL) AND address IN(?) \
 					UNION \
 					SELECT 1 FROM units CROSS JOIN unit_authors USING(unit) \
-					WHERE (main_chain_index>{} OR main_chain_index IS NULL) AND address IN({}) AND sequence!='good'", last_ball_mci, addresses, last_ball_mci, addresses, last_ball_mci, addresses);
-    let mut stmt = db.prepare_cached(&sql)?;
-    // let rows = stmt.exist(&[])?;
-    // .query_map(&[], |row| row.get(0))?
-    // .collect::<::std::result::Result<Vec<String>, _>>()?;
-    if stmt.exists(&[])? {
+					WHERE (main_chain_index>? OR main_chain_index IS NULL) AND address IN(?) AND sequence!='good'")?;
+
+    if stmt.exists(&[
+        &last_ball_mci,
+        &addresses,
+        &last_ball_mci,
+        &addresses,
+        &last_ball_mci,
+        &addresses,
+    ])? {
         bail!("some definition changes or definitions or nonserials are not stable yet");
     }
     Ok(())
@@ -808,12 +825,12 @@ fn read_definition(db: &Connection, address: &String) -> Result<Value> {
     }
     Ok(serde_json::from_str(&rows.into_iter().nth(0).unwrap())?)
 }
-
-#[allow(dead_code)]
-fn read_signing_paths(
-    _db: &Connection,
-    _from_address: String,
-    _signer: &String,
-) -> Result<HashMap<String, Vec<String>>> {
-    unimplemented!()
+pub fn create_text_message(text: &String) -> Result<spec::Message> {
+    Ok(spec::Message {
+        app: String::from("text"),
+        payload_location: String::from("inline"),
+        payload_hash: object_hash::get_base64_hash(text)?,
+        payload: Some(spec::Payload::Text(text.to_string())),
+        ..Default::default()
+    })
 }

@@ -1,8 +1,12 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
+use composer::{self, ComposeInfo};
 use error::Result;
+use network::wallet::WalletConn;
 use rusqlite::Connection;
 use serde_json;
+use spec::Output;
 
 pub fn update_wallet_address(
     db: &Connection,
@@ -240,4 +244,59 @@ pub fn get_balance(db: &Connection, address: &str) -> Result<u32> {
     let total = stmt.query_row(&[&address], |row| row.get(2)).unwrap_or(0);
 
     Ok(total)
+}
+
+pub fn prepare_payment(
+    ws: &Arc<WalletConn>,
+    address_amount: &Vec<(&str, f64)>,
+    text: Option<&str>,
+    wallet_info_address: &str,
+) -> Result<ComposeInfo> {
+    let mut outputs = Vec::new();
+    for (address, amount) in address_amount.into_iter() {
+        outputs.push(Output {
+            address: Some(address.to_string()),
+            amount: Some((amount * 1_000_000.0).round() as i64),
+        });
+    }
+    let amounts = outputs.iter().fold(0, |acc, x| acc + x.amount.unwrap());
+    outputs.push(Output {
+        address: Some(wallet_info_address.to_string()),
+        amount: Some(0),
+    });
+
+    let light_props = match ws.get_parents_and_last_ball_and_witness_list_unit() {
+        Ok(res) => {
+            if res.parent_units.is_empty()
+                || res.last_stable_mc_ball.is_none()
+                || res.last_stable_mc_ball_unit.is_none()
+            {
+                bail!("invalid parents or last stable mc ball");
+            }
+            res
+        }
+        Err(e) => bail!(
+            "err : get_parents_and_last_ball_and_witness_list_unit err:{:?}",
+            e
+        ),
+    };
+
+    let messages = if text.is_some() {
+        vec![composer::create_text_message(&text.unwrap().to_string())?]
+    } else {
+        vec![]
+    };
+
+    Ok(ComposeInfo {
+        paying_addresses: vec![wallet_info_address.to_string()],
+        input_amount: amounts,
+        signing_addresses: Vec::new(),
+        outputs: outputs,
+        messages,
+        light_props: light_props,
+        earned_headers_commission_recipients: Vec::new(),
+        witnesses: Vec::new(),
+        inputs: Vec::new(),
+        send_all: false, // FIXME: now send_all is always false
+    })
 }

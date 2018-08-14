@@ -49,7 +49,7 @@ pub struct Input {
     pub blinding: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct Message {
     pub app: String,
     pub payload: Option<Payload>,
@@ -65,6 +65,7 @@ pub struct Message {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+// FIXME: try remove Option
 pub struct Output {
     pub address: Option<String>,
     pub amount: Option<i64>,

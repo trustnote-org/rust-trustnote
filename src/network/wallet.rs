@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::time::Duration;
@@ -88,56 +87,6 @@ impl WalletConn {
     fn send_heartbeat(&self) -> Result<()> {
         self.send_request("heartbeat", &Value::Null)?;
         Ok(())
-    }
-
-    pub fn prepare_payment(
-        &self,
-        address_amount: &HashMap<&str, f64>,
-        _text: Option<&str>,
-        wallet_info_address: &str,
-    ) -> Result<::composer::Param> {
-        let mut outputs = Vec::new();
-        for (address, amount) in address_amount.into_iter() {
-            outputs.push(::spec::Output {
-                address: Some(address.to_string()),
-                amount: Some((amount * 1_000_000.0).round() as i64),
-            });
-        }
-        let amounts = outputs.iter().fold(0, |acc, x| acc + x.amount.unwrap());
-        outputs.push(::spec::Output {
-            address: Some(wallet_info_address.to_string()),
-            amount: Some(0),
-        });
-
-        let light_props;
-        match self.get_parents_and_last_ball_and_witness_list_unit() {
-            Ok(res) => {
-                if res.parent_units.is_empty()
-                    || res.last_stable_mc_ball.is_none()
-                    || res.last_stable_mc_ball_unit.is_none()
-                {
-                    bail!("invalid parents or last stable mc ball");
-                }
-                light_props = res;
-            }
-            Err(e) => bail!(
-                "err : get_parents_and_last_ball_and_witness_list_unit err:{:?}",
-                e
-            ),
-        }
-
-        Ok(::composer::Param {
-            paying_addresses: vec![wallet_info_address.to_string()],
-            input_amount: Some(amounts as u32),
-            signing_addresses: Vec::new(),
-            outputs: outputs,
-            messages: Vec::new(),
-            light_props: light_props,
-            earned_headers_commission_recipients: Vec::new(),
-            witnesses: Vec::new(),
-            inputs: Vec::new(),
-            send_all: false,
-        })
     }
 
     pub fn post_joint(&self, joint: &Joint) -> Result<()> {

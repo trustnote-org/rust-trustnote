@@ -10,6 +10,7 @@ extern crate serde_derive;
 extern crate chrono;
 extern crate fern;
 extern crate may;
+extern crate rusqlite;
 extern crate serde;
 extern crate serde_json;
 extern crate trustnote;
@@ -17,13 +18,13 @@ extern crate trustnote_wallet_base;
 
 mod config;
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{Local, TimeZone};
 use clap::App;
 use composer;
 use failure::ResultExt;
+use rusqlite::Connection;
 use trustnote::network::wallet::WalletConn;
 use trustnote::*;
 use trustnote_wallet_base::{Base64KeyExt, ExtendedPrivKey, ExtendedPubKey, Mnemonic};
@@ -217,30 +218,29 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
     Ok(())
 }
 
-fn pause() {
-    use std::io::Read;
-    ::std::io::stdin().read(&mut [0; 1]).unwrap();
-}
+// fn pause() {
+//     use std::io::Read;
+//     ::std::io::stdin().read(&mut [0; 1]).unwrap();
+// }
 
 fn send_payment(
     ws: &Arc<WalletConn>,
+    db: &Connection,
     text: Option<&str>,
-    address_amount: &HashMap<&str, f64>,
+    address_amount: &Vec<(&str, f64)>,
     wallet_info: &WalletInfo,
 ) -> Result<()> {
-    let payment = ws.prepare_payment(address_amount, text, &wallet_info._00_address)?;
-    let joint = composer::compose_joint(payment, wallet_info)?;
+    let payment = wallet::prepare_payment(ws, address_amount, text, &wallet_info._00_address)?;
+    let joint = composer::compose_joint(db, payment, wallet_info)?;
     ws.post_joint(&joint)?;
-    println!("FROM  : {}", wallet_info._00_address);
+
+    println!("\nFROM  : {}", wallet_info._00_address);
     println!("TO    : ");
-    for address in address_amount.keys() {
-        println!("        {}", address);
+    for (address, amount) in address_amount {
+        println!("      address : {}, amount : {}", address, amount);
     }
-    println!("UNIT  : {:?}", joint.unit.unit);
-    println!("AMOUNT: ");
-    for amount in address_amount.values() {
-        println!("        {}", amount);
-    }
+    println!("UNIT  : {}", joint.unit.unit.unwrap());
+    println!("TEXT  : {}", text.unwrap_or(""));
     println!("DATE  : {}", time::now());
     Ok(())
 }
@@ -292,21 +292,23 @@ fn main() -> Result<()> {
     }
 
     //Send
+    let db = db::DB_POOL.get_connection();
     if let Some(send) = m.subcommand_matches("send") {
-        let mut address_amount = HashMap::new();
+        let mut address_amount = Vec::new();
         if let Some(pay) = send.values_of("pay") {
             //TODO: Some syntax check for address and amount
             let v = pay.collect::<Vec<_>>();
             for arg in v.chunks(2) {
-                address_amount.insert(arg[0], arg[1].parse::<f64>().context("invalid amount arg")?);
+                address_amount.push((arg[0], arg[1].parse::<f64>().context("invalid amount arg")?));
             }
         }
 
         let text = send.value_of("text");
 
-        send_payment(&ws, text, &address_amount, &wallet_info)?;
+        sync(&ws, &wallet_info)?;
+
+        send_payment(&ws, &db, text, &address_amount, &wallet_info)?;
     }
 
-    pause();
     Ok(())
 }
