@@ -100,7 +100,7 @@ impl WalletConn {
         for (address, amount) in address_amount.into_iter() {
             outputs.push(::spec::Output {
                 address: Some(address.to_string()),
-                amount: Some((amount * 1_000_000.0).round() as i64),
+                amount: Some((amount * 1_000_000.0).round() as i64), //FIXME: amount check
             });
         }
         let amounts = outputs.iter().fold(0, |acc, x| acc + x.amount.unwrap());
@@ -109,8 +109,7 @@ impl WalletConn {
             amount: Some(0),
         });
 
-        let light_props;
-        match self.get_parents_and_last_ball_and_witness_list_unit() {
+        let light_props = match self.get_parents_and_last_ball_and_witness_list_unit() {
             Ok(res) => {
                 if res.parent_units.is_empty()
                     || res.last_stable_mc_ball.is_none()
@@ -118,25 +117,25 @@ impl WalletConn {
                 {
                     bail!("invalid parents or last stable mc ball");
                 }
-                light_props = res;
+                res
             }
             Err(e) => bail!(
                 "err : get_parents_and_last_ball_and_witness_list_unit err:{:?}",
                 e
             ),
-        }
-
+        };
+        //FIXME: fix params
         Ok(::composer::Param {
             paying_addresses: vec![wallet_info_address.to_string()],
             input_amount: Some(amounts as u32),
             signing_addresses: Vec::new(),
             outputs: outputs,
-            messages: Vec::new(),
+            messages: Vec::new(), //FIXME: add text
             light_props: light_props,
             earned_headers_commission_recipients: Vec::new(),
             witnesses: Vec::new(),
             inputs: Vec::new(),
-            send_all: false,
+            send_all: false, // FIXME: what's this
         })
     }
 

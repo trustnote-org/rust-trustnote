@@ -94,7 +94,8 @@ fn init_log(verbosity: u64) {
                 record.target(),
                 message
             ))
-        }).level(log_lvl)
+        })
+        .level(log_lvl)
         .chain(std::io::stdout())
         .apply()
         .unwrap();
@@ -228,7 +229,7 @@ fn send_payment(
     address_amount: &HashMap<&str, f64>,
     wallet_info: &WalletInfo,
 ) -> Result<()> {
-    let payment = ws.prepare_payment(address_amount, text, &wallet_info._00_address)?;
+    let payment = ws.prepare_payment(address_amount, text, &wallet_info._00_address)?; //FIXME: move this out of ws
     let joint = composer::compose_joint(payment, wallet_info)?;
     ws.post_joint(&joint)?;
     println!("FROM  : {}", wallet_info._00_address);
@@ -307,6 +308,5 @@ fn main() -> Result<()> {
         send_payment(&ws, text, &address_amount, &wallet_info)?;
     }
 
-    pause();
     Ok(())
 }
