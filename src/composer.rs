@@ -235,12 +235,11 @@ fn add_input(
 
 fn finish(send_all: bool, inputs_and_amount: InputsAndAmount) -> Result<InputsAndAmount> {
     if !send_all || inputs_and_amount.input_with_proofs.is_empty() {
-        bail!(
-            "error_code: NOT_ENOUGH_FUNDS 
-             error: not enough spendable funds from {:?} for {}",
-            inputs_and_amount.input_with_proofs,
-            inputs_and_amount.amount
-        )
+        debug!(
+            "NOT_ENOUGH_FUNDS, inputs_and_amount:{:?}",
+            inputs_and_amount
+        );
+        bail!("NOT_ENOUGH_FUNDS, maybe try later");
     }
     Ok(inputs_and_amount)
 }
