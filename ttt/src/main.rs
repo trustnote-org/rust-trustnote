@@ -300,7 +300,6 @@ fn main() -> Result<()> {
             for arg in v.chunks(2) {
                 address_amount.insert(arg[0], arg[1].parse::<f64>().context("invalid amount arg")?);
             }
-            send_payment(&ws, &String::new(), &address_amount, &wallet_info)?;
         }
 
         let text = send.value_of("text");
