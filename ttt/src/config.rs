@@ -38,7 +38,7 @@ impl Default for Settings {
                 String::from("UABSDF77S6SU4FDAXWTYIODVODCAA22A"),
             ];
         } else {
-            hub_url.push("ws://raytest.trustnote.org".to_string());
+            hub_url.push("raytest.trustnote.org".to_string());
             genesis_unit = "MtzrZeOHHjqVZheuLylf0DX7zhp10nBsQX5e/+cA3PQ=".to_string();
             witnesses = vec![
                 String::from("34NRY6HRBMWYMJQUKBF22R7JEKXYUHHW"),
