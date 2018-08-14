@@ -17,11 +17,13 @@ extern crate trustnote_wallet_base;
 
 mod config;
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{Local, TimeZone};
 use clap::App;
 use composer;
+use failure::ResultExt;
 use trustnote::network::wallet::WalletConn;
 use trustnote::*;
 use trustnote_wallet_base::{Base64KeyExt, ExtendedPrivKey, ExtendedPubKey, Mnemonic};
@@ -222,17 +224,23 @@ fn pause() {
 
 fn send_payment(
     ws: &Arc<WalletConn>,
-    address: &str,
-    amount: &str,
+    text: Option<&str>,
+    address_amount: &HashMap<&str, f64>,
     wallet_info: &WalletInfo,
 ) -> Result<()> {
-    let payment = ws.prepare_payment(address, amount, &wallet_info._00_address)?;
+    let payment = ws.prepare_payment(address_amount, text, &wallet_info._00_address)?;
     let joint = composer::compose_joint(payment, wallet_info)?;
     ws.post_joint(&joint)?;
     println!("FROM  : {}", wallet_info._00_address);
-    println!("TO    : {}", address);
+    println!("TO    : ");
+    for address in address_amount.keys() {
+        println!("        {}", address);
+    }
     println!("UNIT  : {:?}", joint.unit.unit);
-    println!("AMOUNT: {}", amount);
+    println!("AMOUNT: ");
+    for amount in address_amount.values() {
+        println!("        {}", amount);
+    }
     println!("DATE  : {}", time::now());
     Ok(())
 }
@@ -285,17 +293,18 @@ fn main() -> Result<()> {
 
     //Send
     if let Some(send) = m.subcommand_matches("send") {
+        let mut address_amount = HashMap::new();
         if let Some(pay) = send.values_of("pay") {
             //TODO: Some syntax check for address and amount
             let v = pay.collect::<Vec<_>>();
             for arg in v.chunks(2) {
-                send_payment(&ws, arg[0], arg[1], &wallet_info)?;
+                address_amount.insert(arg[0], arg[1].parse::<f64>().context("invalid amount arg")?);
             }
         }
 
-        if let Some(text) = send.value_of("text") {
-            println!("Text message: '{}'", text);
-        }
+        let text = send.value_of("text");
+
+        send_payment(&ws, text, &address_amount, &wallet_info)?;
     }
 
     pause();

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use std::time::Duration;
@@ -91,16 +92,22 @@ impl WalletConn {
 
     pub fn prepare_payment(
         &self,
-        address: &str,
-        amount: &str,
+        address_amount: &HashMap<&str, f64>,
+        _text: Option<&str>,
         wallet_info_address: &str,
     ) -> Result<::composer::Param> {
-        let address = address.to_string();
-        let amount = (amount
-            .to_string()
-            .parse::<f64>()
-            .context(format!("pay amount '{}' is error", amount))?
-            * 1_000_000.0) as u32;
+        let mut outputs = Vec::new();
+        for (address, amount) in address_amount.into_iter() {
+            outputs.push(::spec::Output {
+                address: Some(address.to_string()),
+                amount: Some((amount * 1_000_000.0).round() as i64),
+            });
+        }
+        let amounts = outputs.iter().fold(0, |acc, x| acc + x.amount.unwrap());
+        outputs.push(::spec::Output {
+            address: Some(wallet_info_address.to_string()),
+            amount: Some(0),
+        });
 
         let light_props;
         match self.get_parents_and_last_ball_and_witness_list_unit() {
@@ -121,18 +128,9 @@ impl WalletConn {
 
         Ok(::composer::Param {
             paying_addresses: vec![wallet_info_address.to_string()],
-            input_amount: Some(amount),
+            input_amount: Some(amounts as u32),
             signing_addresses: Vec::new(),
-            outputs: vec![
-                ::spec::Output {
-                    address: Some(address.to_string()),
-                    amount: Some(amount as i64),
-                },
-                ::spec::Output {
-                    address: Some(wallet_info_address.to_string()),
-                    amount: Some(0),
-                },
-            ],
+            outputs: outputs,
             messages: Vec::new(),
             light_props: light_props,
             earned_headers_commission_recipients: Vec::new(),
