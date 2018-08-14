@@ -17,27 +17,52 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings {
-            hub_url: vec![String::from("119.28.86.54:6616")],
-            mnemonic: mnemonic("")
-                .expect("failed to generate mnemonic")
-                .to_string(),
-            initial_db_path: String::from("../db/initial.trustnote-light.sqlite"),
-            genesis_unit: String::from("V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU="),
-            witnesses: vec![
-                String::from("6LDM27ELDDAJBTNTVVQQYW7MWOK3F6WD"),
-                String::from("BP2NYKORMOB5SEUTFSVPF2CMSQSVEZOS"),
-                String::from("C6D4XKXDO4JAUT3BR27RM3UHKYGILR3X"),
-                String::from("CGCU5BBDWY2ZU3XKUXNGDTXDY7VXXJNJ"),
-                String::from("E45DPZHBPI7YX3CDG7HWTWBWRNGBV6C3"),
-                String::from("EPG47NW4DDKIBUFZBDVQU3KHYCCMXTDN"),
-                String::from("FF6X4KX3OOAAZUYWXDAHQJIJ5HDZLSXL"),
-                String::from("JVFHPXAA7FJEJU3TSTR5ETYVOXHOBR4H"),
-                String::from("MWJTSFCRBCV2CVT3SCDYZW2F2N3JKPIP"),
-                String::from("NJSDFSIRZT5I5YQONDNEMKXSFNJPSO6A"),
-                String::from("OALYXCMDI6ODRWMY6YO6WUPL6Q5ZBAO5"),
-                String::from("UABSDF77S6SU4FDAXWTYIODVODCAA22A"),
-            ],
+        if cfg!(debug_assertions) {
+            Settings {
+                hub_url: vec![String::from("119.28.86.54:6616")],
+                mnemonic: mnemonic("")
+                    .expect("failed to generate mnemonic")
+                    .to_string(),
+                initial_db_path: String::from("../db/initial.trustnote-light.sqlite"),
+                genesis_unit: String::from("V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU="),
+                witnesses: vec![
+                    String::from("6LDM27ELDDAJBTNTVVQQYW7MWOK3F6WD"),
+                    String::from("BP2NYKORMOB5SEUTFSVPF2CMSQSVEZOS"),
+                    String::from("C6D4XKXDO4JAUT3BR27RM3UHKYGILR3X"),
+                    String::from("CGCU5BBDWY2ZU3XKUXNGDTXDY7VXXJNJ"),
+                    String::from("E45DPZHBPI7YX3CDG7HWTWBWRNGBV6C3"),
+                    String::from("EPG47NW4DDKIBUFZBDVQU3KHYCCMXTDN"),
+                    String::from("FF6X4KX3OOAAZUYWXDAHQJIJ5HDZLSXL"),
+                    String::from("JVFHPXAA7FJEJU3TSTR5ETYVOXHOBR4H"),
+                    String::from("MWJTSFCRBCV2CVT3SCDYZW2F2N3JKPIP"),
+                    String::from("NJSDFSIRZT5I5YQONDNEMKXSFNJPSO6A"),
+                    String::from("OALYXCMDI6ODRWMY6YO6WUPL6Q5ZBAO5"),
+                    String::from("UABSDF77S6SU4FDAXWTYIODVODCAA22A"),
+                ],
+            }
+        } else {
+            Settings {
+                hub_url: vec![String::from("ws://raytest.trustnote.org")],
+                mnemonic: mnemonic("")
+                    .expect("failed to generate mnemonic")
+                    .to_string(),
+                initial_db_path: String::from("../db/initial.trustnote-light.sqlite"),
+                genesis_unit: String::from("MtzrZeOHHjqVZheuLylf0DX7zhp10nBsQX5e/+cA3PQ="),
+                witnesses: vec![
+                    String::from("34NRY6HRBMWYMJQUKBF22R7JEKXYUHHW"),
+                    String::from("3C3OHD7WEFKV6RDF2U4M74RVK7YMDP7I"),
+                    String::from("4QBVMWX7DRAIVV4CZEVKS3IAQAFDPFBB"),
+                    String::from("4VCBX74SQMW46OKDTHXDVIFVIP2V6NFX"),
+                    String::from("4VYYR2YO6NV4NTF572AUBEKJLSTM4J4E"),
+                    String::from("AKB7DYDKTIMSOUNHUFB5PHKXOOYCM3YF"),
+                    String::from("B4Z366GZMCWJGPCQI5ROPK3L5OEBT7QD"),
+                    String::from("D27P6DGHLPO5A7MSOZABHOOWQ3BJ56ZI"),
+                    String::from("I6IK6MIYY34C4LV3JU6MNMGCJJN6VSKC"),
+                    String::from("KPQ3CRPBG5FSKVEH6Y76ETGD5D2N7QZ7"),
+                    String::from("NKLP6XURGMNT3ZUCJBCUVHB6BRNZTZL5"),
+                    String::from("QSOMNL7YPFQCYDKFUO63Y7RBLXDRDVJX"),
+                ],
+            }
         }
     }
 }
