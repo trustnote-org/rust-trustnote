@@ -241,7 +241,7 @@ fn send_payment(
     for amount in address_amount.values() {
         println!("        {}", amount);
     }
-    println!("TEXT  : {}", text.unwrap());
+    println!("TEXT  : {}", text.unwrap_or(""));
     println!("DATE  : {}", time::now());
     Ok(())
 }

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::network::{Sender, Server, WsConnection};
+use composer;
 use config;
 use error::Result;
 use failure::ResultExt;
@@ -14,14 +15,11 @@ use light_wallet;
 use may::coroutine;
 use may::net::TcpStream;
 use my_witness;
-use object_hash;
 use serde_json::{self, Value};
-use spec;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
 use url::Url;
-
 #[derive(Default)]
 pub struct WalletData {}
 
@@ -70,16 +68,6 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<WalletCo
 
     init_connection(&ws)?;
     Ok(ws)
-}
-
-fn create_text_message(text: &String) -> Result<spec::Message> {
-    Ok(spec::Message {
-        app: String::from("text"),
-        payload_location: String::from("inline"),
-        payload_hash: object_hash::get_base64_hash(text)?,
-        payload: Some(spec::Payload::Text(text.to_string())),
-        ..Default::default()
-    })
 }
 
 impl WalletConn {
@@ -139,7 +127,7 @@ impl WalletConn {
         }
 
         let messages = if text.is_some() {
-            vec![create_text_message(&text.unwrap().to_string())?]
+            vec![composer::create_text_message(&text.unwrap().to_string())?]
         } else {
             vec![]
         };

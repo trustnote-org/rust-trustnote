@@ -820,3 +820,13 @@ fn read_signing_paths(
 ) -> Result<HashMap<String, Vec<String>>> {
     unimplemented!()
 }
+
+pub fn create_text_message(text: &String) -> Result<spec::Message> {
+    Ok(spec::Message {
+        app: String::from("text"),
+        payload_location: String::from("inline"),
+        payload_hash: object_hash::get_base64_hash(text)?,
+        payload: Some(spec::Payload::Text(text.to_string())),
+        ..Default::default()
+    })
+}
