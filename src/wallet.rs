@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use composer::ComposeInfo;
+use composer::{self, ComposeInfo};
 use error::Result;
 use network::wallet::WalletConn;
 use rusqlite::Connection;
@@ -249,7 +249,7 @@ pub fn get_balance(db: &Connection, address: &str) -> Result<u32> {
 pub fn prepare_payment(
     ws: &Arc<WalletConn>,
     address_amount: &Vec<(&str, f64)>,
-    _text: Option<&str>,
+    text: Option<&str>,
     wallet_info_address: &str,
 ) -> Result<ComposeInfo> {
     let mut outputs = Vec::new();
@@ -281,16 +281,22 @@ pub fn prepare_payment(
         ),
     };
 
+    let messages = if text.is_some() {
+        vec![composer::create_text_message(&text.unwrap().to_string())?]
+    } else {
+        vec![]
+    };
+
     Ok(ComposeInfo {
         paying_addresses: vec![wallet_info_address.to_string()],
         input_amount: amounts,
         signing_addresses: Vec::new(),
         outputs: outputs,
-        messages: Vec::new(), //FIXME: add text
+        messages,
         light_props: light_props,
         earned_headers_commission_recipients: Vec::new(),
         witnesses: Vec::new(),
         inputs: Vec::new(),
-        send_all: false, // FIXME: what's this
+        send_all: false, // FIXME: now send_all is always false
     })
 }

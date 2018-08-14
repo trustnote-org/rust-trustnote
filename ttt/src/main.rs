@@ -240,6 +240,7 @@ fn send_payment(
         println!("      address : {}, amount : {}", address, amount);
     }
     println!("UNIT  : {}", joint.unit.unit.unwrap());
+    println!("TEXT  : {}", text.unwrap_or(""));
     println!("DATE  : {}", time::now());
     Ok(())
 }
@@ -303,7 +304,9 @@ fn main() -> Result<()> {
         }
 
         let text = send.value_of("text");
+
         sync(&ws, &wallet_info)?;
+
         send_payment(&ws, &db, text, &address_amount, &wallet_info)?;
     }
 
