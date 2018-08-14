@@ -14,7 +14,9 @@ use light_wallet;
 use may::coroutine;
 use may::net::TcpStream;
 use my_witness;
+use object_hash;
 use serde_json::{self, Value};
+use spec;
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
 use tungstenite::protocol::Role;
@@ -69,8 +71,6 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<WalletCo
     init_connection(&ws)?;
     Ok(ws)
 }
-use object_hash;
-use spec;
 
 fn create_text_message(text: &String) -> Result<spec::Message> {
     Ok(spec::Message {
