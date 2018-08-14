@@ -69,6 +69,18 @@ pub fn create_outbound_conn<A: ToSocketAddrs>(address: A) -> Result<Arc<WalletCo
     init_connection(&ws)?;
     Ok(ws)
 }
+use object_hash;
+use spec;
+
+fn create_text_message(text: &String) -> Result<spec::Message> {
+    Ok(spec::Message {
+        app: String::from("text"),
+        payload_location: String::from("inline"),
+        payload_hash: object_hash::get_base64_hash(text)?,
+        payload: Some(spec::Payload::Text(text.to_string())),
+        ..Default::default()
+    })
+}
 
 impl WalletConn {
     fn send_version(&self) -> Result<()> {
@@ -93,7 +105,7 @@ impl WalletConn {
     pub fn prepare_payment(
         &self,
         address_amount: &HashMap<&str, f64>,
-        _text: Option<&str>,
+        text: Option<&str>,
         wallet_info_address: &str,
     ) -> Result<::composer::Param> {
         let mut outputs = Vec::new();
@@ -126,12 +138,18 @@ impl WalletConn {
             ),
         }
 
+        let messages = if text.is_some() {
+            vec![create_text_message(&text.unwrap().to_string())?]
+        } else {
+            vec![]
+        };
+
         Ok(::composer::Param {
             paying_addresses: vec![wallet_info_address.to_string()],
             input_amount: Some(amounts as u32),
             signing_addresses: Vec::new(),
             outputs: outputs,
-            messages: Vec::new(),
+            messages,
             light_props: light_props,
             earned_headers_commission_recipients: Vec::new(),
             witnesses: Vec::new(),

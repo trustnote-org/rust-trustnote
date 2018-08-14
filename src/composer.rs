@@ -554,7 +554,7 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
         input_amount,
         send_all,
     } = params;
-    let _ = messages;
+    //let _ = messages;
     let change_outputs = outputs
         .iter()
         .filter(|output| output.amount == Some(0))
@@ -610,7 +610,10 @@ pub fn compose_joint<T: Signer>(params: Param, signer: &T) -> Result<Joint> {
     }
 
     let is_multi_authored = from_addresses.len() > 1;
-    let mut unit = Unit::default();
+    let mut unit = Unit {
+        messages,
+        ..Default::default()
+    };
 
     if !earned_headers_commission_recipients.is_empty() {
         earned_headers_commission_recipients.sort_by(|a, b| a.address.cmp(&b.address));
