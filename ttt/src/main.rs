@@ -133,7 +133,7 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
 
 fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     let address_pubk = wallet_info._00_address_pubk.to_base64_key();
-    let balance = wallet::get_balance(db, &wallet_info._00_address)? as f32 / 1000_000.0;
+    let balance = wallet::get_balance(db, &wallet_info._00_address)? as f64 / 1000_000.0;
     println!("\ncurrent wallet info:\n");
     println!("device_address: {}", wallet_info.device_address);
     println!("wallet_public_key: {}", wallet_info.wallet_pubk.to_string());
@@ -220,7 +220,7 @@ fn history_log(db: &Connection, wallet_info: &WalletInfo, index: Option<usize>) 
 }
 
 fn get_balance(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
-    let balance = wallet::get_balance(&db, &wallet_info._00_address)? as f32 / 1000_000.0;
+    let balance = wallet::get_balance(&db, &wallet_info._00_address)? as f64 / 1000_000.0;
     println!("{:.6}", balance);
 
     Ok(())
