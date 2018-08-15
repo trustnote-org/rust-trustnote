@@ -234,7 +234,10 @@ fn send_payment(
     }
     println!("UNIT  : {}", joint.unit.unit.unwrap());
     println!("TEXT  : {}", text.unwrap_or(""));
-    println!("DATE  : {}", time::now());
+    println!(
+        "DATE  : {}",
+        Local.timestamp_millis(time::now() as i64).naive_local()
+    );
     Ok(())
 }
 
@@ -289,9 +292,11 @@ fn main() -> Result<()> {
     if let Some(send) = m.subcommand_matches("send") {
         let mut address_amount = Vec::new();
         if let Some(pay) = send.values_of("pay") {
-            //TODO: Some syntax check for address and amount
             let v = pay.collect::<Vec<_>>();
             for arg in v.chunks(2) {
+                if !::object_hash::is_chash_valid(arg[0]) {
+                    bail!("invalid address, please check");
+                }
                 address_amount.push((arg[0], arg[1].parse::<f64>().context("invalid amount arg")?));
             }
         }
