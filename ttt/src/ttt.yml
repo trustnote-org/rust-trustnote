@@ -54,6 +54,13 @@ subcommands:
                 takes_value: true
                 required: false
                 value_name: INDEX
+            - n:
+                help: the maximum of transactions to be shown
+                short: n
+                takes_value: true
+                required: false
+                default_value: "20"
+                value_name: NUM
     - info:
         about: Show the wallet info
     - balance:
