@@ -184,7 +184,12 @@ fn sync(ws: &WalletConn, db: &db::Database, wallet_info: &WalletInfo) -> Result<
     Ok(())
 }
 
-fn history_log(db: &Connection, wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
+fn history_log(
+    db: &Connection,
+    wallet_info: &WalletInfo,
+    index: Option<usize>,
+    max: usize,
+) -> Result<()> {
     let histories = wallet::read_transaction_history(db, &wallet_info._00_address)?;
 
     if let Some(index) = index {
@@ -207,6 +212,9 @@ fn history_log(db: &Connection, wallet_info: &WalletInfo, index: Option<usize>) 
         println!("CONFIRMED: {}", history.confirmations);
     } else {
         for (id, history) in histories.iter().enumerate() {
+            if id > max - 1 {
+                break;
+            }
             println!(
                 "#{:<4} {:>10.6} MN  \t{}",
                 id + 1,
@@ -285,16 +293,18 @@ fn main() -> Result<()> {
 
     //Log
     if let Some(log) = m.subcommand_matches("log") {
+        let n = value_t!(log.value_of("n"), usize)?;
+
         let v = value_t!(log.value_of("v"), usize);
         match v {
             Ok(v) => {
-                return history_log(&db, &wallet_info, Some(v));
+                return history_log(&db, &wallet_info, Some(v), n);
             }
             Err(clap::Error {
                 kind: clap::ErrorKind::ArgumentNotFound,
                 ..
             }) => {
-                return history_log(&db, &wallet_info, None);
+                return history_log(&db, &wallet_info, None, n);
             }
             Err(e) => e.exit(),
         }
