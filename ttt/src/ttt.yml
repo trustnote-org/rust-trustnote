@@ -56,6 +56,8 @@ subcommands:
                 value_name: INDEX
     - info:
         about: Show the wallet info
+    - balance:
+        about: Show the wallet balance
 
 
 

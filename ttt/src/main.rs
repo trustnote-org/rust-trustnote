@@ -229,6 +229,14 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
     Ok(())
 }
 
+fn get_balance(db: &Connection, ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
+    ws.refresh_history()?;
+    let balance = wallet::get_balance(&db, &wallet_info._00_address)? as f32 / 1000_000.0;
+    println!("{:.3}", balance);
+
+    Ok(())
+}
+
 fn send_payment(
     ws: &Arc<WalletConn>,
     db: &Connection,
@@ -319,6 +327,10 @@ fn main() -> Result<()> {
         sync(&ws, &wallet_info)?;
 
         send_payment(&ws, &db, text, &address_amount, &wallet_info)?;
+    }
+
+    if m.subcommand_matches("balance").is_some() {
+        get_balance(&db, &ws, &wallet_info)?;
     }
 
     Ok(())
