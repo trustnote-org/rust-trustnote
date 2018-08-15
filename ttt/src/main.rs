@@ -103,10 +103,8 @@ fn init_log(verbosity: u64) {
     debug!("log init done!");
 }
 
-// TODO: src database is get from trustnote config which is not clear
 fn init_database() -> Result<()> {
     db::use_wallet_db();
-    let _db = db::DB_POOL.get_connection();
     Ok(())
 }
 
@@ -137,10 +135,9 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
     bail!("failed to connect remote hub");
 }
 
-fn info(wallet_info: &WalletInfo) -> Result<()> {
+fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     let address_pubk = wallet_info._00_address_pubk.to_base64_key();
-    let db = db::DB_POOL.get_connection();
-    let balance = wallet::get_balance(&db, &wallet_info._00_address)? as f32 / 1000_000.0;
+    let balance = wallet::get_balance(db, &wallet_info._00_address)? as f32 / 1000_000.0;
     println!("\ncurrent wallet info:\n");
     println!("device_address: {}", wallet_info.device_address);
     println!("wallet_public_key: {}", wallet_info.wallet_pubk.to_string());
@@ -154,11 +151,11 @@ fn info(wallet_info: &WalletInfo) -> Result<()> {
 }
 
 // save wallet address in database
-fn update_wallet_address(wallet_info: &WalletInfo) -> Result<()> {
+fn update_wallet_address(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     use trustnote_wallet_base::Base64KeyExt;
 
     wallet::update_wallet_address(
-        &db::DB_POOL.get_connection(),
+        db,
         &wallet_info.device_address,
         &wallet_info.wallet_0_id,
         &wallet_info._00_address,
@@ -181,21 +178,18 @@ fn check_witnesses(ws: &WalletConn, db: &db::Database) -> Result<()> {
     Ok(())
 }
 
-fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
-    update_wallet_address(&wallet_info)?;
-    let db = ::db::DB_POOL.get_connection();
-    check_witnesses(ws, &db)?;
-    match ws.refresh_history(&db) {
+fn sync(ws: &WalletConn, db: &db::Database, wallet_info: &WalletInfo) -> Result<()> {
+    update_wallet_address(db, wallet_info)?;
+    check_witnesses(ws, db)?;
+    match ws.refresh_history(db) {
         Ok(_) => println!("refresh history done\n"),
         Err(e) => bail!("refresh history failed, err={:?}", e),
     }
-    // TODO: print get history statistics
     Ok(())
 }
 
-fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
-    let histories =
-        wallet::read_transaction_history(&db::DB_POOL.get_connection(), &wallet_info._00_address)?;
+fn history_log(db: &Connection, wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
+    let histories = wallet::read_transaction_history(db, &wallet_info._00_address)?;
 
     if let Some(index) = index {
         if index == 0 || index > histories.len() {
@@ -229,8 +223,8 @@ fn history_log(wallet_info: &WalletInfo, index: Option<usize>) -> Result<()> {
     Ok(())
 }
 
-fn get_balance(db: &Connection, ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
-    ws.refresh_history()?;
+fn get_balance(ws: &WalletConn, db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
+    ws.refresh_history(db)?;
     let balance = wallet::get_balance(&db, &wallet_info._00_address)? as f32 / 1000_000.0;
     println!("{:.3}", balance);
 
@@ -271,10 +265,11 @@ fn main() -> Result<()> {
 
     let mut settings = config::get_settings();
     let mut wallet_info = WalletInfo::from_mnemonic(&settings.mnemonic)?;
+    let db = db::DB_POOL.get_connection();
 
     //Info
     if let Some(_info) = m.subcommand_matches("info") {
-        return info(&wallet_info);
+        return info(&db, &wallet_info);
     }
 
     //Log
@@ -282,13 +277,13 @@ fn main() -> Result<()> {
         let v = value_t!(log.value_of("v"), usize);
         match v {
             Ok(v) => {
-                return history_log(&wallet_info, Some(v));
+                return history_log(&db, &wallet_info, Some(v));
             }
             Err(clap::Error {
                 kind: clap::ErrorKind::ArgumentNotFound,
                 ..
             }) => {
-                return history_log(&wallet_info, None);
+                return history_log(&db, &wallet_info, None);
             }
             Err(e) => e.exit(),
         }
@@ -304,12 +299,10 @@ fn main() -> Result<()> {
             settings = config::get_settings();
             wallet_info = WalletInfo::from_mnemonic(&settings.mnemonic)?;
         }
-        //TODO: regist an event to handle_just_saying from hub?
-        return sync(&ws, &wallet_info);
+        return sync(&ws, &db, &wallet_info);
     }
 
     //Send
-    let db = db::DB_POOL.get_connection();
     if let Some(send) = m.subcommand_matches("send") {
         let mut address_amount = Vec::new();
         if let Some(pay) = send.values_of("pay") {
@@ -323,14 +316,12 @@ fn main() -> Result<()> {
         }
 
         let text = send.value_of("text");
-
-        sync(&ws, &wallet_info)?;
-
-        send_payment(&ws, &db, text, &address_amount, &wallet_info)?;
+        sync(&ws, &db, &wallet_info)?;
+        return send_payment(&ws, &db, text, &address_amount, &wallet_info);
     }
 
     if m.subcommand_matches("balance").is_some() {
-        get_balance(&db, &ws, &wallet_info)?;
+        return get_balance(&ws, &db, &wallet_info);
     }
 
     Ok(())
