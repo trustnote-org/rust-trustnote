@@ -133,7 +133,11 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
 
 fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     let address_pubk = wallet_info._00_address_pubk.to_base64_key();
-    let balance = wallet::get_balance(db, &wallet_info._00_address)? as f64 / 1000_000.0;
+    let db = db::DB_POOL.get_connection();
+    let (unstable_balance, stable_balance) = wallet::get_balance(&db, &wallet_info._00_address)?;
+    let balance = (unstable_balance + stable_balance) as f64 / 1000_000.0;
+    let unstable_balance = unstable_balance as f64 / 1000_000.0;
+
     println!("\ncurrent wallet info:\n");
     println!("device_address: {}", wallet_info.device_address);
     println!("wallet_public_key: {}", wallet_info.wallet_pubk.to_string());
@@ -141,7 +145,10 @@ fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     println!("   └──address(0/0): {}", wallet_info._00_address);
     println!("      ├── path: /m/44'/0'/0'/0/0");
     println!("      ├── pubkey: {}", address_pubk);
-    println!("      └── balance: {:.6}MN", balance);
+    println!(
+        "      └── balance: {:.6}MN, unstable: {:.6}MN",
+        balance, unstable_balance
+    );
 
     Ok(())
 }
@@ -328,6 +335,7 @@ fn main() -> Result<()> {
         }
 
         let text = send.value_of("text");
+        sync(&ws, &wallet_info)?;
         return send_payment(&ws, &db, text, &address_amount, &wallet_info);
     }
 
