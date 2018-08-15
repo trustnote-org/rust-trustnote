@@ -133,7 +133,8 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
 
 fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     let address_pubk = wallet_info._00_address_pubk.to_base64_key();
-    let balance = wallet::get_balance(db, &wallet_info._00_address)? as f64 / 1000_000.0;
+    let ret = get_balance(db, wallet_info)?;
+
     println!("\ncurrent wallet info:\n");
     println!("device_address: {}", wallet_info.device_address);
     println!("wallet_public_key: {}", wallet_info.wallet_pubk.to_string());
@@ -141,7 +142,7 @@ fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     println!("   └──address(0/0): {}", wallet_info._00_address);
     println!("      ├── path: /m/44'/0'/0'/0/0");
     println!("      ├── pubkey: {}", address_pubk);
-    println!("      └── balance: {:.6}MN", balance);
+    println!("      └── balance: {}", ret);
 
     Ok(())
 }
@@ -227,11 +228,18 @@ fn history_log(
     Ok(())
 }
 
-fn get_balance(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
-    let balance = wallet::get_balance(&db, &wallet_info._00_address)? as f64 / 1000_000.0;
-    println!("{:.6}", balance);
+fn get_balance(db: &Connection, wallet_info: &WalletInfo) -> Result<String> {
+    let (unstable_balance, stable_balance) = wallet::get_balance(&db, &wallet_info._00_address)?;
+    let balance = (unstable_balance + stable_balance) as f64 / 1000_000.0;
+    let unstable = unstable_balance as f64 / 1000_000.0;
 
-    Ok(())
+    let ret = if unstable_balance == 0 {
+        format!("{:.6}", balance)
+    } else {
+        format!("{:.6} (pending: {:.6} )", balance, unstable)
+    };
+
+    Ok(ret)
 }
 
 fn send_payment(
@@ -332,7 +340,8 @@ fn main() -> Result<()> {
     }
 
     if m.subcommand_matches("balance").is_some() {
-        return get_balance(&db, &wallet_info);
+        println!("{}", get_balance(&db, &wallet_info)?);
+        return Ok(());
     }
 
     Ok(())
