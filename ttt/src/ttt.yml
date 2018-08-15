@@ -18,8 +18,8 @@ args:
 subcommands:
     # The name of this subcommand will be 'subcmd' which can be accessed in your
     # Rust code later
-    - sync:
-        about: Sync a ttt wallet
+    - init:
+        about: Create a ttt wallet
         args:
             - MNEMONIC:
                 help: init the wallet with the mnemonic

@@ -103,11 +103,6 @@ fn init_log(verbosity: u64) {
     debug!("log init done!");
 }
 
-fn init_database() -> Result<()> {
-    db::use_wallet_db();
-    Ok(())
-}
-
 fn init(verbosity: u64) -> Result<()> {
     // init default coroutine settings
     let stack_size = if cfg!(debug_assertions) {
@@ -118,7 +113,8 @@ fn init(verbosity: u64) -> Result<()> {
     may::config().set_stack_size(stack_size);
 
     init_log(verbosity);
-    init_database()?;
+    db::use_wallet_db();
+
     Ok(())
 }
 
@@ -182,7 +178,7 @@ fn sync(ws: &WalletConn, db: &db::Database, wallet_info: &WalletInfo) -> Result<
     update_wallet_address(db, wallet_info)?;
     check_witnesses(ws, db)?;
     match ws.refresh_history(db) {
-        Ok(_) => println!("refresh history done\n"),
+        Ok(_) => info!("refresh history done"),
         Err(e) => bail!("refresh history failed, err={:?}", e),
     }
     Ok(())
@@ -223,8 +219,7 @@ fn history_log(db: &Connection, wallet_info: &WalletInfo, index: Option<usize>) 
     Ok(())
 }
 
-fn get_balance(ws: &WalletConn, db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
-    ws.refresh_history(db)?;
+fn get_balance(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     let balance = wallet::get_balance(&db, &wallet_info._00_address)? as f32 / 1000_000.0;
     println!("{:.3}", balance);
 
@@ -263,9 +258,25 @@ fn main() -> Result<()> {
     let verbosity = m.occurrences_of("verbose");
     init(verbosity)?;
 
-    let mut settings = config::get_settings();
-    let mut wallet_info = WalletInfo::from_mnemonic(&settings.mnemonic)?;
+    // init command
+    if let Some(init_arg) = m.subcommand_matches("init") {
+        if let Some(mnemonic) = init_arg.value_of("MNEMONIC") {
+            config::update_mnemonic(mnemonic)?;
+        }
+        // create settings
+        let settings = config::get_settings();
+        settings.show_config();
+        // every init would remove the local database
+        ::std::fs::remove_file(trustnote::config::get_database_path(true)).ok();
+        return Ok(());
+    }
+
+    let settings = config::get_settings();
+    let wallet_info = WalletInfo::from_mnemonic(&settings.mnemonic)?;
     let db = db::DB_POOL.get_connection();
+    let ws = connect_to_remote(&settings.hub_url)?;
+    // other commad would just sync data first
+    sync(&ws, &db, &wallet_info)?;
 
     //Info
     if let Some(_info) = m.subcommand_matches("info") {
@@ -289,19 +300,6 @@ fn main() -> Result<()> {
         }
     }
 
-    let ws = connect_to_remote(&settings.hub_url)?;
-
-    //Sync
-    if let Some(sync_arg) = m.subcommand_matches("sync") {
-        if let Some(mnemonic) = sync_arg.value_of("MNEMONIC") {
-            config::update_mnemonic(mnemonic)?;
-            // re_init settings
-            settings = config::get_settings();
-            wallet_info = WalletInfo::from_mnemonic(&settings.mnemonic)?;
-        }
-        return sync(&ws, &db, &wallet_info);
-    }
-
     //Send
     if let Some(send) = m.subcommand_matches("send") {
         let mut address_amount = Vec::new();
@@ -316,12 +314,11 @@ fn main() -> Result<()> {
         }
 
         let text = send.value_of("text");
-        sync(&ws, &db, &wallet_info)?;
         return send_payment(&ws, &db, text, &address_amount, &wallet_info);
     }
 
     if m.subcommand_matches("balance").is_some() {
-        return get_balance(&ws, &db, &wallet_info);
+        return get_balance(&db, &wallet_info);
     }
 
     Ok(())

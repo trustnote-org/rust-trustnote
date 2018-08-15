@@ -73,7 +73,6 @@ pub fn get_settings() -> Settings {
         Err(_) => {
             warn!("can't open settings.json, will use default settings");
             let settings = Settings::default();
-            settings.show_config();
             save_settings(&settings).expect("failed to save settings");
             settings
         }
