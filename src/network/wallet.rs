@@ -13,6 +13,7 @@ use light_wallet;
 use may::coroutine;
 use may::net::TcpStream;
 use my_witness;
+use rusqlite::Connection;
 use serde_json::{self, Value};
 use tungstenite::client::client;
 use tungstenite::handshake::client::Request;
@@ -105,11 +106,9 @@ impl WalletConn {
         Ok(serde_json::from_value(resp)?)
     }
 
-    pub fn refresh_history(&self) -> Result<()> {
-        let db = ::db::DB_POOL.get_connection();
-
+    pub fn refresh_history(&self, db: &Connection) -> Result<()> {
         let req_get_history =
-            light_wallet::get_history(&db).context("prepare_request_for_history failed")?;
+            light_wallet::get_history(db).context("prepare_request_for_history failed")?;
 
         let response_history = self
             .send_request("light/get_history", &serde_json::to_value(req_get_history)?)
@@ -119,6 +118,22 @@ impl WalletConn {
             serde_json::from_value(response_history)?;
 
         light::process_history(&db, &mut response_history_s)
+    }
+
+    pub fn get_witnesses(&self) -> Result<Vec<String>> {
+        let witnesses = self
+            .send_request("get_witnesses", &Value::Null)
+            .context("failed to get witnesses")?;
+        let witnesses: Vec<String> =
+            serde_json::from_value(witnesses).context("failed to parse witnesses")?;
+        if witnesses.len() != config::COUNT_WITNESSES {
+            bail!(
+                "witnesses must contains {} addresses, but we got {}",
+                config::COUNT_WITNESSES,
+                witnesses.len()
+            );
+        }
+        Ok(witnesses)
     }
 }
 

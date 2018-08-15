@@ -130,9 +130,20 @@ impl Database {
         Ok(names)
     }
 
-    // TODO:
-    pub fn insert_witnesses(&self) -> Result<()> {
-        unimplemented!();
+    pub fn insert_witnesses(&self, witnesses: &[String]) -> Result<()> {
+        let witnesses_str = witnesses
+            .iter()
+            .map(|s| format!("('{}')", s))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "INSERT INTO my_witnesses (address) VALUES {}",
+            witnesses_str
+        );
+
+        let mut stmt = self.prepare_cached(&sql)?;
+        stmt.execute(&[])?;
+        Ok(())
     }
 }
 

@@ -105,9 +105,6 @@ fn init_log(verbosity: u64) {
 
 // TODO: src database is get from trustnote config which is not clear
 fn init_database() -> Result<()> {
-    // init the settings first, trustnote lib need this settings file
-    let _settings = config::get_settings();
-
     db::use_wallet_db();
     let _db = db::DB_POOL.get_connection();
     Ok(())
@@ -170,9 +167,25 @@ fn update_wallet_address(wallet_info: &WalletInfo) -> Result<()> {
     Ok(())
 }
 
+// we need to sync witnesses from hub if necessary
+fn check_witnesses(ws: &WalletConn, db: &db::Database) -> Result<()> {
+    let witnesses = db.get_my_witnesses()?;
+
+    // if the data base is empty we should wait until
+    if witnesses.is_empty() {
+        let witnesses = ws.get_witnesses()?;
+        db.insert_witnesses(&witnesses)?;
+    } else {
+        assert_eq!(witnesses.len(), trustnote::config::COUNT_WITNESSES);
+    }
+    Ok(())
+}
+
 fn sync(ws: &WalletConn, wallet_info: &WalletInfo) -> Result<()> {
     update_wallet_address(&wallet_info)?;
-    match ws.refresh_history() {
+    let db = ::db::DB_POOL.get_connection();
+    check_witnesses(ws, &db)?;
+    match ws.refresh_history(&db) {
         Ok(_) => println!("refresh history done\n"),
         Err(e) => bail!("refresh history failed, err={:?}", e),
     }
@@ -242,7 +255,10 @@ fn send_payment(
     }
     println!("UNIT  : {}", joint.unit.unit.unwrap());
     println!("TEXT  : {}", text.unwrap_or(""));
-    println!("DATE  : {}", time::now());
+    println!(
+        "DATE  : {}",
+        Local.timestamp_millis(time::now() as i64).naive_local()
+    );
     Ok(())
 }
 
@@ -297,9 +313,11 @@ fn main() -> Result<()> {
     if let Some(send) = m.subcommand_matches("send") {
         let mut address_amount = Vec::new();
         if let Some(pay) = send.values_of("pay") {
-            //TODO: Some syntax check for address and amount
             let v = pay.collect::<Vec<_>>();
             for arg in v.chunks(2) {
+                if !::object_hash::is_chash_valid(arg[0]) {
+                    bail!("invalid address, please check");
+                }
                 address_amount.push((arg[0], arg[1].parse::<f64>().context("invalid amount arg")?));
             }
         }

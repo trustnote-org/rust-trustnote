@@ -14,18 +14,7 @@ fn read_my_witnesses() -> Result<Vec<String>> {
     // if the data base is empty we should wait until
     if witnesses.is_empty() {
         let config_witnesses = config::get_witnesses();
-        let witnesses_str = config_witnesses
-            .iter()
-            .map(|s| format!("('{}')", s))
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!(
-            "INSERT INTO my_witnesses (address) VALUES {}",
-            witnesses_str
-        );
-
-        let mut stmt = db.prepare_cached(&sql)?;
-        stmt.execute(&[])?;
+        db.insert_witnesses(&config_witnesses)?;
         Ok(config_witnesses.to_vec())
     } else {
         assert_eq!(witnesses.len(), config::COUNT_WITNESSES);
