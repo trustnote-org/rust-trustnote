@@ -915,11 +915,11 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
             let mut stmt = db.prepare(&sql)?;
             let rows = stmt
                 .query_map(&[], |row| row.get(0))?
-                .collect::<::std::result::Result<Vec<u32>, _>>()?;
+                .collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
 
             ensure!(rows.len() == 1, "not a single min mc wl");
 
-            rows[0]
+            rows[0].unwrap_or(0)
         };
 
         let mut stable = false;
@@ -957,10 +957,10 @@ fn update_stable_mc_flag(db: &Connection) -> Result<()> {
                 let mut stmt = db.prepare(&sql)?;
                 let rows = stmt
                     .query_map(&[], |row| row.get(0))?
-                    .collect::<::std::result::Result<Vec<u32>, _>>()?;
+                    .collect::<::std::result::Result<Vec<Option<u32>>, _>>()?;
 
                 ensure!(rows.len() == 1, "not a single max alt level");
-                rows[0]
+                rows[0].unwrap_or(0)
             };
 
             if min_mc_wl > max_alt_level {
