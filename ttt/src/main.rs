@@ -141,7 +141,7 @@ fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     println!("   └──address(0/0): {}", wallet_info._00_address);
     println!("      ├── path: /m/44'/0'/0'/0/0");
     println!("      ├── pubkey: {}", address_pubk);
-    println!("      └── balance: {:.3}MN", balance);
+    println!("      └── balance: {:.6}MN", balance);
 
     Ok(())
 }
@@ -199,7 +199,7 @@ fn history_log(db: &Connection, wallet_info: &WalletInfo, index: Option<usize>) 
             println!("TO       : {}", history.address_to);
         }
         println!("UNIT     : {}", history.unit);
-        println!("AMOUNT   : {:.3} MN", history.amount as f64 / 1_000_000.0);
+        println!("AMOUNT   : {:.6} MN", history.amount as f64 / 1_000_000.0);
         println!(
             "DATE     : {}",
             Local.timestamp_millis(history.timestamp).naive_local()
@@ -208,7 +208,7 @@ fn history_log(db: &Connection, wallet_info: &WalletInfo, index: Option<usize>) 
     } else {
         for (id, history) in histories.iter().enumerate() {
             println!(
-                "#{:<4} {:>10.3} MN  \t{}",
+                "#{:<4} {:>10.6} MN  \t{}",
                 id + 1,
                 history.amount as f64 / 1_000_000.0,
                 Local.timestamp_millis(history.timestamp).naive_local()
@@ -221,7 +221,7 @@ fn history_log(db: &Connection, wallet_info: &WalletInfo, index: Option<usize>) 
 
 fn get_balance(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     let balance = wallet::get_balance(&db, &wallet_info._00_address)? as f32 / 1000_000.0;
-    println!("{:.3}", balance);
+    println!("{:.6}", balance);
 
     Ok(())
 }
@@ -309,7 +309,11 @@ fn main() -> Result<()> {
                 if !::object_hash::is_chash_valid(arg[0]) {
                     bail!("invalid address, please check");
                 }
-                address_amount.push((arg[0], arg[1].parse::<f64>().context("invalid amount arg")?));
+                let amount = arg[1].parse::<f64>().context("invalid amount arg")?;
+                if amount > std::u32::MAX as f64 || amount < 0.000001 {
+                    bail!("invalid amount, please check");
+                }
+                address_amount.push((arg[0], amount));
             }
         }
 
