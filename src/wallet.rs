@@ -234,7 +234,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
     Ok(history_transactions)
 }
 
-// return values: fist is unstable balance, second is stable balance.
+// return values: first is unstable balance, second is stable balance.
 pub fn get_balance(db: &Connection, address: &str) -> Result<(u32, u32)> {
     let mut stmt = db.prepare_cached(
         "SELECT asset, is_stable, SUM(amount) AS balance \
@@ -242,9 +242,6 @@ pub fn get_balance(db: &Connection, address: &str) -> Result<(u32, u32)> {
          WHERE is_spent=0 AND address=? AND sequence='good' AND asset IS NULL \
          GROUP BY is_stable",
     )?;
-    // let rows = stmt
-    //     .query_map(&[&address], |row| row.get(2))?
-    //     .collect::<::std::result::Result<Vec<<u32>,_>>>()?;
 
     let rows = stmt
         .query_map(&[&address], |row| row.get(2))?
