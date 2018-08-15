@@ -60,8 +60,10 @@ pub fn get_witnesses() -> [String; 12] {
 
 pub fn get_genesis_unit() -> String {
     let cfg = CONFIG.read().unwrap();
-    cfg.get::<String>("genesis_unit")
-        .expect("failed to read genesis unit")
+    cfg.get::<String>("genesis_unit").unwrap_or_else(|e| {
+        error!("can't read genesis unit, will use default value, err={}", e);
+        String::from("V/NuDxzT7VFa/AqfBsAZ8suG4uj3u+l0kXOLE+nP+dU=")
+    })
 }
 
 pub fn get_remote_hub_url() -> Vec<String> {
