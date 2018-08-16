@@ -81,7 +81,7 @@ fn issue_asset(
         #[derive(Serialize)]
         struct TmpSpendProof<'a> {
             asset: &'a Option<String>,
-            amount: u32,
+            amount: u64,
             address: &'a String,
             c: u32,
             serial_number: u32,
@@ -264,7 +264,7 @@ fn add_mc_inputs(
             input_type,
             addr,
             max_mci,
-            target_amount as u32,
+            target_amount,
         );
 
         if let Ok(Some(mc_index_interval)) = mc_result {
@@ -447,7 +447,8 @@ fn pick_one_coin_just_bigger_and_continue(
     let input_rows = stmt
         .query_map(
             &[
-                &(input_info.required_amount as u32 + is_base as u32 * config::TRANSFER_INPUT_SIZE),
+                &((input_info.required_amount + is_base as u64 * config::TRANSFER_INPUT_SIZE as u64)
+                    as i64),
                 &last_ball_mci,
             ],
             |row| spec::Input {

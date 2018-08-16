@@ -235,7 +235,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
 }
 
 // return values: first is unstable balance, second is stable balance.
-pub fn get_balance(db: &Connection, address: &str) -> Result<(u32, u32)> {
+pub fn get_balance(db: &Connection, address: &str) -> Result<(i64, i64)> {
     let mut stmt = db.prepare_cached(
         "SELECT asset, is_stable, SUM(amount) AS balance \
          FROM outputs JOIN units USING(unit) \
@@ -245,7 +245,7 @@ pub fn get_balance(db: &Connection, address: &str) -> Result<(u32, u32)> {
 
     let rows = stmt
         .query_map(&[&address], |row| row.get(2))?
-        .collect::<::std::result::Result<Vec<u32>, _>>()?;
+        .collect::<::std::result::Result<Vec<i64>, _>>()?;
     let len = rows.len();
     if len == 2 {
         return Ok((rows[0], rows[1]));

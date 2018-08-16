@@ -63,7 +63,7 @@ pub fn find_mc_index_interval_to_target_amount(
     kind: &str,
     address: &String,
     max_mci: u32,
-    target_amount: u32,
+    target_amount: u64,
 ) -> Result<Option<McIndexInterval>> {
     let from_mci = read_next_spendable_mc_index(db, kind, address, &[])?;
 
@@ -86,7 +86,7 @@ pub fn find_mc_index_interval_to_target_amount(
 
     //Original js has another implementation for mysql
     let min_mc_output = if kind == "witnessing" { 11.0 } else { 344.0 };
-    let max_count_outputs = (f64::from(target_amount) / min_mc_output).ceil() as u32;
+    let max_count_outputs = (target_amount as f64 / min_mc_output).ceil() as u32;
 
     let sql = format!(
         "SELECT main_chain_index, amount \
@@ -125,7 +125,7 @@ pub fn find_mc_index_interval_to_target_amount(
     for output in outputs {
         accumulated += output.amount;
         to_mci = output.main_chain_index;
-        if accumulated > target_amount {
+        if accumulated as u64 > target_amount {
             has_sufficient = true;
             break;
         }
