@@ -477,17 +477,20 @@ impl Joint {
                         "headers_commission" | "witnessing" | "issue" => {
                             input.address.as_ref().expect("no input address").clone()
                         }
-                        _ => if !is_light_wallet {
-                            self.determine_input_address_from_output(
-                                tx,
-                                payment.asset.as_ref().unwrap(),
-                                denomination,
-                                &input,
-                            )?
-                        } else {
-                            // FIXME: we don't have an address here for light wallet
-                            "".to_string()
-                        },
+                        x => {
+                            info!("input type for multi authors: {}", x);
+                            if !is_light_wallet {
+                                self.determine_input_address_from_output(
+                                    tx,
+                                    &payment.asset,
+                                    denomination,
+                                    &input,
+                                )?
+                            } else {
+                                // FIXME: we don't have an address here for light wallet
+                                "".to_string()
+                            }
+                        }
                     }
                 };
 
@@ -567,7 +570,7 @@ impl Joint {
     fn determine_input_address_from_output(
         &self,
         tx: &Transaction,
-        asset: &str,
+        asset: &Option<String>,
         denomination: u32,
         input: &Input,
     ) -> Result<String> {
@@ -578,7 +581,10 @@ impl Joint {
         let address = stmt.query_row(
             &[&input.unit, &input.message_index, &input.output_index],
             |row| {
-                ensure!(asset == row.get::<_, String>(2), "asset doesn't match");
+                ensure!(
+                    asset == &row.get::<_, Option<String>>(2),
+                    "asset doesn't match"
+                );
                 ensure!(
                     denomination == row.get::<_, u32>(1),
                     "denomination not match"
