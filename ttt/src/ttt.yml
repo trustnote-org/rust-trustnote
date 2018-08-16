@@ -65,6 +65,17 @@ subcommands:
         about: Show the wallet info
     - balance:
         about: Show the wallet balance
+        args:
+            - s:
+                help: show stable balance
+                short: s
+                takes_value: false
+                required: false
+            - p:
+                help: show pending balance
+                short: p
+                takes_value: false
+                required: false
 
 
 

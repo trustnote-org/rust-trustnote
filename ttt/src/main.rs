@@ -133,7 +133,10 @@ fn connect_to_remote(peers: &[String]) -> Result<Arc<WalletConn>> {
 
 fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     let address_pubk = wallet_info._00_address_pubk.to_base64_key();
-    let ret = get_balance(db, wallet_info)?;
+    let (unstable_balance, stable_balance) = wallet::get_balance(&db, &wallet_info._00_address)?;
+    let total = (unstable_balance + stable_balance) as f64 / 1000_000.0;
+    let stable = stable_balance as f64 / 1000_000.0;
+    let pending = unstable_balance as f64 / 1000_000.0;
 
     println!("\ncurrent wallet info:\n");
     println!("device_address: {}", wallet_info.device_address);
@@ -142,7 +145,9 @@ fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     println!("   └──address(0/0): {}", wallet_info._00_address);
     println!("      ├── path: /m/44'/0'/0'/0/0");
     println!("      ├── pubkey: {}", address_pubk);
-    println!("      └── balance: {}", ret);
+    println!("      └── balance: {}", total);
+    println!("          ├── stable: {}", stable);
+    println!("          └── pending: {}", pending);
 
     Ok(())
 }
@@ -226,20 +231,6 @@ fn history_log(
     }
 
     Ok(())
-}
-
-fn get_balance(db: &Connection, wallet_info: &WalletInfo) -> Result<String> {
-    let (unstable_balance, stable_balance) = wallet::get_balance(&db, &wallet_info._00_address)?;
-    let balance = (unstable_balance + stable_balance) as f64 / 1000_000.0;
-    let unstable = unstable_balance as f64 / 1000_000.0;
-
-    let ret = if unstable_balance == 0 {
-        format!("{:.6}", balance)
-    } else {
-        format!("{:.6} (pending: {:.6} )", balance, unstable)
-    };
-
-    Ok(ret)
 }
 
 fn send_payment(
@@ -339,8 +330,24 @@ fn main() -> Result<()> {
         return send_payment(&ws, &db, text, &address_amount, &wallet_info);
     }
 
-    if m.subcommand_matches("balance").is_some() {
-        println!("{}", get_balance(&db, &wallet_info)?);
+    if let Some(balance) = m.subcommand_matches("balance") {
+        let (unstable_balance, stable_balance) =
+            wallet::get_balance(&db, &wallet_info._00_address)?;
+
+        if let Some(_s) = balance.values_of("s") {
+            println!("{:.6}", stable_balance as f64 / 1000_000.0);
+            return Ok(());
+        }
+
+        if let Some(_p) = balance.values_of("p") {
+            println!("{:.6}", unstable_balance as f64 / 1000_000.0);
+            return Ok(());
+        }
+
+        println!(
+            "{:.6}",
+            (stable_balance + unstable_balance) as f64 / 1000_000.0
+        );
         return Ok(());
     }
 
