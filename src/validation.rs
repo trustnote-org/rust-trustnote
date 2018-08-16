@@ -1759,18 +1759,15 @@ fn validate_payment_inputs_and_outputs(
 
     for output in &payment.outputs {
         ensure_with_validation_err!(
-            output.amount > Some(0),
+            output.amount > 0,
             UnitError,
             "amount must be positive integer, found {:?}",
             output.amount
         );
 
         // TODO: add asset check, we don't support private asset payment
-
-        ensure_with_validation_err!(output.address.is_some(), UnitError, "no output address");
-
-        let amount = output.amount.unwrap();
-        let address = output.address.as_ref().unwrap();
+        let amount = output.amount;
+        let address = &output.address;
 
         ensure_with_validation_err!(
             object_hash::is_chash_valid(address),
@@ -1789,7 +1786,7 @@ fn validate_payment_inputs_and_outputs(
         prev_amount = amount;
 
         if !output_addresses.contains(address) {
-            output_addresses.push(address.clone());
+            output_addresses.push(address.to_owned());
         }
 
         total_output += amount;

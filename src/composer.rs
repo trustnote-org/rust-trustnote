@@ -190,9 +190,8 @@ fn add_input(
     }
 
     if let Some(amount) = input.amount {
-        if amount > 0 {
-            inputs_and_amount.amount += amount as u64;
-        }
+        assert!(amount >= 0, "negative input");
+        inputs_and_amount.amount += amount as u64;
     }
 
     let mut input_with_proof = InputWithProof {
@@ -447,8 +446,8 @@ fn pick_one_coin_just_bigger_and_continue(
     let input_rows = stmt
         .query_map(
             &[
-                &((input_info.required_amount + is_base as u64 * config::TRANSFER_INPUT_SIZE as u64)
-                    as i64),
+                &(input_info.required_amount as i64
+                    + is_base as i64 * config::TRANSFER_INPUT_SIZE as i64),
                 &last_ball_mci,
             ],
             |row| spec::Input {
@@ -575,12 +574,12 @@ pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T
 
     let change_outputs = outputs
         .iter()
-        .filter(|output| output.amount == Some(0))
+        .filter(|output| output.amount == 0)
         .cloned()
         .collect::<Vec<_>>();
     let external_outputs = outputs
         .into_iter()
-        .filter(|output| output.amount > Some(0))
+        .filter(|output| output.amount > 0)
         .collect::<Vec<_>>();
 
     if change_outputs.len() > 1 {
@@ -635,7 +634,7 @@ pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T
     } else if is_multi_authored {
         unit.earned_headers_commission_recipients
             .push(HeaderCommissionShare {
-                address: change_outputs.into_iter().nth(0).unwrap().address.unwrap(),
+                address: change_outputs.into_iter().nth(0).unwrap().address,
                 earned_headers_commission_share: 100,
             });
     }
@@ -751,7 +750,7 @@ pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T
         }
         match payment_message.payload {
             Some(Payload::Payment(ref mut x)) => {
-                x.outputs[0].amount = Some(change);
+                x.outputs[0].amount = change;
                 x.outputs.sort_by(|a, b| {
                     if a.address == b.address {
                         a.amount.cmp(&b.amount)

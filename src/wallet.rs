@@ -265,14 +265,14 @@ pub fn prepare_payment(
     let mut outputs = Vec::new();
     for (address, amount) in address_amount.into_iter() {
         outputs.push(Output {
-            address: Some(address.to_string()),
-            amount: Some((amount * 1_000_000.0).round() as i64),
+            address: address.to_string(),
+            amount: (amount * 1_000_000.0).round() as i64,
         });
     }
-    let amounts = outputs.iter().fold(0, |acc, x| acc + x.amount.unwrap());
+    let amounts = outputs.iter().fold(0, |acc, x| acc + x.amount);
     outputs.push(Output {
-        address: Some(wallet_info_address.to_string()),
-        amount: Some(0),
+        address: wallet_info_address.to_string(),
+        amount: 0,
     });
 
     let light_props = match ws.get_parents_and_last_ball_and_witness_list_unit() {

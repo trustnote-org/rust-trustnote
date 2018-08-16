@@ -632,8 +632,8 @@ pub fn read_joint_directly(db: &Connection, unit_hash: &String) -> Result<Joint>
                         )?;
 
                         struct OutputTemp {
-                            address: Option<String>,
-                            amount: Option<i64>,
+                            address: String,
+                            amount: i64,
                             asset: Option<String>,
                             denomination: Option<u32>,
                         }

@@ -65,10 +65,9 @@ pub struct Message {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-// FIXME: try remove Option
 pub struct Output {
-    pub address: Option<String>,
-    pub amount: Option<i64>,
+    pub address: String,
+    pub amount: i64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
