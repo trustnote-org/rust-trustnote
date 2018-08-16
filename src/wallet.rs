@@ -235,7 +235,7 @@ pub fn read_transaction_history(db: &Connection, address: &str) -> Result<Vec<Tr
 }
 
 // return values: first is unstable balance, second is stable balance.
-pub fn get_balance(db: &Connection, address: &str) -> Result<(u32, u32)> {
+pub fn get_balance(db: &Connection, address: &str) -> Result<(i64, i64)> {
     let mut stmt = db.prepare_cached(
         "SELECT asset, is_stable, SUM(amount) AS balance \
          FROM outputs JOIN units USING(unit) \
@@ -245,7 +245,7 @@ pub fn get_balance(db: &Connection, address: &str) -> Result<(u32, u32)> {
 
     let rows = stmt
         .query_map(&[&address], |row| row.get(2))?
-        .collect::<::std::result::Result<Vec<u32>, _>>()?;
+        .collect::<::std::result::Result<Vec<i64>, _>>()?;
     let len = rows.len();
     if len == 2 {
         return Ok((rows[0], rows[1]));
@@ -265,14 +265,14 @@ pub fn prepare_payment(
     let mut outputs = Vec::new();
     for (address, amount) in address_amount.into_iter() {
         outputs.push(Output {
-            address: Some(address.to_string()),
-            amount: Some((amount * 1_000_000.0).round() as i64),
+            address: address.to_string(),
+            amount: (amount * 1_000_000.0).round() as i64,
         });
     }
-    let amounts = outputs.iter().fold(0, |acc, x| acc + x.amount.unwrap());
+    let amounts = outputs.iter().fold(0, |acc, x| acc + x.amount);
     outputs.push(Output {
-        address: Some(wallet_info_address.to_string()),
-        amount: Some(0),
+        address: wallet_info_address.to_string(),
+        amount: 0,
     });
 
     let light_props = match ws.get_parents_and_last_ball_and_witness_list_unit() {
@@ -299,7 +299,7 @@ pub fn prepare_payment(
 
     Ok(ComposeInfo {
         paying_addresses: vec![wallet_info_address.to_string()],
-        input_amount: amounts,
+        input_amount: amounts as u64,
         signing_addresses: Vec::new(),
         outputs: outputs,
         messages,

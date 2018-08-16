@@ -1813,7 +1813,7 @@ fn notify_watchers(db: &Connection, joint: &Joint, cur_ws: &HubConn) -> Result<(
         }
         match message.payload {
             Some(Payload::Payment(ref payment)) => for output in &payment.outputs {
-                let address = output.address.as_ref().expect("no address in output");
+                let address = &output.address;
                 if !addresses.contains(&address) {
                     addresses.push(address);
                 }

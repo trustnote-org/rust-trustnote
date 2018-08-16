@@ -22,7 +22,7 @@ struct InputWithProof {
 #[derive(Debug)]
 struct InputsAndAmount {
     input_with_proofs: Vec<InputWithProof>,
-    amount: u32,
+    amount: u64,
 }
 
 #[derive(Debug)]
@@ -40,7 +40,7 @@ struct InputInfo {
     multi_authored: bool,
     inputs_and_amount: InputsAndAmount,
     paying_addresses: Vec<String>,
-    required_amount: u32,
+    required_amount: u64,
 }
 
 fn issue_asset(
@@ -81,7 +81,7 @@ fn issue_asset(
         #[derive(Serialize)]
         struct TmpSpendProof<'a> {
             asset: &'a Option<String>,
-            amount: u32,
+            amount: u64,
             address: &'a String,
             c: u32,
             serial_number: u32,
@@ -190,9 +190,8 @@ fn add_input(
     }
 
     if let Some(amount) = input.amount {
-        if amount > 0 {
-            inputs_and_amount.amount += amount as u32;
-        }
+        assert!(amount >= 0, "negative input");
+        inputs_and_amount.amount += amount as u64;
     }
 
     let mut input_with_proof = InputWithProof {
@@ -248,7 +247,7 @@ fn add_mc_inputs(
     db: &Connection,
     input_info: &mut InputInfo,
     input_type: &str,
-    input_size: u32,
+    input_size: u64,
     max_mci: u32,
 ) -> Result<()> {
     for addr in &input_info.paying_addresses {
@@ -257,8 +256,8 @@ fn add_mc_inputs(
         } else {
             0
         };
-        let target_amount =
-            input_info.required_amount + input_size + adjust - input_info.inputs_and_amount.amount;
+        let target_amount = input_info.required_amount + input_size + adjust as u64
+            - input_info.inputs_and_amount.amount;
         let mc_result = mc_outputs::find_mc_index_interval_to_target_amount(
             db,
             input_type,
@@ -272,7 +271,7 @@ fn add_mc_inputs(
                 bail!("earnings is 0")
             }
 
-            input_info.inputs_and_amount.amount += mc_index_interval.accumulated;
+            input_info.inputs_and_amount.amount += mc_index_interval.accumulated as u64;
 
             let mut input = spec::Input {
                 kind: Some(input_type.to_string()),
@@ -282,7 +281,7 @@ fn add_mc_inputs(
             };
 
             if input_info.multi_authored {
-                input_info.required_amount += config::ADDRESS_SIZE;
+                input_info.required_amount += config::ADDRESS_SIZE as u64;
                 input.address = Some(addr.to_owned());
             }
 
@@ -317,7 +316,7 @@ fn add_headers_commission_inputs(
             db,
             &mut input_info,
             "headers_commission",
-            config::HEADERS_COMMISSION_INPUT_SIZE,
+            config::HEADERS_COMMISSION_INPUT_SIZE as u64,
             max_mci,
         ).is_err()
         {
@@ -325,7 +324,7 @@ fn add_headers_commission_inputs(
                 db,
                 &mut input_info,
                 "witnessing",
-                config::WITNESSING_INPUT_SIZE,
+                config::WITNESSING_INPUT_SIZE as u64,
                 max_mci,
             ).is_err()
             {
@@ -380,7 +379,7 @@ fn pick_multiple_coins_and_continue(
         })?.collect::<::std::result::Result<Vec<_>, _>>()?;
 
     for mut input in input_rows {
-        input_info.required_amount += is_base as u32 * config::TRANSFER_INPUT_SIZE;
+        input_info.required_amount += is_base as u64 * config::TRANSFER_INPUT_SIZE as u64;
         input_info.inputs_and_amount = add_input(
             input_info.inputs_and_amount,
             input,
@@ -447,7 +446,8 @@ fn pick_one_coin_just_bigger_and_continue(
     let input_rows = stmt
         .query_map(
             &[
-                &(input_info.required_amount + is_base as u32 * config::TRANSFER_INPUT_SIZE),
+                &(input_info.required_amount as i64
+                    + is_base as i64 * config::TRANSFER_INPUT_SIZE as i64),
                 &last_ball_mci,
             ],
             |row| spec::Input {
@@ -472,7 +472,7 @@ fn pick_divisible_coins_for_amount(
     asset: Option<Asset>,
     paying_addresses: Vec<String>,
     last_ball_mci: u32,
-    amount: u32,
+    amount: u64,
     multi_authored: bool,
     send_all: bool,
 ) -> Result<InputsAndAmount> {
@@ -554,7 +554,7 @@ pub struct ComposeInfo {
     pub earned_headers_commission_recipients: Vec<spec::HeaderCommissionShare>,
     pub witnesses: Vec<String>,
     pub inputs: Vec<Input>,
-    pub input_amount: i64,
+    pub input_amount: u64,
     pub send_all: bool,
 }
 
@@ -574,12 +574,12 @@ pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T
 
     let change_outputs = outputs
         .iter()
-        .filter(|output| output.amount == Some(0))
+        .filter(|output| output.amount == 0)
         .cloned()
         .collect::<Vec<_>>();
     let external_outputs = outputs
         .into_iter()
-        .filter(|output| output.amount > Some(0))
+        .filter(|output| output.amount > 0)
         .collect::<Vec<_>>();
 
     if change_outputs.len() > 1 {
@@ -634,7 +634,7 @@ pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T
     } else if is_multi_authored {
         unit.earned_headers_commission_recipients
             .push(HeaderCommissionShare {
-                address: change_outputs.into_iter().nth(0).unwrap().address.unwrap(),
+                address: change_outputs.into_iter().nth(0).unwrap().address,
                 earned_headers_commission_share: 100,
             });
     }
@@ -694,16 +694,16 @@ pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T
         }
     } else {
         let target_amount = if params.send_all {
-            ::std::i64::MAX
+            ::std::u64::MAX
         } else {
-            input_amount + unit.headers_commission.unwrap() as i64 + naked_payload_commission as i64
+            input_amount + unit.headers_commission.unwrap() as u64 + naked_payload_commission as u64
         };
         let input_and_amount = pick_divisible_coins_for_amount(
             &db,
             None,
             from_addresses,
             last_stable_mc_ball_mci,
-            target_amount as u32,
+            target_amount as u64,
             is_multi_authored,
             send_all,
         )?;
@@ -715,7 +715,7 @@ pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T
                 target_amount
             );
         }
-        total_input = input_and_amount.amount as i64;
+        total_input = input_and_amount.amount as u64;
 
         match payment_message.payload {
             Some(Payload::Payment(ref mut x)) => {
@@ -736,7 +736,7 @@ pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T
         let payment_message = unit.messages.last_mut().unwrap();
 
         let change = total_input as i64
-            - input_amount
+            - input_amount as i64
             - unit.headers_commission.unwrap() as i64
             - unit.payload_commission.unwrap() as i64;
         if change <= 0 {
@@ -750,7 +750,7 @@ pub fn compose_joint<T: Signer>(db: &Connection, params: ComposeInfo, signer: &T
         }
         match payment_message.payload {
             Some(Payload::Payment(ref mut x)) => {
-                x.outputs[0].amount = Some(change);
+                x.outputs[0].amount = change;
                 x.outputs.sort_by(|a, b| {
                     if a.address == b.address {
                         a.amount.cmp(&b.amount)

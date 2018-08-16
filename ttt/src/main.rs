@@ -328,7 +328,7 @@ fn main() -> Result<()> {
                     bail!("invalid address, please check");
                 }
                 let amount = arg[1].parse::<f64>().context("invalid amount arg")?;
-                if amount > std::u32::MAX as f64 || amount < 0.000001 {
+                if amount > std::u64::MAX as f64 || amount < 0.000001 {
                     bail!("invalid amount, please check");
                 }
                 address_amount.push((arg[0], amount));
