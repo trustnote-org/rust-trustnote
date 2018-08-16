@@ -145,9 +145,9 @@ fn info(db: &Connection, wallet_info: &WalletInfo) -> Result<()> {
     println!("   └──address(0/0): {}", wallet_info._00_address);
     println!("      ├── path: /m/44'/0'/0'/0/0");
     println!("      ├── pubkey: {}", address_pubk);
-    println!("      └── balance: {}", total);
-    println!("          ├── stable: {}", stable);
-    println!("          └── pending: {}", pending);
+    println!("      └── balance: {:.6}", total);
+    println!("          ├── stable: {:.6}", stable);
+    println!("          └── pending: {:.6}", pending);
 
     Ok(())
 }
