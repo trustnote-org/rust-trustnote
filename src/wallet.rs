@@ -246,12 +246,14 @@ pub fn get_balance(db: &Connection, address: &str) -> Result<(u32, u32)> {
     let rows = stmt
         .query_map(&[&address], |row| row.get(2))?
         .collect::<::std::result::Result<Vec<u32>, _>>()?;
-
-    if rows.len() == 2 {
+    let len = rows.len();
+    if len == 2 {
         return Ok((rows[0], rows[1]));
+    } else if len == 1 {
+        return Ok((0, rows[0]));
     }
 
-    Ok((0, rows[0]))
+    Ok((0, 0))
 }
 
 pub fn prepare_payment(
