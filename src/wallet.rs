@@ -299,7 +299,7 @@ pub fn prepare_payment(
 
     Ok(ComposeInfo {
         paying_addresses: vec![wallet_info_address.to_string()],
-        input_amount: amounts,
+        input_amount: amounts as u64,
         signing_addresses: Vec::new(),
         outputs: outputs,
         messages,
