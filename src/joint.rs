@@ -435,7 +435,7 @@ impl Joint {
         }
     }
 
-    fn save_inline_payment(&self, tx: &Transaction) -> Result<()> {
+    fn save_inline_payment(&self, tx: &Transaction, is_light_wallet: bool) -> Result<()> {
         let unit_hash = self.get_unit_hash();
         let mut author_addresses = vec![];
         for author in &self.unit.authors {
@@ -479,12 +479,22 @@ impl Joint {
                         }
                         x => {
                             info!("input type for multi authors: {}", x);
-                            self.determine_input_address_from_output(
+                            match self.determine_input_address_from_output(
                                 tx,
                                 &payment.asset,
                                 denomination,
                                 &input,
-                            )?
+                            ) {
+                                Ok(addr) => addr,
+                                Err(e) => if is_light_wallet {
+                                    "".to_string()
+                                } else {
+                                    bail!(
+                                        "determine_input_address_from_output failed, err: {:?}",
+                                        e
+                                    );
+                                },
+                            }
                         }
                     }
                 };
@@ -617,7 +627,7 @@ impl Joint {
         self.save_authors(&tx)?;
         self.save_messages(&tx)?;
         self.save_header_earnings(&tx)?;
-        self.save_inline_payment(&tx)?;
+        self.save_inline_payment(&tx, is_light_wallet)?;
         if !is_light_wallet {
             if !self.unit.parent_units.is_empty() {
                 let best_parent_unit = self.update_best_parent(&tx)?;
