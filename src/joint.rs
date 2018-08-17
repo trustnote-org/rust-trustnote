@@ -479,16 +479,21 @@ impl Joint {
                         }
                         x => {
                             info!("input type for multi authors: {}", x);
-                            if !is_light_wallet {
-                                self.determine_input_address_from_output(
-                                    tx,
-                                    &payment.asset,
-                                    denomination,
-                                    &input,
-                                )?
-                            } else {
-                                // FIXME: we don't have an address here for light wallet
-                                "".to_string()
+                            match self.determine_input_address_from_output(
+                                tx,
+                                &payment.asset,
+                                denomination,
+                                &input,
+                            ) {
+                                Ok(addr) => addr,
+                                Err(e) => if is_light_wallet {
+                                    "".to_string()
+                                } else {
+                                    bail!(
+                                        "determine_input_address_from_output failed, err: {:?}",
+                                        e
+                                    );
+                                },
                             }
                         }
                     }
