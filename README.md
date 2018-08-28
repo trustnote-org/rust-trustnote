@@ -2,11 +2,18 @@
 
 [![Build Status](https://travis-ci.org/trustnote/rust-trustnote.svg?branch=master)](https://travis-ci.org/trustnote/rust-trustnote) 
 
-Rust core implementation for TrustNote, currently it connects to the TrustNote testnet only.
+Core re-implementation of TrustNote using Rust, currently it connects to the TrustNote testnet only. 
 
 # Getting Started
 
-## Get the Release
+## Prerequistes
+
+* Ubuntu Linux - The SDK can be downloaded from https://github.com/trustnote/rust-trustnote/releases/download/0.3.0/ubuntu_ttt.zip
+* Or Windows - The SDK can be downloaded from https://github.com/trustnote/rust-trustnote/releases/download/0.3.0/windows_ttt.zip
+
+*Note: You can also compile the SDK for other target platforms. If you want to do so, the source code is available [here](https://github.com/trustnote/rust-trustnote/archive/0.3.0.zip):*
+
+## Get the Release (Unbuntu Linux)
 
 1. Download the package and unzip it
 
@@ -154,4 +161,4 @@ his is still an early version of the release, more features will be added in fut
 To help us make it better, you are welcomed to report any bugs on TrustNote Github bug portal, or ask any questions you might have on the TrustNote subreddit.
 
 
-[WIP_INIT.md](WIP_INIT.md)
+See [WIP_INIT.md](WIP_INIT.md) for more information about the Rust Implementation of TrustNote prorocol.
