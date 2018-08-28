@@ -13,7 +13,7 @@ Re-implementation of TrustNote using Rust, currently it connects to the TrustNot
 
 *Note: You can also compile the SDK for other target platforms. If you want to do so, the source code is available [here](https://github.com/trustnote/rust-trustnote/archive/0.3.0.zip):*
 
-## Get the Release (Unbuntu Linux)
+## Get the Release (Ubuntu Linux)
 
 1. Download the package and unzip it
 
