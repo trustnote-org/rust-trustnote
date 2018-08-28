@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/trustnote/rust-trustnote.svg?branch=master)](https://travis-ci.org/trustnote/rust-trustnote) 
 
-Core re-implementation of TrustNote using Rust, currently it connects to the TrustNote testnet only. 
+Re-implementation of TrustNote using Rust, currently it connects to the TrustNote testnet only. 
 
 # Getting Started
 
@@ -94,7 +94,7 @@ By default, this tutorial runs on TrustNote testnet instead of mainnet, and for 
 
 Open http://dev.trustnote.org/getTTT from your web browser, simple input your wallet address and press the “get TTT” button.
 
-Usually the TTT Test Notes will be transferred to your wallet in about 3~5 seconds, sometimes it may take up to 1~2 minutes. You can check the new balance of your wallet by running the ./TTT info command again.
+Usually the TTT Test Notes will be transferred to your wallet in about a few seconds, sometimes it may take up to 1 or 2 minutes. You can check the new balance of your wallet by running the ```./TTT``` info command again.
 
 *Note: TTT Test Notes can be used to issue tokens and pay for the transaction fees on the testnet, however it doesn’t work on TrustNote’s mainnet, and it can’t be traded on those crypto-currency markets where TTT is currently being listed.
 ref*
