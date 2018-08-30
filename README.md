@@ -157,8 +157,10 @@ Running SDK in a different location (file directory) will generate ```settings.j
 
 For example, you can put the Rust SDK on the server and provide your web-based multi-account wallet service running on TrustNote network.
 
-his is still an early version of the release, more features will be added in futures releases. I hope you like it!
+This is still an early version of the release, more features will be added in futures releases. I hope you like it!
 To help us make it better, you are welcomed to report any bugs on TrustNote Github bug portal, or ask any questions you might have on the TrustNote subreddit.
 
 
-See [WIP_INIT.md](WIP_INIT.md) for more information about the Rust Implementation of the TrustNote protocol.
+See [WIP_INIT.md](WIP_INIT.md) for information about the Rust Implementation of the TrustNote protocol.
+
+See [RaspberryPi.md](RaspberryPi.md) for how to build the TrustNote Rust SDK from Source for Raspberry Pi.
